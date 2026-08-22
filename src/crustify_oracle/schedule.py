@@ -174,25 +174,46 @@ def _node_doc(node: Node) -> dict:
     }
 
 
-def _field_anchors(layout, target: Path) -> dict[str, list[str]]:
-    """The exact accessor TODO set formerly calculated inside the scheduler."""
+def _field_anchors(layout, target: Path, *,
+                   api_headers_only: bool = False) -> dict[NodeKey, list[str]]:
+    """Return accessor TODOs keyed by the type's full graph identity.
+
+    An API-only campaign exposes fields only when the aggregate definition is
+    itself published by an ``api_headers`` file.  A public forward declaration
+    may resolve to a private definition so the wrapper can bind the type, but
+    that private layout must remain opaque.  Keying by ``(tag, defined_in)``
+    also prevents a public definition from donating its fields to an unrelated
+    private aggregate with the same tag.
+    """
     from compose import scope as compose_scope
-    from crustify_oracle import manifests
+    from crustify_oracle import manifests, scope
     from crustify_oracle.query import scope_touched_index
 
-    touched = scope_touched_index(layout, target, compose_scope.TARGETED)
-    touched = {tag: {name for names in by_file.values() for name in names}
-               for tag, by_file in touched.items()} or None
-    out: dict[str, list[str]] = {}
+    api_paths = None
+    touched = None
+    if api_headers_only:
+        inventory = scope.build(layout, target, stage="schedule fields")
+        api_paths = compose_scope.load_api_paths(inventory)
+    else:
+        touched = scope_touched_index(layout, target, compose_scope.TARGETED)
+        touched = {tag: {name for names in by_file.values() for name in names}
+                   for tag, by_file in touched.items()} or None
+
+    out: dict[NodeKey, list[str]] = {}
     for entry in manifests.entries(layout, target, "types", stage="schedule"):
         tag = entry.get("name") or entry.get("type")
         if not tag:
+            continue
+        defined_in = entry.get("defined_in")
+        key = (tag, defined_in)
+        if api_paths is not None and defined_in not in api_paths:
+            out[key] = []
             continue
         names = [f["name"] for f in entry.get("fields") or []
                  if isinstance(f, dict) and f.get("name")]
         if touched is not None:
             names = [name for name in names if name in touched.get(tag, set())]
-        out[tag] = names
+        out[key] = names
     return out
 
 
@@ -274,7 +295,8 @@ def build_campaign(layout, target: Path, *, names: list[str] | None,
             nodes = [node for node in nodes if node.id not in bound_ops]
     if not nodes:
         raise SystemExit("schedule: nothing selected after lifecycle filtering")
-    anchors = _field_anchors(layout, target)
+    anchors = _field_anchors(layout, target,
+                             api_headers_only=api_headers_only)
     def section(node: Node) -> str:
         key = (node.id, node.defined_in or "")
         return "imported" if key in imported_allowed else "targeted"
@@ -303,7 +325,7 @@ def build_campaign(layout, target: Path, *, names: list[str] | None,
                 "kind": batch.route,
                 "source_file": batch.file,
                 "items": [{**_node_doc(unit.node),
-                           "field_anchors": anchors.get(unit.node.id, [])}
+                           "field_anchors": anchors.get(unit.node.key, [])}
                           for unit in batch.units],
             } for batch in batches],
         })

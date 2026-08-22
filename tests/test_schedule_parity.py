@@ -4,7 +4,7 @@ import unittest
 from unittest.mock import patch
 
 from crustify_oracle.dag import Node
-from crustify_oracle.schedule import Unit, _pack, build_campaign
+from crustify_oracle.schedule import Unit, _field_anchors, _pack, build_campaign
 
 
 def _node(name: str, *, kind: str = "symbol", home: str = "src/a.c",
@@ -22,6 +22,47 @@ def _node(name: str, *, kind: str = "symbol", home: str = "src/a.c",
 
 
 class SchedulePackingParityTests(unittest.TestCase):
+    def test_api_field_anchors_keep_only_public_definitions(self) -> None:
+        inventory = {
+            "api": {"files": ["include/public.h"]},
+            "targeted": {},
+            "imported": {},
+        }
+        entries = [{
+            "name": "opaque_st",
+            "defined_in": "src/private.c",
+            "fields": [{"name": "private_field"}],
+        }, {
+            "name": "visible_st",
+            "defined_in": "include/public.h",
+            "fields": [{"name": "public_field"}],
+        }, {
+            "name": "collision_st",
+            "defined_in": "src/one.c",
+            "fields": [{"name": "private_collision"}],
+        }, {
+            "name": "collision_st",
+            "defined_in": "include/public.h",
+            "fields": [{"name": "public_collision"}],
+        }]
+
+        with patch("crustify_oracle.scope.build", return_value=inventory), \
+                patch("crustify_oracle.manifests.entries",
+                      return_value=entries):
+            anchors = _field_anchors(
+                object(), None, api_headers_only=True)
+
+        self.assertEqual(anchors[("opaque_st", "src/private.c")], [])
+        self.assertEqual(
+            anchors[("visible_st", "include/public.h")],
+            ["public_field"],
+        )
+        self.assertEqual(anchors[("collision_st", "src/one.c")], [])
+        self.assertEqual(
+            anchors[("collision_st", "include/public.h")],
+            ["public_collision"],
+        )
+
     def test_old_batch_boundaries_are_preserved(self) -> None:
         units = [
             Unit(_node("opaque_a", kind="type", home="include/a.h"), []),
