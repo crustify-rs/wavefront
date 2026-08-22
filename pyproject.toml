@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "crustify-oracle"
+version = "0.1.0"
+description = "Deterministic semantic analysis and campaign scheduling for C codebases"
+requires-python = ">=3.13"
+dependencies = []
+
+[project.scripts]
+crustify-oracle = "crustify_oracle.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["crustify_oracle*", "compose*"]

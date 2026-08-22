@@ -1,0 +1,19 @@
+{
+  "_comment": [
+    "Example <repo>/crustify/oracle/targets/<target>/oracle-config.json.",
+    "Paths are repo-root-relative. A trailing slash expands recursively.",
+    "impl_files names sources and private headers implementing the library.",
+    "api_headers names headers publishing its API. The oracle is objective-neutral."
+  ],
+  "impl_files": [
+    "ssl/",
+    "include/internal/statem.h"
+  ],
+  "api_headers": [
+    "include/openssl/ssl.h"
+  ],
+  "out_of_scope": {
+    "paths": [],
+    "features": ["OPENSSL_NO_DEPRECATED_3_0"]
+  }
+}
