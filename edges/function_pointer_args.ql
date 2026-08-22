@@ -47,7 +47,7 @@
  *                        const-qualified; "false" otherwise
  *   depth              : pointer depth — 1 for `T *`, 2 for `T **`, …
  *
- * Consumer: `utils/codeql/compose/syms_manifest.py` — fills the
+ * Consumer: `src/compose/syms_manifest.py` — fills the
  * composer-side fields of `ptr_args[]` on every `function_*` entry
  * in `wrap/syms.json` and `port/syms.json`.
  *

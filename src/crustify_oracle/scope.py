@@ -87,8 +87,7 @@ def build(layout: Layout, target: Path, *, stage: str) -> dict:
             f"under {layout.repo_root} matches, or name only files this build "
             f"never compiled (the sets are anchored on the T1 tables).")
     # The imported half needs the targeted half, and only that — it reads
-    # neither syms.json nor types.json, so scope stands alone ahead of the
-    # manifest composers.
+    # no composed type or symbol records, so scope stands alone ahead of them.
     manifest[_scope.IMPORTED] = compose_import(
         t1, t2, manifest,
         _scope.load_csv(includes_csv),

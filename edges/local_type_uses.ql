@@ -16,7 +16,7 @@
  * mentions the signature query misses. Together they enumerate
  * every function that "mentions" a type in any form, which is what
  * `opaque_in` minus `non_opaque_in` partitioning requires
- * (see `utils/codeql/compose/types_manifest.py`).
+ * (see `src/compose/types_manifest.py`).
  *
  * Pointer / array / qualifier wrapping is unwrapped to find the
  * underlying UserType — `T *x` records `T`, not the pointer type.

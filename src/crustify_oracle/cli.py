@@ -58,9 +58,8 @@ def build_parser() -> argparse.ArgumentParser:
              "CodeQL database at crustify/oracle/codeql/db/ and write one CSV per "
              "query under crustify/oracle/codeql/{t1,t2}/. The database is NOT "
              "created here — build the project under `codeql database create` "
-             "yourself first. The one oracle command with side effects, and "
-             "the only one that must be run explicitly: everything else "
-             "derives from these tables on demand. Takes minutes — run it only "
+             "yourself first. Everything else derives from these tables on "
+             "demand. Takes minutes — run it only "
              "when the extraction is genuinely stale.",
     )
     schedule = sub.add_parser(
@@ -93,7 +92,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 def _add_query_flags(p: argparse.ArgumentParser, *, facets: bool) -> None:
     """Flags for `query types`/`query syms` — the read-only oracle, resolved
-    from the manifest (dag-free). With no `--name` they enumerate (filtered by
+    from composed records (dag-free). With no `--name` they enumerate (filtered by
     scope / `--file`) as a name list; with `--name T` they
     introspect one entry — always the WHOLE record (several names → several
     records). On a type, `--fields`/`--lifecycle-ops` print its windowable lists
@@ -151,8 +150,6 @@ def _add_query_flags(p: argparse.ArgumentParser, *, facets: bool) -> None:
                    dest="files",
                    help="Restrict/disambiguate by defining file.")
     facet = p.add_mutually_exclusive_group()
-    facet.add_argument("--manifest", action="store_true",
-                       help="Introspect: print the types.json/syms.json that homes this entry.")
     # `--update` is available for BOTH subjects (types AND syms): the schema
     # boundary through which a wrapper agent merges its findings.
     facet.add_argument("--update", default=None, metavar="FINDINGS",
@@ -161,7 +158,7 @@ def _add_query_flags(p: argparse.ArgumentParser, *, facets: bool) -> None:
                             "partial-merge under a lock. types: lifecycle + per-field "
                             "ptr. syms: macro kind, per-arg/return ownership "
                             "(ptr_args/ptr_ret), and the symbol's lifecycle role "
-                            "(lifetime). The agent never edits the manifest directly.")
+                            "(lifetime). The agent never edits the ownership store directly.")
     facet.add_argument("--update-help", action="store_true", dest="update_help",
                        help="Print the findings JSON schema that --update expects "
                             "for this subject (types vs syms), then exit. No --name "
@@ -465,8 +462,6 @@ def _dispatch_query(args: argparse.Namespace, target: Path) -> None:
         update=getattr(args, "update", None),
         update_help=bool(getattr(args, "update_help", False)),
         schema=bool(getattr(args, "schema", False)),
-        create=getattr(args, "create", None),
-        manifest=bool(getattr(args, "manifest", False)),
         lifetime_for=getattr(args, "lifetime_for", None),
         taking=getattr(args, "taking", None),
         calling=getattr(args, "calling", None),

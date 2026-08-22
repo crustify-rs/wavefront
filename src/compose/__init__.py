@@ -1,5 +1,5 @@
 """Composer layer — deterministic Python over the CodeQL fact CSVs (Tier 1+2
-queries under `utils/codeql/entities/` and `utils/codeql/edges/`).
+queries under the oracle's `entities/` and `edges/` CodeQL pack directories).
 
 Emits the structural half of the type and symbol records, the scope manifest
 and the dependency dag. Everything here is scope-agnostic except where a

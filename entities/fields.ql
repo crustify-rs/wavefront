@@ -64,7 +64,7 @@
  *                      Sees THROUGH typedefs that hide the star, which
  *                      the `field_type` string cannot show
  *
- * Consumer: `utils/codeql/compose/types_manifest.py` —
+ * Consumer: `src/compose/types_manifest.py` —
  * populates `fields[].type` per struct entry in
  * `port/types.json` and `wrap/types.json`, omitting the `type`
  * key for scalar fields per the schema rule above.

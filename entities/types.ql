@@ -96,7 +96,7 @@
  *       cut.
  *   The struct-rooted filter is applied at composition time
  *   (deterministic Python, NOT agent reasoning) — see
- *   `utils/codeql/compose/`.
+ *   `src/compose/`.
  *
  * No `hasDefinition()` filter at the outer level — opaque types
  * (forward-declared with no full body in the DB, e.g.

@@ -1,8 +1,7 @@
 """Scope classification — the load-bearing composer every other
 composer imports.
 
-The classification rule is the definition-anchored rule documented
-in `utils/codeql/README.md`:
+The classification rule is definition-anchored:
 
   An entity is TARGETED iff EITHER:
     1. (Primary path) It has a definition in the CodeQL database AND
@@ -368,7 +367,7 @@ def _entry_pair(src) -> tuple[list, list]:
     legacy analysis-root path, and return the pair.
 
     The pair is the live form: records are composed and store-overlaid by
-    :mod:`crustify.manifests`, with no per-stem tree to walk. The path form
+    :mod:`crustify_oracle.manifests`, with no per-stem tree to walk. The path form
     stays for the standalone composer CLIs, which run outside the orchestrator
     and still take a directory."""
     if isinstance(src, tuple):

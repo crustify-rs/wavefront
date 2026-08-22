@@ -1,11 +1,8 @@
-"""dag.py — the dependency-graph model and the readers built on it.
+"""Dependency-graph model and shared readers.
 
-``deps-dag.json`` is a deterministic artifact of the C; this module is how every
-consumer reads it. Split out of :mod:`crustify._schedule` because it is not
-scheduling: the wrap scheduler and ``crustify-oracle query`` both need the node
-model, the DAG loader, the type metadata and the canonical op ordering, and
-routing query's reads through the scheduler made an oracle look like it depended
-on a stage it has nothing to do with.
+The graph is deterministically composed from C facts and stored only in a
+fingerprinted private cache. Scheduling and ``query dag`` share this node model,
+type metadata, and canonical lifecycle-operation ordering.
 
 The ordering in particular is shared ON PURPOSE — :func:`ordered_ops` is the one
 definition both the scheduler and ``query types --lifecycle-ops`` consume, so the two
@@ -67,17 +64,7 @@ def build(layout, target: Path, *, stage: str,
           api_headers_only: bool = False) -> dict:
     """Compose this target's DAG **in memory** and return it.
 
-    There is no on-disk `deps-dag.json` in the read path any more. The graph is
-    a pure function of the CodeQL CSVs and `in-memory inventory`, so a cached copy is
-    only ever as good as its last recompose — and the failure it produces is
-    silent, not loud: a stale file schedules a wave against yesterday's layering
-    and nothing says so. Composing costs well under a second against the several
-    minutes any stage that needs it goes on to spend.
-
-    `analyze dag --dump` still writes the JSON, for reading and diffing. Nothing
-    reads it back.
-
-    Both sides come from :mod:`crustify.manifests` -- there is no analysis tree
+    Both sides come from :mod:`crustify_oracle.manifests` -- there is no analysis tree
     to walk. The graph is a function of the CodeQL tables and `in-memory inventory`
     alone; the store overlay contributes nothing to it, by design (a
     submission must never move a layer).
@@ -110,7 +97,7 @@ def build(layout, target: Path, *, stage: str,
 
 
 def load_nodes(dag: dict) -> tuple[dict[SymKey, Node], dict[str, list[SymKey]]]:
-    """Flatten ``deps-dag.json`` into ``(by_key, by_name)``. SCC super-nodes are
+    """Flatten a composed DAG into ``(by_key, by_name)``. SCC super-nodes are
     flattened to their members (each member keeps its own deps/layer)."""
     by_key: dict[SymKey, Node] = {}
     by_name: dict[str, list[SymKey]] = {}
@@ -199,12 +186,9 @@ def ordered_ops(node: Node, by_key: dict[SymKey, Node], lifecycle: set[str],
 
     Membership comes from ``lifecycle`` — the op-name set reverse-derived from
     the analysis tree's ``lifetime`` records (:func:`load_type_meta` for the
-    scheduler, ``_resolve`` for query) — and NOT from the dag. ``deps-dag.json``
-    used to carry an ``ops`` list per type node, which made a deterministic
-    artifact of the C a function of agent output, and left two sources to drift
-    apart the moment a wave submitted a lifetime without a recompose. Reading it
-    at schedule time also means a submission takes effect on the next wave with
-    no ``analyze dag`` in between.
+    scheduler, ``_resolve`` for query) — and not from the DAG. Reading it at
+    schedule time means a submission takes effect on the next wave without
+    rebuilding the graph.
 
     A lifetime record names a FUNCTION, not a ``(name, defined_in)`` key, so
     membership is by id over ``by_key``; ``node_kind`` guards the case of a type

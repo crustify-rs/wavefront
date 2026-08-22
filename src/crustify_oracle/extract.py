@@ -3,8 +3,8 @@
 Runs the T1 (entities) + T2 (edges) `.ql` batches against the CodeQL database
 at `crustify/oracle/codeql/db/` and writes one CSV per query under
 `crustify/oracle/codeql/{t1,t2}/`. Every other artifact derives from those tables on
-demand: scope and the dag through :mod:`crustify.cache`, the type and symbol
-records through :mod:`crustify.manifests`.
+demand: scope and the dag through :mod:`crustify_oracle.cache`, the type and
+symbol records through :mod:`crustify_oracle.manifests`.
 
 The database itself is not produced here — configuring the project, building it
 under `codeql database create --language=cpp --command=...`, and depositing the
@@ -17,8 +17,7 @@ import sys
 from pathlib import Path
 
 from crustify_oracle.layout import Layout
-
-_CRUSTIFY_ROOT = Path(__file__).resolve().parent.parent.parent
+from crustify_oracle.resources import data_root
 
 
 def extract_ql(target: Path) -> None:
@@ -49,7 +48,7 @@ def extract_ql(target: Path) -> None:
         )
         sys.exit(1)
 
-    succeeded, failed = extract_t1_t2(db, _CRUSTIFY_ROOT, layout.codeql)
+    succeeded, failed = extract_t1_t2(db, data_root(), layout.codeql)
     print(
         f"[crustify-oracle extract-ql] {succeeded} queries ok, "
         f"{failed} failed"

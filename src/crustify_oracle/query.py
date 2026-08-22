@@ -1,18 +1,9 @@
-"""crustify-oracle query — read-only semantic records and graph views.
+"""Semantic record, inventory, and dependency-graph queries.
 
-Lists types / symbols filtered by scope, synthetic kind, dag layer,
-name, and source file. It is the policy/inspection surface: the action commands
-(``wrap`` / ``port``) are scope-mechanisms, and you pipe ``query`` output into
-their ``--name``. Pure read — no side effects.
-
-Output modes:
-  * plain (default): one bare ``id`` per line, deduped, sorted by ``(layer, id)``
-    — xargs-ready (``crustify <t> query types --imported-only | xargs crustify <t> translate --name``).
-    Name collisions (same-named statics in different TUs, or a type/symbol tag
-    clash) print the id once; use ``--file`` to target one, or ``--json`` to see
-    the multiplicity.
-  * ``--json``: one record per ``(id, defined_in)`` — collision-explicit —
-    carrying ``{id, kind, subkind, scope, layer, defined_in}``.
+Enumeration and introspection compose records from the extracted CodeQL tables
+and the ownership store. Graph views use the deterministic private DAG cache.
+Queries are read-only except ``query {types|symbols} --update``, which validates
+and atomically merges ownership findings into the store.
 """
 from __future__ import annotations
 
@@ -22,8 +13,6 @@ import re
 import sys
 from pathlib import Path
 
-
-_CRUSTIFY_ROOT = Path(__file__).resolve().parent.parent.parent
 
 def query(
     target: Path,
@@ -43,9 +32,6 @@ def query(
     update: str | None = None,
     update_help: bool = False,
     schema: bool = False,
-    create: str | None = None,
-    rs: bool = False,
-    manifest: bool = False,
     lifetime_for: str | None = None,
     taking: str | None = None,
     calling: str | None = None,
@@ -54,13 +40,11 @@ def query(
     depth: int = 1,
     array: bool = False,
 ) -> None:
-    """Read-only oracle over types / symbols, resolved from the composer
-    manifest (dag-free; graph walks live in ``query dag``).
+    """Oracle over composed type/symbol records (dag-free; graph walks live in
+    ``query dag``).
 
-      * no ``--name``    → **enumerate** the (filtered) entries — bare names,
-                           or whole records with ``--with-details``.
-      * ``--name T``     → **introspect** one — a summary record by default,
-                           the whole record with ``--with-details``;
+      * no ``--name``    → **enumerate** filtered entries.
+      * ``--name T``     → **introspect** one whole record;
                            ``--fields`` / ``--lifecycle-ops`` (types) print
                            its windowable lists. (The entry's ``.rs`` module is
                            found via ``crates locate --name``, not here.)
@@ -119,15 +103,15 @@ def query(
             "an import type reports what the foreign library touches "
             "internally — true, and not what a wrapper is built from. Drop the "
             "flag for every declared field, or use --targeted-only.")
-    if (type_facets or manifest or update is not None) and len(name_list) != 1:
+    if (type_facets or update is not None) and len(name_list) != 1:
         raise SystemExit(
-            f"query {subject}: facets / --manifest / --update need exactly one --name.")
+            f"query {subject}: facets / --update need exactly one --name.")
     if name_list:
         _introspect(target, kind=kind, names=name_list, files=files,
                     api_only=api_only,
                     fields=fields, lifecycle_ops=lifecycle_ops, users=users,
                     field_touchers=field_touchers,
-                    update=update, manifest=manifest,
+                    update=update,
                     imported_only=imported_only, targeted_only=targeted_only)
     else:
         _enumerate(target, kind=kind, files=files,
@@ -137,7 +121,7 @@ def query(
 
 
 # A type SPEC is a struct tag / typedef, or one of two keywords naming an
-# UNTYPED lifecycle tier (no types.json entry of its own):
+# UNTYPED lifecycle tier (no type record of its own):
 #   `void`   -- raw, byte-level objects (the untyped tier; CRYPTO_free/memdup).
 #   `string` -- NUL-terminated strings (CRYPTO_strdup); matched by the char
 #               family OR the wrapper's own `ptr.string` verdict.
@@ -645,29 +629,22 @@ def _enumerate(
 
 
 def _introspect(
-    target: Path, *, kind: str, names, files, fields, lifecycle_ops, manifest,
+    target: Path, *, kind: str, names, files, fields, lifecycle_ops,
     imported_only, targeted_only, api_only=False, users=False,
     field_touchers=False, update=None,
 ) -> None:
     """One named entity's record (summary / whole), or — for a single type —
     its windowable ``--fields`` / ``--lifecycle-ops`` / ``--users`` /
-    ``--field-touchers`` lists, the ``--manifest`` types.json that homes it, or
-    a ``--update`` findings ingest. (The entry's ``.rs`` module is found via
+    ``--field-touchers`` lists, or a ``--update`` findings ingest. (The entry's
+    ``.rs`` module is found via
     ``crates locate --name``.)"""
     from crustify_oracle import dag as D
 
-    if (fields or lifecycle_ops or users or field_touchers or manifest
+    if (fields or lifecycle_ops or users or field_touchers
             or update is not None):
         layout, node, by_key = _resolve(target, kind=kind, name=names[0],
                                         files=files,
                                         with_ops=bool(lifecycle_ops or users))
-        if manifest:
-            # One store for the whole repo now -- the per-stem manifest an
-            # entity used to home in is gone. Kept because agents call it to
-            # learn where their submissions land.
-            from crustify_oracle import store as _store
-            print(_store.path(layout))
-            return
         if update is not None:
             if kind == "type":
                 _update_type(layout, target, node.id, node.defined_in, update)
@@ -894,7 +871,7 @@ def _field_touchers(layout, target, tag: str, defined_in: str | None, *,
 # ----------------------------------------------------------- --update ingest
 
 # A type stores NO lifecycle of its own. Which routines drop / dispose / clone
-# it is recorded once, on the acting symbol (`syms.json`'s entry-level
+# it is recorded once, on the acting symbol record's entry-level
 # `lifetime`), and read back by reverse lookup -- `query symbols --lifetime-for
 # <TAG>`, or `scope.build_lifecycle_index` composer-side. So the type findings
 # surface is the field layout only.
@@ -931,7 +908,7 @@ _PTR_AGENT_KEYS = {"scalar", "array", "string", "owned", "borrowed",
 # them, and on an untyped `void *` whose concrete element decides at runtime.
 _LIFETIME_KEYS = {"for", "is_dropper", "is_disposer", "is_cloner"}
 _FORK_KEYS = {"ptr_args", "ptr_ret", "lifetime", "callsites"}
-# The concurrency binding on a GLOBAL (or, in types.json, a struct field): the
+# The concurrency binding on a global or struct-field record: the
 # lock object guarding the slot plus its acquire/release op lists. It sits at the
 # entry level (sibling of `ptr`), not inside `ptr`, because the guarded datum is
 # often a non-pointer (a refcount int, a flag).
@@ -944,8 +921,9 @@ def _schema(kind: str) -> str:
     Distinct from ``--update-help`` (:func:`_findings_schema`), which gives the
     submission *shape* + rules; meaning and shape are never duplicated. Empty
     string if the doc is unreadable."""
-    root = Path(__file__).resolve().parents[2]
-    doc = root / "docs" / "schemas" / ("types.md" if kind == "type" else "syms.md")
+    from crustify_oracle.resources import schema_dir
+
+    doc = schema_dir() / ("types.md" if kind == "type" else "syms.md")
     try:
         text = doc.read_text()
     except OSError:
@@ -973,7 +951,7 @@ def _findings_schema(kind: str) -> dict:
             "_see": "query types --schema for field meaning + enforced invariants",
             "_lifecycle": ("NOT submitted here — which routines drop / dispose / "
                            "clone this type is recorded on the acting SYMBOL "
-                           "(syms.json `lifetime`), and read back with "
+                           "(the symbol record's `lifetime`), and read back with "
                            "`query symbols --lifetime-for <TAG>`."),
             "fields": {
                 "<field_name>": {
@@ -1122,7 +1100,7 @@ def _ptr_invariant_errors(field: str, ptr: dict, field_type: str) -> list[str]:
         e.append(f"field {field!r}: borrowed set but lifetime unset")
     if "lifetime" in ptr:
         e.append(f"field {field!r}: `lifetime` (is_dropper/is_disposer/is_cloner) "
-                 "is a SYMBOL-level block in syms.json -- a struct field's "
+                 "is a symbol-level block -- a struct field's "
                  "lifecycle derives from its field-type's record, not from the "
                  "field")
     owned = ptr.get("owned")
@@ -1148,17 +1126,15 @@ def _locked_update(path: Path, apply) -> None:
     """Serialize a read-modify-write of `path` against concurrent ``--update``
     processes, then install the result atomically.
 
-    The exclusive lock is held on the manifest's PARENT DIRECTORY fd, NOT on the
+    The exclusive lock is held on the store's PARENT DIRECTORY fd, not on the
     data file. The merge is committed by an atomic ``os.replace``, which swaps in
     a NEW inode — so a lock held on the data file's own fd would not serialize a
     process that opens the file fresh, and a writer that opened before the swap
     would read-modify-write the orphaned pre-update inode (the lost-update race
     this fixes). The directory inode never moves (an in-dir rename leaves it
     intact), so every writer contends on the one lock and leaves no on-disk
-    artifact. The data file is (re-)read only AFTER the lock is acquired, so each
-    writer sees the latest committed content. Lock granularity is per-dir; manifest
-    kinds (types.json/syms.json) are written in separate analyze stages, so this
-    serializes only same-file concurrent writers in practice. `apply(doc)` mutates
+    artifact. The data file is re-read only after the lock is acquired, so each
+    writer sees the latest committed content. `apply(doc)` mutates
     the loaded doc in place, or raises ``SystemExit`` to reject (applying nothing)."""
     import fcntl
     import tempfile
@@ -1474,7 +1450,7 @@ def _locked_by_errors(label: str, lb) -> list[str]:
     """Validate a `locked_by` block: null | {lock, lock_op, unlock_op}. `lock`
     names the guarding lock object; `lock_op`/`unlock_op` are lists of the real
     acquire/release functions (the read-vs-write discipline lives in which ops are
-    listed). Shared by globals (syms.json) and, later, struct fields (types.json)."""
+    listed). Shared by global and struct-field records."""
     e: list[str] = []
     if not isinstance(lb, dict):
         e.append(f"{label}: must be null or {{lock, lock_op, unlock_op}}")
@@ -1493,8 +1469,7 @@ def _locked_by_errors(label: str, lb) -> list[str]:
 
 def _update_sym(layout, target, name: str, defined_in: str | None,
                 src: str) -> None:
-    """Ingest an agent *findings* doc for ONE symbol and merge it into syms.json
-    — the schema boundary, so the agent never opens the manifest.
+    """Ingest findings for one symbol and merge them into the ownership store.
 
     `src` is a path, or ``"-"`` for stdin. Findings shape:
     ``{macro?, ptr_args?: {<position>: <ptr block>}, ptr_ret?: <ptr block>,
@@ -1578,7 +1553,7 @@ def _update_sym(layout, target, name: str, defined_in: str | None,
             if not is_global:
                 errors.append(
                     f"locked_by: {name!r} is {ekind!r}, not a global — a struct "
-                    f"field's lock binding lives on its field record (types.json)")
+                    f"field's lock binding lives on its composed field record")
             else:
                 errors.extend(_locked_by_errors("locked_by", f["locked_by"]))
 
@@ -1839,7 +1814,7 @@ def _records(target, kind, names, files, *, imported_only=False,
 
 
 def _load_type_entry(layout, target, tag: str, defined_in: str | None) -> dict | None:
-    """The raw ``types.json`` manifest entry for ``tag`` (preferring the one whose
+    """The composed type record for ``tag`` (preferring the one whose
     ``defined_in`` matches, to disambiguate a same-tag collision)."""
     def _find(pool: list) -> dict | None:
         fallback = None
@@ -2142,7 +2117,7 @@ def query_dag(
         every wrap/port consumer just ignores the key.
 
         `layer` and `depth` are emitted unconditionally because they exist
-        NOWHERE else: a types.json / syms.json record carries neither, so
+        NOWHERE else: a composed type/symbol record carries neither, so
         piping an id into `query types` cannot recover them. Everything else a
         caller might want (fields, ops, ownership, casts) IS in those records,
         which is why this view stays thin -- `id` + `defined_in` is enough to

@@ -28,7 +28,7 @@
  *                      definition site, or "" if no full-body
  *                      definition is in the DB
  *
- * Consumer: `utils/codeql/compose/types_manifest.py` — global-
+ * Consumer: `src/compose/types_manifest.py` — global-
  * driven reachability gate (scenario 7 in the reach ruleset).
  *
  * Function-local variables and parameters are NOT enumerated here —

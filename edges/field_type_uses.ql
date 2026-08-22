@@ -37,7 +37,7 @@
  *                      definition site, or "" if no full-body
  *                      definition is in the DB
  *
- * Consumer: `utils/codeql/compose/types_manifest.py` —
+ * Consumer: `src/compose/types_manifest.py` —
  * field-driven reachability gate (scenarios 5+6 in the reach
  * ruleset, per the design discussion).
  *

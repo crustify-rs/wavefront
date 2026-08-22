@@ -15,3 +15,10 @@ crustify-oracle = "crustify_oracle.cli:main"
 [tool.setuptools.packages.find]
 where = ["src"]
 include = ["crustify_oracle*", "compose*"]
+
+[tool.setuptools.data-files]
+"share/crustify-oracle" = ["qlpack.yml", "codeql-pack.lock.yml", "identity.qll"]
+"share/crustify-oracle/entities" = ["entities/*.ql"]
+"share/crustify-oracle/edges" = ["edges/*.ql"]
+"share/crustify-oracle/scratch" = ["scratch/*.ql"]
+"share/crustify-oracle/schemas" = ["docs/schemas/*.md"]

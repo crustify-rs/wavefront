@@ -4,9 +4,8 @@
 Builds one scope-agnostic directed graph whose
 nodes are **types** and **all symbols** (functions / macros / globals,
 including a type's lifecycle methods), where ``A -> B`` means "A needs B
-emitted first". Topo-sorted (Tarjan SCC → longest-path layers) it drives both
-the translate stage (import subset) and, once it exists, a port stage (the whole graph, in
-order). See ``docs/WRAP_STAGE_PLAN.md``.
+emitted first". Topo-sorted (Tarjan SCC → longest-path layers), it drives
+``crustify-oracle schedule`` and ``query dag``.
 
 Relationships come straight from the analysis tree:
 
@@ -51,7 +50,7 @@ types. A type's method surface is reverse-derived from the acting symbols'
 ``lifetime``, an LLM-submitted judgement field. Folding op signatures into a
 type's deps made the LAYERING a function of agent output (one dropper
 declaration moved 1,021 nodes by a layer), and merely *listing* the ops made the
-FILE one. Both are gone: ``deps-dag.json`` is a pure function of the C —
+FILE one. The graph is a pure function of the C —
 field types, signature types, ``depends_on`` and the cast graph, every one
 composer-derived from CodeQL — so the same tree always yields the same bytes.
 The wrap scheduler still co-emits a type with its methods; it reverse-derives
@@ -69,11 +68,9 @@ from ``in-memory inventory`` at schedule time. Read-only, deterministic, no Code
 """
 from __future__ import annotations
 
-import argparse
 import collections
 import json
 import re
-import sys
 from pathlib import Path
 from typing import Any
 
@@ -263,7 +260,7 @@ def _entries_of(src, kind: str) -> list:
     legacy analysis-root path.
 
     The pair is the live form -- records composed from the CodeQL tables and
-    overlaid with `ownership-store.json` by :mod:`crustify.manifests`, with no
+    overlaid with `ownership-store.json` by :mod:`crustify_oracle.manifests`, with no
     per-stem tree to walk. The path form stays for this module's own CLI.
     """
     if isinstance(src, tuple):
@@ -1179,32 +1176,3 @@ def compose(analysis_root, scope_json=None, codeql_dir: Path | None = None,
         },
         "layers": layers,
     }
-
-
-# ----------------------------------------------------------------------- cli
-
-def main() -> int:
-    ap = argparse.ArgumentParser(
-        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--analysis-root", required=True, type=Path,
-                    help="<repo_root>/crustify/analysis")
-    ap.add_argument("--out", type=Path, default=None,
-                    help="default: <analysis_root>/deps-dag.json")
-    ap.add_argument("--stdout", action="store_true")
-    args = ap.parse_args()
-    if not args.analysis_root.is_dir():
-        print(f"error: analysis root not found: {args.analysis_root}", file=sys.stderr)
-        return 2
-    dag = compose(args.analysis_root)
-    text = json.dumps(dag, indent=2)
-    if args.stdout:
-        print(text)
-    else:
-        out = args.out or (args.analysis_root / "deps-dag.json")
-        out.write_text(text + "\n")
-        print(f"[deps_dag] {dag['stats']} -> {out}", file=sys.stderr)
-    return 0
-
-
-if __name__ == "__main__":
-    sys.exit(main())
