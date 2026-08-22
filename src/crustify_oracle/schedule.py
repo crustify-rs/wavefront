@@ -245,8 +245,6 @@ def build_campaign(layout, target: Path, *, names: list[str] | None,
             inventory, compose_scope.IMPORTED, kind)
     file_set = set(files or ())
     def keep_scope(node: Node) -> bool:
-        if file_set and (node.defined_in or "") not in file_set:
-            return False
         if ((node.subkind or "").startswith("macro")
                 and node.node_kind == "symbol" and not is_generator(node)):
             return False
@@ -256,17 +254,29 @@ def build_campaign(layout, target: Path, *, names: list[str] | None,
     def keep_seed(node: Node) -> bool:
         if not keep_scope(node):
             return False
+        if file_set and (node.defined_in or "") not in file_set:
+            return False
         if not api_headers_only:
             return True
         keys = {(node.id, node.defined_in or ""), (node.id, "")}
         return bool(keys & api_allowed)
 
-    selected_names = list(names or ())
+    nodes = (_resolve(list(names), by_key, by_name, keep_seed)
+             if names else [])
     if dag_layer is not None:
-        selected_names += sorted({n.id for n in by_key.values()
-                                  if n.layer == dag_layer and keep_seed(n)})
-    nodes = _resolve(selected_names, by_key, by_name, keep_seed,
-                     require_unambiguous=dag_layer is None)
+        nodes += sorted(
+            (n for n in by_key.values()
+             if n.layer == dag_layer and keep_seed(n)),
+            key=lambda n: (n.id, n.defined_in or ""),
+        )
+    elif file_set and not names:
+        nodes += sorted(
+            (n for n in by_key.values() if keep_seed(n)),
+            key=lambda n: (n.id, n.defined_in or ""),
+        )
+    nodes = list({node.key: node for node in nodes}.values())
+    if not nodes:
+        raise SystemExit("schedule: nothing selected in scope.")
     if transitive:
         closure_names = sorted({n.id for n in _closure(nodes, by_key)
                                 if keep_scope(n)})

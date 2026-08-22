@@ -178,6 +178,118 @@ class SchedulePackingParityTests(unittest.TestCase):
             {macro.id: False},
         )
 
+    def test_file_surface_is_the_seed_not_the_dependency_filter(self) -> None:
+        dependency = _node("shared_dependency", home="src/shared.c", loc=3)
+        selected = _node("selected_function", home="src/selected.c", loc=4)
+        selected.layer = 1
+        selected.dep_syms = [dependency.key]
+        graph = {
+            "layers": [
+                [{
+                    "id": dependency.id, "node_kind": dependency.node_kind,
+                    "subkind": dependency.subkind,
+                    "defined_in": dependency.defined_in, "loc": dependency.loc,
+                    "deps": {"types": [], "syms": []},
+                }],
+                [{
+                    "id": selected.id, "node_kind": selected.node_kind,
+                    "subkind": selected.subkind,
+                    "defined_in": selected.defined_in, "loc": selected.loc,
+                    "deps": {"types": [], "syms": [{
+                        "name": dependency.id,
+                        "defined_in": dependency.defined_in,
+                    }]},
+                }],
+            ],
+        }
+        inventory = {
+            "targeted": {
+                "files": ["src/shared.c", "src/selected.c"],
+                "functions": [
+                    {"name": dependency.id,
+                     "defined_in": dependency.defined_in},
+                    {"name": selected.id, "defined_in": selected.defined_in},
+                ],
+                "globals": [], "macros": [], "types": [],
+            },
+            "imported": {
+                "files": [], "functions": [], "globals": [],
+                "macros": [], "types": [],
+            },
+            "api": {
+                "files": [], "functions": [], "globals": [],
+                "macros": [], "types": [],
+            },
+        }
+
+        class Layout:
+            @staticmethod
+            def rel_target(_target):
+                return "."
+
+        with patch("crustify_oracle.scope.build", return_value=inventory), \
+                patch("crustify_oracle.dag.build", return_value=graph), \
+                patch("crustify_oracle.manifests.entries", return_value=[]), \
+                patch("crustify_oracle.schedule._field_anchors",
+                      return_value={}):
+            campaign = build_campaign(
+                Layout(), None, names=None, files=[selected.defined_in],
+                transitive=True, max_syms=50, max_loc=1000,
+                max_types=5, min_fields=10,
+            )
+
+        self.assertCountEqual(
+            [item["name"] for item in campaign["plan_items"]],
+            [dependency.id, selected.id],
+        )
+
+    def test_file_surface_keeps_same_named_nodes_distinct(self) -> None:
+        first = _node("command", home="src/first.c", loc=3)
+        second = _node("command", home="src/second.c", loc=4)
+        graph = {
+            "layers": [[{
+                "id": node.id, "node_kind": node.node_kind,
+                "subkind": node.subkind, "defined_in": node.defined_in,
+                "loc": node.loc, "deps": {"types": [], "syms": []},
+            } for node in (first, second)]],
+        }
+        inventory = {
+            "targeted": {
+                "files": [first.defined_in, second.defined_in],
+                "functions": [
+                    {"name": first.id, "defined_in": first.defined_in},
+                    {"name": second.id, "defined_in": second.defined_in},
+                ],
+                "globals": [], "macros": [], "types": [],
+            },
+            "imported": {
+                "files": [], "functions": [], "globals": [],
+                "macros": [], "types": [],
+            },
+            "api": {
+                "files": [], "functions": [], "globals": [],
+                "macros": [], "types": [],
+            },
+        }
+
+        class Layout:
+            @staticmethod
+            def rel_target(_target):
+                return "."
+
+        with patch("crustify_oracle.scope.build", return_value=inventory), \
+                patch("crustify_oracle.dag.build", return_value=graph), \
+                patch("crustify_oracle.manifests.entries", return_value=[]), \
+                patch("crustify_oracle.schedule._field_anchors",
+                      return_value={}):
+            campaign = build_campaign(
+                Layout(), None, names=None,
+                files=[first.defined_in, second.defined_in],
+                max_syms=50, max_loc=1000, max_types=5, min_fields=10,
+            )
+
+        self.assertEqual(len(campaign["plan_items"]), 2)
+
 
 if __name__ == "__main__":
     unittest.main()
