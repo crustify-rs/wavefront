@@ -253,6 +253,31 @@ def _sig_type_refs(entry: dict) -> set[str]:
     return refs
 
 
+def collect_signature_type_refs_csv(codeql_dir: Path) -> dict[SymKey, set[str]]:
+    """Exact user-type refs keyed by their function/callback definition.
+
+    ``depends_on.types`` deliberately unions signature and body-local type
+    uses.  An empty ``fields`` list does not distinguish the two: a local
+    aggregate named without a field access has the same shape as an opaque
+    signature use.  API graphs therefore read the dedicated T2 signature
+    relations instead of trying to reverse that lossy union.
+    """
+    out: dict[SymKey, set[str]] = collections.defaultdict(set)
+    specs = (
+        ("signature_type_uses.csv", "function_name", "function_def_file"),
+        ("callback_signature_type_uses.csv", "callback_name", "callback_def_file"),
+    )
+    for filename, name_col, file_col in specs:
+        path = codeql_dir / "t2" / filename
+        if not path.exists():
+            continue
+        for row in _scope.load_csv(path):
+            name, type_name = row.get(name_col), row.get("type_name")
+            if name and type_name:
+                out[(name, row.get(file_col) or None)].add(type_name)
+    return dict(out)
+
+
 # ------------------------------------------------------------------- collect
 
 def _entries_of(src, kind: str) -> list:
@@ -321,6 +346,8 @@ def _collect(analysis_root: Path,
 
     tmeta, tedges, tcasts, talias, tgen = (collect_types_csv(codeql_dir) if codeql_dir
                                      else ({}, {}, {}, {}, {}))
+    signature_refs = (collect_signature_type_refs_csv(codeql_dir)
+                      if codeql_dir is not None else None)
     for key, m in tmeta.items():
         tag, df = key
         if tag.startswith("(unnamed"):
@@ -406,10 +433,14 @@ def _collect(analysis_root: Path,
                 for d in dep.get("types") or []:
                     if not d.get("type"):
                         continue
-                    # An imported node keeps signature/opaque uses (fields: [])
-                    # and drops field-derived ones: it binds the type, never
-                    # reads it.
-                    if is_port or not d.get("fields"):
+                    # ``depends_on.types`` unions signature and body uses, and
+                    # both an opaque signature use and a body-local aggregate
+                    # can carry ``fields: []``.  With current T2 facts the
+                    # exact signature relation below owns the shallow graph;
+                    # retain the old heuristic only for legacy callers that
+                    # supplied no CodeQL directory at all.
+                    if is_port or (signature_refs is None
+                                   and not d.get("fields")):
                         n.dep_on_types.add(d["type"])
                 if is_port:
                     for d in dep.get("syms") or []:
@@ -418,6 +449,8 @@ def _collect(analysis_root: Path,
                                 (d["name"], _sym_filekey(d.get("defined_in"),
                                                          d.get("declared_in"))))
             n.sig_type_refs |= _sig_type_refs(e)
+            if signature_refs is not None:
+                n.sig_type_refs |= signature_refs.get(key, set())
     return types, syms, talias
 
 
