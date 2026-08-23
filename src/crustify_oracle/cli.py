@@ -472,7 +472,7 @@ def _dispatch_query(args: argparse.Namespace, target: Path) -> None:
     )
 
 
-def main() -> None:
+def _main() -> None:
     _pin_hash_seed()
     from crustify_oracle import extract as extract_mod
     from crustify_oracle.layout import set_repo_root
@@ -529,6 +529,17 @@ def main() -> None:
         _dispatch_query(args, target)
         return
     raise SystemExit(f"crustify-oracle: unknown command {args.command!r}")
+
+
+def main() -> None:
+    """Run the CLI, treating a closed stdout pipe as a successful consumer exit."""
+    try:
+        _main()
+    except BrokenPipeError:
+        # A downstream consumer such as `head` has all the records it needs.
+        # Replace stdout so interpreter shutdown does not retry flushing the
+        # already-closed pipe and turn this normal pipeline exit into status 120.
+        sys.stdout = open(os.devnull, "w")
 
 
 if __name__ == "__main__":
