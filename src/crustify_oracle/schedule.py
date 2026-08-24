@@ -48,12 +48,22 @@ class Batch:
 
 
 def _resolve(names: list[str], by_key, by_name,
-             keep: Callable[[Node], bool], *, require_unambiguous: bool = True) -> list[Node]:
+             keep: Callable[[Node], bool], *, require_unambiguous: bool = True,
+             prefer_keys: set[NodeKey] | None = None) -> list[Node]:
     out: list[Node] = []
     seen: set[NodeKey] = set()
     unknown: list[str] = []
     for name in names:
         hits = [by_key[k] for k in by_name.get(name, ()) if keep(by_key[k])]
+        if prefer_keys is not None and len(hits) > 1:
+            # A name that the dependency walk actually reached resolves to the
+            # node it reached, not to every node sharing the name. Without this
+            # a same-named twin from a file the target does not own — a `test/`
+            # double of a library struct is the common case — rides in beside
+            # the real entity and gets scheduled as if it were that entity.
+            walked = [n for n in hits if n.key in prefer_keys]
+            if walked:
+                hits = walked
         if require_unambiguous and len(hits) > 1:
             homes = "\n".join(
                 f"      --file {node.defined_in or '<no defining file>'}"
@@ -278,10 +288,11 @@ def build_wave(layout, target: Path, *, names: list[str] | None,
     if not nodes:
         raise SystemExit("schedule: nothing selected in scope.")
     if transitive:
-        closure_names = sorted({n.id for n in _closure(nodes, by_key)
-                                if keep_scope(n)})
+        walked = [n for n in _closure(nodes, by_key) if keep_scope(n)]
+        closure_names = sorted({n.id for n in walked})
         nodes = _resolve(closure_names, by_key, by_name, keep_scope,
-                         require_unambiguous=False)
+                         require_unambiguous=False,
+                         prefer_keys={n.key for n in walked})
     blocked = set(skip or ())
     nodes = [n for n in nodes if n.id not in blocked]
     if not nodes:

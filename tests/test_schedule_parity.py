@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 from crustify_oracle.dag import Node
 from crustify_oracle.schedule import (
-    Unit, _field_anchors, _pack, build_raw_lifetime_wave, build_wave,
+    Unit, _field_anchors, _pack, _resolve, build_raw_lifetime_wave, build_wave,
     write_wave,
 )
 
@@ -331,3 +331,44 @@ class SchedulePackingParityTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ResolveTwinTests(unittest.TestCase):
+    """A closure name must resolve to the node the walk reached.
+
+    `ossl_provider_st` is defined both by the library and by
+    `test/property_test.c`. Both pass scope, so resolving the closure by bare
+    name used to schedule the test double as if it were the library struct.
+    """
+
+    def _pair(self):
+        real = _node("ossl_provider_st", kind="type",
+                     home="crypto/provider_core.c")
+        twin = _node("ossl_provider_st", kind="type",
+                     home="test/property_test.c")
+        by_key = {real.key: real, twin.key: twin}
+        by_name = {"ossl_provider_st": [real.key, twin.key]}
+        return real, twin, by_key, by_name
+
+    def test_prefer_keys_narrows_to_the_walked_node(self) -> None:
+        real, twin, by_key, by_name = self._pair()
+        out = _resolve(["ossl_provider_st"], by_key, by_name, lambda n: True,
+                       require_unambiguous=False,
+                       prefer_keys={real.key})
+        self.assertEqual([n.defined_in for n in out], ["crypto/provider_core.c"])
+        self.assertNotIn(twin.key, {n.key for n in out})
+
+    def test_without_prefer_keys_both_twins_survive(self) -> None:
+        _real, _twin, by_key, by_name = self._pair()
+        out = _resolve(["ossl_provider_st"], by_key, by_name, lambda n: True,
+                       require_unambiguous=False)
+        self.assertEqual(len(out), 2)
+
+    def test_prefer_keys_is_ignored_when_the_walk_reached_neither(self) -> None:
+        # An unrelated preference must not silently empty the selection.
+        _real, _twin, by_key, by_name = self._pair()
+        out = _resolve(["ossl_provider_st"], by_key, by_name, lambda n: True,
+                       require_unambiguous=False,
+                       prefer_keys={("something_else", "x.c")})
+        self.assertEqual(len(out), 2)
+
