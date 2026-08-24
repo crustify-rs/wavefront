@@ -84,8 +84,8 @@ def build_parser() -> argparse.ArgumentParser:
                           help="Maximum summed symbol body LoC per batch (default: 1000).")
     schedule.add_argument("--max-types", type=int, default=5,
                           help="Maximum types per type batch (default: 5).")
-    schedule.add_argument("--min-fields", type=int, default=10,
-                          help="Close a type batch at this declared-field floor (default: 10).")
+    schedule.add_argument("--min-fields", type=int, default=20,
+                          help="Close a type batch at this declared-field floor (default: 20).")
     _add_query_command(sub)
     return p
 

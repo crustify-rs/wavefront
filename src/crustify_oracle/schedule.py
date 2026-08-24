@@ -222,7 +222,7 @@ def build_campaign(layout, target: Path, *, names: list[str] | None,
                    skip: list[str] | None = None, transitive: bool = False,
                    api_headers_only: bool = False, max_syms: int = 50,
                    max_loc: int | None = 1000, max_types: int = 5,
-                   min_fields: int = 10, force: bool = False) -> dict:
+                   min_fields: int = 20, force: bool = False) -> dict:
     """Return a stable, objective-neutral campaign document."""
     from collections import defaultdict
     from compose import scope as compose_scope
