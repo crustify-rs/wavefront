@@ -31,10 +31,12 @@ dependencies, includes fields of public definitions, and treats forward
 declarations as opaque. Without it, scheduling uses implementation bodies and
 full targeted layouts.
 
-Scheduling owns semantic selection, dependency closure, topological waves, and
+Scheduling owns semantic selection, dependency closure, topological steps, and
 the `--max-syms`, `--max-loc`, `--max-types`, and `--min-fields` batch budgets.
-It writes objective-neutral `campaign.json`; the translation runner supplies
-the objective and execution concurrency later.
+It writes a schema-versioned, objective-neutral wave document to the exact
+free-form path supplied with `--output`; the translation runner supplies the
+wave objective and execution concurrency later. Steps execute in order
+behind barriers, while their batches may execute concurrently.
 
 All semantic artifacts live under `<repo>/crustify/oracle/`:
 

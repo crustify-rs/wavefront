@@ -4,7 +4,9 @@ import unittest
 from unittest.mock import patch
 
 from crustify_oracle.dag import Node
-from crustify_oracle.schedule import Unit, _field_anchors, _pack, build_campaign
+from crustify_oracle.schedule import (
+    Unit, _field_anchors, _pack, build_raw_lifetime_wave, build_wave,
+)
 
 
 def _node(name: str, *, kind: str = "symbol", home: str = "src/a.c",
@@ -22,6 +24,18 @@ def _node(name: str, *, kind: str = "symbol", home: str = "src/a.c",
 
 
 class SchedulePackingParityTests(unittest.TestCase):
+    def test_raw_lifetime_wave_uses_v2_steps(self) -> None:
+        class Layout:
+            @staticmethod
+            def rel_target(_target):
+                return "."
+
+        wave = build_raw_lifetime_wave(Layout(), None, "void")
+        self.assertEqual(wave["schema_version"], 2)
+        self.assertEqual(wave["steps"][0]["batches"][0]["kind"],
+                         "raw-lifetime")
+        self.assertNotIn("waves", wave)
+
     def test_api_field_anchors_keep_only_public_definitions(self) -> None:
         inventory = {
             "api": {"files": ["include/public.h"]},
@@ -159,19 +173,22 @@ class SchedulePackingParityTests(unittest.TestCase):
                 patch("crustify_oracle.manifests.entries", return_value=[]), \
                 patch("crustify_oracle.schedule._field_anchors",
                       return_value={}):
-            campaign = build_campaign(
+            wave = build_wave(
                 Layout(), None, names=[public.id], transitive=True,
                 api_headers_only=True, max_syms=50, max_loc=1000,
                 max_types=5, min_fields=10,
             )
 
+        self.assertEqual(wave["schema_version"], 2)
+        self.assertIn("steps", wave)
+        self.assertNotIn("waves", wave)
         self.assertEqual(
-            [item["name"] for item in campaign["plan_items"]],
+            [item["name"] for item in wave["plan_items"]],
             [dependency.id, public.id],
         )
         dependencies = {
             item["name"]: item["in_scope"]
-            for item in campaign["dependency_nodes"]
+            for item in wave["dependency_nodes"]
         }
         self.assertEqual(
             dependencies,
@@ -232,14 +249,14 @@ class SchedulePackingParityTests(unittest.TestCase):
                 patch("crustify_oracle.manifests.entries", return_value=[]), \
                 patch("crustify_oracle.schedule._field_anchors",
                       return_value={}):
-            campaign = build_campaign(
+            wave = build_wave(
                 Layout(), None, names=None, files=[selected.defined_in],
                 transitive=True, max_syms=50, max_loc=1000,
                 max_types=5, min_fields=10,
             )
 
         self.assertCountEqual(
-            [item["name"] for item in campaign["plan_items"]],
+            [item["name"] for item in wave["plan_items"]],
             [dependency.id, selected.id],
         )
 
@@ -282,13 +299,13 @@ class SchedulePackingParityTests(unittest.TestCase):
                 patch("crustify_oracle.manifests.entries", return_value=[]), \
                 patch("crustify_oracle.schedule._field_anchors",
                       return_value={}):
-            campaign = build_campaign(
+            wave = build_wave(
                 Layout(), None, names=None,
                 files=[first.defined_in, second.defined_in],
                 max_syms=50, max_loc=1000, max_types=5, min_fields=10,
             )
 
-        self.assertEqual(len(campaign["plan_items"]), 2)
+        self.assertEqual(len(wave["plan_items"]), 2)
 
 
 if __name__ == "__main__":

@@ -64,9 +64,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     schedule = sub.add_parser(
         "schedule",
-        help="Build deterministic topological waves and write campaign.json.",
+        help="Build an objective-neutral wave document with topological steps.",
     )
-    schedule.add_argument("--output", type=Path, required=True, metavar="PATH")
+    schedule.add_argument(
+        "--output", type=Path, required=True, metavar="PATH",
+        help="Write the wave document to this exact free-form path.",
+    )
     schedule.add_argument("--name", nargs="+", action="extend", default=None)
     schedule.add_argument("--lifetime-for", choices=("void", "string"), default=None)
     schedule.add_argument("--file", nargs="+", dest="files", default=None)
@@ -502,16 +505,16 @@ def _main() -> None:
     if args.command == "schedule":
         from crustify_oracle.layout import Layout
         from crustify_oracle.schedule import (
-            build_campaign, build_raw_lifetime_campaign, write_campaign,
+            build_raw_lifetime_wave, build_wave, write_wave,
         )
         oracle_layout = Layout.discover(target)
         if args.lifetime_for:
             if args.name or args.files or args.dag_layer is not None:
                 raise SystemExit("schedule: --lifetime-for is its own selection")
-            campaign = build_raw_lifetime_campaign(
+            wave = build_raw_lifetime_wave(
                 oracle_layout, target, args.lifetime_for)
         else:
-            campaign = build_campaign(
+            wave = build_wave(
                 oracle_layout, target,
                 names=args.name, files=args.files, dag_layer=args.dag_layer,
                 skip=args.skip, transitive=args.transitive,
@@ -520,9 +523,9 @@ def _main() -> None:
                 max_types=args.max_types, min_fields=args.min_fields,
                 force=args.force,
             )
-        write_campaign(args.output, campaign)
-        print(f"[crustify-oracle schedule] {campaign['summary']['unit_count']} "
-              f"unit(s), {campaign['summary']['batch_count']} batch(es) -> "
+        write_wave(args.output, wave)
+        print(f"[crustify-oracle schedule] {wave['summary']['unit_count']} "
+              f"unit(s), {wave['summary']['batch_count']} batch(es) -> "
               f"{args.output}")
         return
     if args.command == "query":

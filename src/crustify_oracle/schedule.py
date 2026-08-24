@@ -1,4 +1,4 @@
-"""Deterministic campaign planning over the oracle dependency graph."""
+"""Deterministic wave planning over the oracle dependency graph."""
 from __future__ import annotations
 
 import json
@@ -139,7 +139,7 @@ def _coalesce(by_layer: dict[int, list[Unit]], layers: list[int], *, closed: boo
               budgets: dict) -> list[list[int]]:
     if not closed:
         return [[layer] for layer in layers]
-    waves: list[list[int]] = []
+    steps: list[list[int]] = []
     index = 0
     while index < len(layers):
         group = [layers[index]]
@@ -151,9 +151,9 @@ def _coalesce(by_layer: dict[int, list[Unit]], layers: list[int], *, closed: boo
                 break
             group = candidate
             nxt += 1
-        waves.append(group)
+        steps.append(group)
         index = nxt
-    return waves
+    return steps
 
 
 def _node_doc(node: Node) -> dict:
@@ -217,13 +217,13 @@ def _field_anchors(layout, target: Path, *,
     return out
 
 
-def build_campaign(layout, target: Path, *, names: list[str] | None,
-                   files: list[str] | None = None, dag_layer: int | None = None,
-                   skip: list[str] | None = None, transitive: bool = False,
-                   api_headers_only: bool = False, max_syms: int = 50,
-                   max_loc: int | None = 1000, max_types: int = 5,
-                   min_fields: int = 20, force: bool = False) -> dict:
-    """Return a stable, objective-neutral campaign document."""
+def build_wave(layout, target: Path, *, names: list[str] | None,
+               files: list[str] | None = None, dag_layer: int | None = None,
+               skip: list[str] | None = None, transitive: bool = False,
+               api_headers_only: bool = False, max_syms: int = 50,
+               max_loc: int | None = 1000, max_types: int = 5,
+               min_fields: int = 20, force: bool = False) -> dict:
+    """Return a stable, objective-neutral wave document."""
     from collections import defaultdict
     from compose import scope as compose_scope
     from crustify_oracle import dag as dag_mod, manifests, scope
@@ -318,19 +318,19 @@ def build_campaign(layout, target: Path, *, names: list[str] | None,
     layers = sorted(by_layer)
     budgets = {"max_syms": max_syms, "max_loc": max_loc,
                "max_types": max_types, "min_fields": min_fields}
-    wave_layers = _coalesce(by_layer, layers,
+    step_layers = _coalesce(by_layer, layers,
                             closed=transitive and not blocked, budgets=budgets)
-    waves = []
+    steps = []
     batch_count = 0
     batch_files: set[str | None] = set()
-    for group in wave_layers:
-        wave_units = [u for layer in group for u in by_layer[layer]]
-        batches = _pack(wave_units, **budgets)
+    for group in step_layers:
+        step_units = [u for layer in group for u in by_layer[layer]]
+        batches = _pack(step_units, **budgets)
         batch_count += len(batches)
         batch_files |= {batch.file for batch in batches}
-        waves.append({
+        steps.append({
             "layers": group,
-            "unit_count": len(wave_units),
+            "unit_count": len(step_units),
             "batches": [{
                 "kind": batch.route,
                 "source_file": batch.file,
@@ -340,7 +340,7 @@ def build_campaign(layout, target: Path, *, names: list[str] | None,
             } for batch in batches],
         })
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "oracle_target": layout.rel_target(target),
         "api_headers_only": api_headers_only,
         "budgets": budgets,
@@ -355,11 +355,11 @@ def build_campaign(layout, target: Path, *, names: list[str] | None,
                                if key in by_key} - {node.key for node in nodes},
                               key=lambda key: (key[0], key[1] or ""))
         ],
-        "waves": waves,
+        "steps": steps,
     }
 
 
-def build_raw_lifetime_campaign(layout, target: Path, spec: str) -> dict:
+def build_raw_lifetime_wave(layout, target: Path, spec: str) -> dict:
     if spec not in ("void", "string"):
         raise SystemExit("schedule: --lifetime-for must be void or string")
     item = {"name": spec, "defined_in": None, "kind": "raw-lifetime",
@@ -367,21 +367,21 @@ def build_raw_lifetime_campaign(layout, target: Path, spec: str) -> dict:
             "deps": {"types": [], "symbols": []}, "fallback": [],
             "back_fill": [], "generates": [], "field_anchors": []}
     return {
-        "schema_version": 1, "oracle_target": layout.rel_target(target),
+        "schema_version": 2, "oracle_target": layout.rel_target(target),
         "api_headers_only": False,
         "budgets": {"max_syms": 1, "max_loc": None,
                     "max_types": 1, "min_fields": 0},
         "summary": {"unit_count": 1, "layer_count": 1,
                     "batch_count": 1, "file_count": 1},
         "plan_items": [item], "dependency_nodes": [],
-        "waves": [{"layers": [0], "unit_count": 1, "batches": [{
+        "steps": [{"layers": [0], "unit_count": 1, "batches": [{
             "kind": "raw-lifetime", "source_file": f"lifetime-for-{spec}",
             "items": [item],
         }]}],
     }
 
 
-def write_campaign(path: Path, campaign: dict) -> None:
+def write_wave(path: Path, wave: dict) -> None:
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(campaign, indent=2) + "\n")
+    path.write_text(json.dumps(wave, indent=2) + "\n")

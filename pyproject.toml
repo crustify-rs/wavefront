@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "crustify-oracle"
 version = "0.1.0"
-description = "Deterministic semantic analysis and campaign scheduling for C codebases"
+description = "Deterministic semantic analysis and wave scheduling for C codebases"
 requires-python = ">=3.13"
 dependencies = []
 
