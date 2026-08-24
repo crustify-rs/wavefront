@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import unittest
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
 from crustify_oracle.dag import Node
 from crustify_oracle.schedule import (
     Unit, _field_anchors, _pack, build_raw_lifetime_wave, build_wave,
+    write_wave,
 )
 
 
@@ -24,6 +27,24 @@ def _node(name: str, *, kind: str = "symbol", home: str = "src/a.c",
 
 
 class SchedulePackingParityTests(unittest.TestCase):
+    def test_write_wave_requires_an_existing_output_directory(self) -> None:
+        with TemporaryDirectory() as directory:
+            output = Path(directory) / "missing" / "wave.json"
+            with self.assertRaisesRegex(
+                    SystemExit, "output directory does not exist"):
+                write_wave(output, {"schema_version": 2, "steps": []})
+            self.assertFalse(output.parent.exists())
+
+    def test_write_wave_uses_an_orchestrator_scaffolded_directory(self) -> None:
+        with TemporaryDirectory() as directory:
+            campaign_dir = Path(directory) / "campaigns"
+            campaign_dir.mkdir()
+            output = campaign_dir / "wave.json"
+            wave = {"schema_version": 2, "steps": []}
+            write_wave(output, wave)
+            self.assertEqual(output.read_text(),
+                             '{\n  "schema_version": 2,\n  "steps": []\n}\n')
+
     def test_raw_lifetime_wave_uses_v2_steps(self) -> None:
         class Layout:
             @staticmethod

@@ -34,9 +34,11 @@ full targeted layouts.
 Scheduling owns semantic selection, dependency closure, topological steps, and
 the `--max-syms`, `--max-loc`, `--max-types`, and `--min-fields` batch budgets.
 It writes a schema-versioned, objective-neutral wave document to the exact
-free-form path supplied with `--output`; the translation runner supplies the
-wave objective and execution concurrency later. Steps execute in order
-behind barriers, while their batches may execute concurrently.
+free-form path supplied with `--output`. The orchestrator must scaffold its
+parent directory first; the oracle never creates output directories. The
+translation runner supplies the wave objective and execution concurrency
+later. Steps execute in order behind barriers, while their batches may execute
+concurrently.
 
 All semantic artifacts live under `<repo>/crustify/oracle/`:
 

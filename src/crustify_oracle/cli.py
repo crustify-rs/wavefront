@@ -68,7 +68,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     schedule.add_argument(
         "--output", type=Path, required=True, metavar="PATH",
-        help="Write the wave document to this exact free-form path.",
+        help="Write the wave document to this exact free-form path. Its parent "
+             "directory must already exist.",
     )
     schedule.add_argument("--name", nargs="+", action="extend", default=None)
     schedule.add_argument("--lifetime-for", choices=("void", "string"), default=None)

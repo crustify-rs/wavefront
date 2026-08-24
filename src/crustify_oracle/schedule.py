@@ -383,5 +383,7 @@ def build_raw_lifetime_wave(layout, target: Path, spec: str) -> dict:
 
 def write_wave(path: Path, wave: dict) -> None:
     path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
+    if not path.parent.is_dir():
+        raise SystemExit(
+            f"schedule: output directory does not exist: {path.parent}")
     path.write_text(json.dumps(wave, indent=2) + "\n")
