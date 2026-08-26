@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -27,6 +28,33 @@ def _node(name: str, *, kind: str = "symbol", home: str = "src/a.c",
 
 
 class SchedulePackingParityTests(unittest.TestCase):
+    def test_documented_wave_example_is_structurally_consistent(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        wave = json.loads((root / "examples" / "waves.json").read_text())
+
+        self.assertEqual(wave["schema_version"], 2)
+        self.assertEqual(wave["summary"]["unit_count"],
+                         len(wave["plan_items"]))
+        self.assertEqual(wave["summary"]["layer_count"],
+                         len({item["layer"] for item in wave["plan_items"]}))
+
+        batches = [batch for step in wave["steps"]
+                   for batch in step["batches"]]
+        self.assertEqual(wave["summary"]["batch_count"], len(batches))
+        self.assertEqual(
+            wave["summary"]["file_count"],
+            len({batch["source_file"] for batch in batches}),
+        )
+
+        planned = [(item["name"], item["defined_in"])
+                   for item in wave["plan_items"]]
+        scheduled = [(item["name"], item["defined_in"])
+                     for batch in batches for item in batch["items"]]
+        self.assertCountEqual(scheduled, planned)
+        for batch in batches:
+            for item in batch["items"]:
+                self.assertIn("field_anchors", item)
+
     def test_write_wave_requires_an_existing_output_directory(self) -> None:
         with TemporaryDirectory() as directory:
             output = Path(directory) / "missing" / "wave.json"
@@ -371,4 +399,3 @@ class ResolveTwinTests(unittest.TestCase):
                        require_unambiguous=False,
                        prefer_keys={("something_else", "x.c")})
         self.assertEqual(len(out), 2)
-
