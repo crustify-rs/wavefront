@@ -1,7 +1,7 @@
-# crustify-oracle
+# wavefront
 
-- Skill name: crustify-oracle
-- Bin path: crustify-oracle
+- Skill name: wavefront
+- Bin path: wavefront
 - Doc path: README.md
 - Description: Query deterministic semantic records for a C codebase, submit
   ownership findings, and generate objective-neutral, dependency-ordered
