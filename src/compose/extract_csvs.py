@@ -142,12 +142,12 @@ def extract_t1_t2(
     entities_dir = crustify_root / "entities"
     edges_dir = crustify_root / "edges"
 
-    print(f"[crustify-oracle extract-ql] extracting T1 (entities) → "
+    print(f"[wavefront extract-ql] extracting T1 (entities) → "
           f"{out_root / 't1'}/")
     s1, f1, _ = extract_all(db, entities_dir, out_root / "t1")
     print(f"  T1: {s1} ok, {f1} failed")
 
-    print(f"[crustify-oracle extract-ql] extracting T2 (edges) → "
+    print(f"[wavefront extract-ql] extracting T2 (edges) → "
           f"{out_root / 't2'}/")
     s2, f2, _ = extract_all(db, edges_dir, out_root / "t2")
     print(f"  T2: {s2} ok, {f2} failed")

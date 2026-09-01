@@ -58,7 +58,7 @@ def build(layout: Layout, target: Path, *, stage: str) -> dict:
     if not (t1 / "functions.csv").is_file():
         raise SystemExit(
             f"{stage}: no CodeQL T1 tables at {t1}. "
-            f"Run `crustify-oracle {target} extract-ql` first.")
+            f"Run `wavefront {target} extract-ql` first.")
     config_path = layout.config(target)
     if not config_path.is_file():
         raise SystemExit(
@@ -69,7 +69,7 @@ def build(layout: Layout, target: Path, *, stage: str) -> dict:
     if not includes_csv.is_file():
         raise SystemExit(
             f"{stage}: no includes.csv at {includes_csv}. "
-            f"Run `crustify-oracle {target} extract-ql` first.")
+            f"Run `wavefront {target} extract-ql` first.")
 
     import json
     config = json.loads(config_path.read_text())

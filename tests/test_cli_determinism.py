@@ -11,7 +11,7 @@ from crustify_oracle.cli import _pin_hash_seed, main
 class CliDeterminismTests(unittest.TestCase):
     def test_cli_reexecs_with_stable_hash_seed(self) -> None:
         with patch.dict(os.environ, {"PYTHONHASHSEED": "random"}), \
-                patch.object(sys, "argv", ["crustify-oracle", "repo", ".",
+                patch.object(sys, "argv", ["wavefront", "repo", ".",
                                            "query", "files"]), \
                 patch("os.execve") as execute:
             _pin_hash_seed()

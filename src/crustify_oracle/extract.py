@@ -50,7 +50,7 @@ def extract_ql(target: Path) -> None:
 
     succeeded, failed = extract_t1_t2(db, data_root(), layout.codeql)
     print(
-        f"[crustify-oracle extract-ql] {succeeded} queries ok, "
+        f"[wavefront extract-ql] {succeeded} queries ok, "
         f"{failed} failed"
     )
     if failed:

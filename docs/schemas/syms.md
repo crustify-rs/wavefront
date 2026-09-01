@@ -3,7 +3,7 @@
 Field **meaning** for a symbol record — the properties the deterministic
 symbols composer infers, and the ownership judgements an agent submits. The
 exact JSON shape of a submission, and its validation rules, are the *contract*,
-served separately by `crustify-oracle <repo> <target> query symbols
+served separately by `wavefront <repo> <target> query symbols
 --update-help`, so meaning and shape never duplicate.
 
 One record per symbol: a function, macro, global, or callback (a
@@ -219,7 +219,7 @@ to this type to be owned / moved in Rust-native code.
 Generally, we record a function as a lifetime primitive only if it has more than
 one caller / referencer / consumer, or if it is publicly exposed; if it only lives to
 serve as an internal routine with only callers that themselves are lifetime primitives,
-then we can skip recording it. Query `crustify-oracle` to obtain callers / referencers.
+then we can skip recording it. Query `wavefront` to obtain callers / referencers.
 
 If your target type is:
 

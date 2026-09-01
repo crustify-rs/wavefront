@@ -1,4 +1,4 @@
-# crustify-oracle
+# wavefront
 
 Deterministic semantic analysis and scheduling for C-to-Rust work. It does not
 run translation agents and does not know whether a campaign wraps or ports.
@@ -14,7 +14,7 @@ python -m pip install -e .
 Every command starts with two positional arguments:
 
 ```text
-crustify-oracle REPO_ROOT TARGET COMMAND ...
+wavefront REPO_ROOT TARGET COMMAND ...
 ```
 
 | Argument | Meaning |
@@ -43,7 +43,7 @@ always inventory inputs.
 ### `extract-ql`
 
 ```sh
-crustify-oracle REPO_ROOT TARGET extract-ql
+wavefront REPO_ROOT TARGET extract-ql
 ```
 
 Runs the bundled T1 entity and T2 edge queries against
@@ -55,7 +55,7 @@ query pack changes.
 ### `query`
 
 ```sh
-crustify-oracle REPO_ROOT TARGET query SUBJECT [FLAGS]
+wavefront REPO_ROOT TARGET query SUBJECT [FLAGS]
 ```
 
 `SUBJECT` is `types`, `symbols`, `files`, or `dag`. Queries are read-only
@@ -106,14 +106,14 @@ Examples:
 
 ```sh
 # Enumerate the target's published types.
-crustify-oracle /work/project src query types --api-only
+wavefront /work/project src query types --api-only
 
 # Inspect one type, then discover the findings schema.
-crustify-oracle /work/project src query types --name widget_st --fields
-crustify-oracle /work/project src query types --update-help
+wavefront /work/project src query types --name widget_st --fields
+wavefront /work/project src query types --update-help
 
 # Find functions that take widget_st and eventually call widget_release.
-crustify-oracle /work/project src query symbols \
+wavefront /work/project src query symbols \
   --taking widget_st --calling widget_release --depth 3
 ```
 
@@ -151,7 +151,7 @@ globals, and macros.
 ### `schedule`
 
 ```sh
-crustify-oracle REPO_ROOT TARGET schedule --output PATH SELECTION [FLAGS]
+wavefront REPO_ROOT TARGET schedule --output PATH SELECTION [FLAGS]
 ```
 
 Scheduling selects semantic units, optionally closes over their dependencies,
@@ -187,7 +187,7 @@ For example:
 ```sh
 mkdir -p /work/project/crustify/campaigns/widget/logs
 
-crustify-oracle /work/project src schedule \
+wavefront /work/project src schedule \
   --name widget_new widget_free \
   --transitive \
   --max-types 2 \

@@ -56,7 +56,7 @@ def build(layout: Layout, target: Path, kind: str, *, stage: str,
     if not (t1 / "functions.csv").is_file():
         raise SystemExit(
             f"{stage}: no CodeQL T1 tables at {t1}. "
-            f"Run `crustify-oracle {target} extract-ql` first.")
+            f"Run `wavefront {target} extract-ql` first.")
 
     # `scope_json_path=None` disables the seed gate and port/wrap
     # classification, widening the emit to the repo-wide universe.

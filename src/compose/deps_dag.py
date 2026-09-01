@@ -5,7 +5,7 @@ Builds one scope-agnostic directed graph whose
 nodes are **types** and **all symbols** (functions / macros / globals,
 including a type's lifecycle methods), where ``A -> B`` means "A needs B
 emitted first". Topo-sorted (Tarjan SCC → longest-path layers), it drives
-``crustify-oracle schedule`` and ``query dag``.
+``wavefront schedule`` and ``query dag``.
 
 Relationships come straight from the analysis tree:
 

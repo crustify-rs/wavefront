@@ -310,7 +310,7 @@ def build_wave(layout, target: Path, *, names: list[str] | None,
     if not force:
         dropped = sorted({node.id for node in nodes if node.id in bound_ops})
         if dropped:
-            print(f"[crustify-oracle schedule] dropped {len(dropped)} lifecycle "
+            print(f"[wavefront schedule] dropped {len(dropped)} lifecycle "
                   "primitive(s) emitted by their owning type or raw tier: "
                   + ", ".join(dropped[:8]) + (" …" if len(dropped) > 8 else ""))
             nodes = [node for node in nodes if node.id not in bound_ops]

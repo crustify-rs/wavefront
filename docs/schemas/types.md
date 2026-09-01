@@ -3,7 +3,7 @@
 Field **meaning** for a type record — the properties the deterministic types
 composer infers, and the ownership judgements an agent submits. The exact JSON
 shape of a submission, and its validation rules, are the *contract*, served
-separately by `crustify-oracle <repo> <target> query types --update-help`, so
+separately by `wavefront <repo> <target> query types --update-help`, so
 meaning and shape never duplicate.
 
 Each `## <field>` section documents one record field; the heading name is the

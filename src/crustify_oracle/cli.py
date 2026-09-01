@@ -1,10 +1,10 @@
 """Command line interface for semantic queries, findings, and scheduling.
 
-    crustify-oracle <repo_root> <target> extract-ql
-    crustify-oracle <repo_root> <target> query types   --name X [...]
-    crustify-oracle <repo_root> <target> query symbols --name X [...]
-    crustify-oracle <repo_root> <target> query dag     [...]
-    crustify-oracle <repo_root> <target> query files   [...]
+    wavefront <repo_root> <target> extract-ql
+    wavefront <repo_root> <target> query types   --name X [...]
+    wavefront <repo_root> <target> query symbols --name X [...]
+    wavefront <repo_root> <target> query dag     [...]
+    wavefront <repo_root> <target> query files   [...]
 
 Inventory and records are composed in memory. Dependency graphs use a private
 fingerprinted cache. `extract-ql`, `query --update`, and `schedule --output`
@@ -34,7 +34,7 @@ def _pin_hash_seed() -> None:
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
-        prog="crustify-oracle",
+        prog="wavefront",
         description="Semantic analysis, ownership findings, and deterministic scheduling for C.",
     )
     p.add_argument(
@@ -525,14 +525,14 @@ def _main() -> None:
                 force=args.force,
             )
         write_wave(args.output, wave)
-        print(f"[crustify-oracle schedule] {wave['summary']['unit_count']} "
+        print(f"[wavefront schedule] {wave['summary']['unit_count']} "
               f"unit(s), {wave['summary']['batch_count']} batch(es) -> "
               f"{args.output}")
         return
     if args.command == "query":
         _dispatch_query(args, target)
         return
-    raise SystemExit(f"crustify-oracle: unknown command {args.command!r}")
+    raise SystemExit(f"wavefront: unknown command {args.command!r}")
 
 
 def main() -> None:

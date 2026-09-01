@@ -3,22 +3,22 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "crustify-oracle"
+name = "wavefront"
 version = "0.1.0"
 description = "Deterministic semantic analysis and wave scheduling for C codebases"
 requires-python = ">=3.13"
 dependencies = []
 
 [project.scripts]
-crustify-oracle = "crustify_oracle.cli:main"
+wavefront = "crustify_oracle.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
 include = ["crustify_oracle*", "compose*"]
 
 [tool.setuptools.data-files]
-"share/crustify-oracle" = ["qlpack.yml", "codeql-pack.lock.yml", "identity.qll"]
-"share/crustify-oracle/entities" = ["entities/*.ql"]
-"share/crustify-oracle/edges" = ["edges/*.ql"]
-"share/crustify-oracle/scratch" = ["scratch/*.ql"]
-"share/crustify-oracle/schemas" = ["docs/schemas/*.md"]
+"share/wavefront" = ["qlpack.yml", "codeql-pack.lock.yml", "identity.qll"]
+"share/wavefront/entities" = ["entities/*.ql"]
+"share/wavefront/edges" = ["edges/*.ql"]
+"share/wavefront/scratch" = ["scratch/*.ql"]
+"share/wavefront/schemas" = ["docs/schemas/*.md"]

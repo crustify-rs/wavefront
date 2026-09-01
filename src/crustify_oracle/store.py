@@ -37,7 +37,7 @@ _COMMENT = (
     "structural half of each record (field layout, signatures, footprints, "
     "casts) is composed from the CodeQL tables on demand and merged in at read "
     "time, so a re-extract rewrites nothing here. Written only by "
-    "`crustify-oracle <repo> <target> query {types,symbols} --update`; read "
+    "`wavefront <repo> <target> query {types,symbols} --update`; read "
     "through crustify_oracle.manifests. Hand-edit at your own risk: "
     "`--update` validates a submission against the composed skeleton (unknown "
     "field, wrong kind, ptr-invariant violation) and this file does not."

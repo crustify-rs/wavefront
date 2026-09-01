@@ -16,7 +16,7 @@ def data_root() -> Path:
     source = source_root()
     if source is not None:
         return source
-    return Path(sysconfig.get_path("data")) / "share" / "crustify-oracle"
+    return Path(sysconfig.get_path("data")) / "share" / "wavefront"
 
 
 def schema_dir() -> Path:
