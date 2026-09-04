@@ -1,6 +1,9 @@
 {
-  "schema_version": 2,
-  "oracle_target": "src",
+  "schema_version": 3,
+  "oracle_config": {
+    "path": "crustify/campaigns/src/example/wavefront-config.json",
+    "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+  },
   "api_headers_only": false,
   "budgets": {
     "max_syms": 50,
@@ -14,71 +17,8 @@
     "batch_count": 2,
     "file_count": 2
   },
-  "plan_items": [
+  "waves": [
     {
-      "name": "widget_st",
-      "defined_in": "include/widget.h",
-      "kind": "type",
-      "source_kind": "struct",
-      "layer": 0,
-      "loc": 0,
-      "deps": {
-        "types": [],
-        "symbols": []
-      },
-      "fallback": [],
-      "back_fill": [],
-      "generates": []
-    },
-    {
-      "name": "widget_new",
-      "defined_in": "src/widget.c",
-      "kind": "symbol",
-      "source_kind": "function_def",
-      "layer": 1,
-      "loc": 36,
-      "deps": {
-        "types": [
-          {
-            "name": "widget_st",
-            "defined_in": "include/widget.h"
-          }
-        ],
-        "symbols": [
-          {
-            "name": "WIDGET_INIT",
-            "defined_in": "include/widget.h"
-          }
-        ]
-      },
-      "fallback": [],
-      "back_fill": [],
-      "generates": []
-    }
-  ],
-  "dependency_nodes": [
-    {
-      "name": "WIDGET_INIT",
-      "defined_in": "include/widget.h",
-      "kind": "symbol",
-      "source_kind": "macro_function",
-      "layer": 0,
-      "loc": 0,
-      "deps": {
-        "types": [],
-        "symbols": []
-      },
-      "fallback": [],
-      "back_fill": [],
-      "generates": [],
-      "in_scope": false
-    }
-  ],
-  "steps": [
-    {
-      "layers": [
-        0
-      ],
       "unit_count": 1,
       "batches": [
         {
@@ -109,9 +49,6 @@
       ]
     },
     {
-      "layers": [
-        1
-      ],
       "unit_count": 1,
       "batches": [
         {
@@ -129,13 +66,15 @@
                 "types": [
                   {
                     "name": "widget_st",
-                    "defined_in": "include/widget.h"
+                    "defined_in": "include/widget.h",
+                    "scope": "wrap"
                   }
                 ],
                 "symbols": [
                   {
                     "name": "WIDGET_INIT",
-                    "defined_in": "include/widget.h"
+                    "defined_in": "include/widget.h",
+                    "scope": "port"
                   }
                 ]
               },

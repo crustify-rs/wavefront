@@ -213,9 +213,9 @@ def _doc(scope_src) -> dict:
     """Accept the scope manifest either as a `Path` to a `in-memory inventory` or as the
     composed dict itself.
 
-    The dict form is the live one: `crustify.scope.build` composes the manifest
+    The dict form is the live one: `wavefront.scope.build` composes the manifest
     in memory, so nothing has to have written it out first — and a `in-memory inventory`
-    on disk can no longer be silently stale against the `oracle-config.json` a
+    on disk can no longer be silently stale against the `wavefront-config.json` a
     human just edited. The `Path` form stays for the standalone composer CLIs
     and the `--dump` snapshot."""
     if isinstance(scope_src, dict):
@@ -246,7 +246,7 @@ API = "api"
 
 
 def load_targeted_paths(scope_json) -> set[str]:
-    """The campaign's own file set — every file `oracle-config.json`'s
+    """The campaign's own file set — every file `wavefront-config.json`'s
     `impl_files` + `api_headers` named that the build actually compiled.
 
     Objective-neutral: coverage is a property of the file sets.
@@ -263,7 +263,7 @@ def load_targeted_paths(scope_json) -> set[str]:
 
 
 def load_api_paths(scope_json) -> set[str]:
-    """The files `oracle-config.json`'s `api_headers` named, expanded and
+    """The files `wavefront-config.json`'s `api_headers` named, expanded and
     T1-anchored — the headers that PUBLISH the library.
 
     Objective-independent, like every other inventory set. Under
@@ -367,7 +367,7 @@ def _entry_pair(src) -> tuple[list, list]:
     legacy analysis-root path, and return the pair.
 
     The pair is the live form: records are composed and store-overlaid by
-    :mod:`crustify_oracle.manifests`, with no per-stem tree to walk. The path form
+    :mod:`wavefront.manifests`, with no per-stem tree to walk. The path form
     stays for the standalone composer CLIs, which run outside the orchestrator
     and still take a directory."""
     if isinstance(src, tuple):

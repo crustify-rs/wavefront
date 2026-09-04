@@ -34,10 +34,6 @@
  *                 stages need this off the signature, which the `signature`
  *                 column's parameter list alone does not reveal.
  *
- * Consumer: CrustifySymbolAnalyzer, for enriching call-edge results
- * with linkage + signature; also CrustifyTypeAnalyzer when looking up
- * an op's signature for the receiver-heuristic check.
- *
  * No `hasDefinition()` filter here — consumers need declaration-only
  * functions to identify boundary-crossing externs. The def_file ""
  * sentinel surfaces the missing-body case explicitly.

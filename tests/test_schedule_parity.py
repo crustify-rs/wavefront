@@ -6,10 +6,10 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
-from crustify_oracle.dag import Node
-from crustify_oracle.schedule import (
-    Unit, _field_anchors, _pack, _resolve, build_raw_lifetime_wave, build_wave,
-    write_wave,
+from wavefront.dag import Node
+from wavefront.schedule import (
+    Unit, _coalesce, _field_anchors, _pack, _resolve,
+    build_raw_lifetime_wave, build_wave, write_wave,
 )
 
 
@@ -27,27 +27,53 @@ def _node(name: str, *, kind: str = "symbol", home: str = "src/a.c",
     )
 
 
+def _scheduled_items(schedule: dict) -> list[dict]:
+    return [
+        item
+        for scheduled_wave in schedule["waves"]
+        for batch in scheduled_wave["batches"]
+        for item in batch["items"]
+    ]
+
+
 class SchedulePackingParityTests(unittest.TestCase):
+    def test_adjacent_layers_fold_independently_of_closure_selection(self) -> None:
+        producer = _node("producer")
+        consumer = _node("consumer")
+        consumer.layer = 1
+        by_layer = {
+            0: [Unit(producer, scope="targeted")],
+            1: [Unit(consumer, scope="targeted")],
+        }
+        budgets = {
+            "max_syms": 2, "max_loc": 1000,
+            "max_types": 2, "min_fields": 20,
+        }
+
+        self.assertEqual(_coalesce(by_layer, [0, 1], budgets=budgets), [[0, 1]])
+
+        budgets["max_syms"] = 1
+        self.assertEqual(_coalesce(by_layer, [0, 1], budgets=budgets), [[0], [1]])
+
     def test_documented_wave_example_is_structurally_consistent(self) -> None:
         root = Path(__file__).resolve().parents[1]
         wave = json.loads((root / "examples" / "waves.json").read_text())
 
-        self.assertEqual(wave["schema_version"], 2)
-        self.assertEqual(wave["summary"]["unit_count"],
-                         len(wave["plan_items"]))
+        self.assertEqual(wave["schema_version"], 3)
+        items = _scheduled_items(wave)
+        self.assertEqual(wave["summary"]["unit_count"], len(items))
         self.assertEqual(wave["summary"]["layer_count"],
-                         len({item["layer"] for item in wave["plan_items"]}))
+                         len({item["layer"] for item in items}))
 
-        batches = [batch for step in wave["steps"]
-                   for batch in step["batches"]]
+        batches = [batch for scheduled_wave in wave["waves"]
+                   for batch in scheduled_wave["batches"]]
         self.assertEqual(wave["summary"]["batch_count"], len(batches))
         self.assertEqual(
             wave["summary"]["file_count"],
             len({batch["source_file"] for batch in batches}),
         )
 
-        planned = [(item["name"], item["defined_in"])
-                   for item in wave["plan_items"]]
+        planned = [(item["name"], item["defined_in"]) for item in items]
         scheduled = [(item["name"], item["defined_in"])
                      for batch in batches for item in batch["items"]]
         self.assertCountEqual(scheduled, planned)
@@ -60,7 +86,7 @@ class SchedulePackingParityTests(unittest.TestCase):
             output = Path(directory) / "missing" / "wave.json"
             with self.assertRaisesRegex(
                     SystemExit, "output directory does not exist"):
-                write_wave(output, {"schema_version": 2, "steps": []})
+                write_wave(output, {"schema_version": 3, "waves": []})
             self.assertFalse(output.parent.exists())
 
     def test_write_wave_uses_an_orchestrator_scaffolded_directory(self) -> None:
@@ -68,22 +94,22 @@ class SchedulePackingParityTests(unittest.TestCase):
             campaign_dir = Path(directory) / "campaigns"
             campaign_dir.mkdir()
             output = campaign_dir / "wave.json"
-            wave = {"schema_version": 2, "steps": []}
+            wave = {"schema_version": 3, "waves": []}
             write_wave(output, wave)
             self.assertEqual(output.read_text(),
-                             '{\n  "schema_version": 2,\n  "steps": []\n}\n')
+                             '{\n  "schema_version": 3,\n  "waves": []\n}\n')
 
-    def test_raw_lifetime_wave_uses_v2_steps(self) -> None:
+    def test_raw_lifetime_schedule_uses_v3_waves(self) -> None:
         class Layout:
             @staticmethod
-            def rel_target(_target):
-                return "."
+            def config_provenance():
+                return {"path": "scope.json", "sha256": "0" * 64}
 
         wave = build_raw_lifetime_wave(Layout(), None, "void")
-        self.assertEqual(wave["schema_version"], 2)
-        self.assertEqual(wave["steps"][0]["batches"][0]["kind"],
+        self.assertEqual(wave["schema_version"], 3)
+        self.assertEqual(wave["waves"][0]["batches"][0]["kind"],
                          "raw-lifetime")
-        self.assertNotIn("waves", wave)
+        self.assertNotIn("steps", wave)
 
     def test_api_field_anchors_keep_only_public_definitions(self) -> None:
         inventory = {
@@ -109,8 +135,8 @@ class SchedulePackingParityTests(unittest.TestCase):
             "fields": [{"name": "public_collision"}],
         }]
 
-        with patch("crustify_oracle.scope.build", return_value=inventory), \
-                patch("crustify_oracle.manifests.entries",
+        with patch("wavefront.scope.build", return_value=inventory), \
+                patch("wavefront.manifests.entries",
                       return_value=entries):
             anchors = _field_anchors(
                 object(), None, api_headers_only=True)
@@ -214,34 +240,45 @@ class SchedulePackingParityTests(unittest.TestCase):
 
         class Layout:
             @staticmethod
-            def rel_target(_target):
-                return "."
+            def config_provenance():
+                return {"path": "scope.json", "sha256": "0" * 64}
 
-        with patch("crustify_oracle.scope.build", return_value=inventory), \
-                patch("crustify_oracle.dag.build", return_value=graph), \
-                patch("crustify_oracle.manifests.entries", return_value=[]), \
-                patch("crustify_oracle.schedule._field_anchors",
+        with patch("wavefront.scope.build", return_value=inventory), \
+                patch("wavefront.dag.build", return_value=graph), \
+                patch("wavefront.manifests.entries", return_value=[]), \
+                patch("wavefront.schedule._field_anchors",
                       return_value={}):
             wave = build_wave(
                 Layout(), None, names=[public.id], transitive=True,
+                skip=[macro.id],
                 api_headers_only=True, max_syms=50, max_loc=1000,
                 max_types=5, min_fields=10,
             )
 
-        self.assertEqual(wave["schema_version"], 2)
-        self.assertIn("steps", wave)
-        self.assertNotIn("waves", wave)
+        self.assertEqual(wave["schema_version"], 3)
+        self.assertIn("waves", wave)
+        self.assertNotIn("steps", wave)
+        self.assertEqual(len(wave["waves"]), 1)
+        self.assertNotIn("layers", wave["waves"][0])
         self.assertEqual(
-            [item["name"] for item in wave["plan_items"]],
+            sorted({item["layer"] for item in _scheduled_items(wave)}),
+            [0, 1],
+        )
+        self.assertEqual(
+            [item["name"] for item in _scheduled_items(wave)],
             [dependency.id, public.id],
         )
+        public_item = next(
+            item for item in _scheduled_items(wave) if item["name"] == public.id
+        )
         dependencies = {
-            item["name"]: item["in_scope"]
-            for item in wave["dependency_nodes"]
+            item["name"]: item["scope"]
+            for item in public_item["deps"]["symbols"]
+            if item["name"] == macro.id
         }
         self.assertEqual(
             dependencies,
-            {macro.id: False},
+            {macro.id: "port"},
         )
 
     def test_file_surface_is_the_seed_not_the_dependency_filter(self) -> None:
@@ -290,13 +327,13 @@ class SchedulePackingParityTests(unittest.TestCase):
 
         class Layout:
             @staticmethod
-            def rel_target(_target):
-                return "."
+            def config_provenance():
+                return {"path": "scope.json", "sha256": "0" * 64}
 
-        with patch("crustify_oracle.scope.build", return_value=inventory), \
-                patch("crustify_oracle.dag.build", return_value=graph), \
-                patch("crustify_oracle.manifests.entries", return_value=[]), \
-                patch("crustify_oracle.schedule._field_anchors",
+        with patch("wavefront.scope.build", return_value=inventory), \
+                patch("wavefront.dag.build", return_value=graph), \
+                patch("wavefront.manifests.entries", return_value=[]), \
+                patch("wavefront.schedule._field_anchors",
                       return_value={}):
             wave = build_wave(
                 Layout(), None, names=None, files=[selected.defined_in],
@@ -305,7 +342,7 @@ class SchedulePackingParityTests(unittest.TestCase):
             )
 
         self.assertCountEqual(
-            [item["name"] for item in wave["plan_items"]],
+            [item["name"] for item in _scheduled_items(wave)],
             [dependency.id, selected.id],
         )
 
@@ -340,13 +377,13 @@ class SchedulePackingParityTests(unittest.TestCase):
 
         class Layout:
             @staticmethod
-            def rel_target(_target):
-                return "."
+            def config_provenance():
+                return {"path": "scope.json", "sha256": "0" * 64}
 
-        with patch("crustify_oracle.scope.build", return_value=inventory), \
-                patch("crustify_oracle.dag.build", return_value=graph), \
-                patch("crustify_oracle.manifests.entries", return_value=[]), \
-                patch("crustify_oracle.schedule._field_anchors",
+        with patch("wavefront.scope.build", return_value=inventory), \
+                patch("wavefront.dag.build", return_value=graph), \
+                patch("wavefront.manifests.entries", return_value=[]), \
+                patch("wavefront.schedule._field_anchors",
                       return_value={}):
             wave = build_wave(
                 Layout(), None, names=None,
@@ -354,7 +391,7 @@ class SchedulePackingParityTests(unittest.TestCase):
                 max_syms=50, max_loc=1000, max_types=5, min_fields=10,
             )
 
-        self.assertEqual(len(wave["plan_items"]), 2)
+        self.assertEqual(len(_scheduled_items(wave)), 2)
 
 
 if __name__ == "__main__":

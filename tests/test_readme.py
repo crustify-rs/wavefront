@@ -4,7 +4,7 @@ import argparse
 import unittest
 from pathlib import Path
 
-from crustify_oracle.cli import build_parser
+from wavefront.cli import build_parser
 
 
 def _long_options(parser: argparse.ArgumentParser) -> set[str]:

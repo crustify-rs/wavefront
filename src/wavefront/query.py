@@ -171,7 +171,7 @@ def _entries(layout, target, kind: str, *, scoped: bool = True) -> list:
 
     ``scoped=False`` widens to the whole CodeQL universe — see
     :func:`_universe_entry`."""
-    from crustify_oracle import manifests as _m
+    from wavefront import manifests as _m
     k = "types" if kind in ("type", "types") else "symbols"
     return _m.entries(layout, target, k, stage="query", scoped=scoped)
 
@@ -321,7 +321,7 @@ def _taking(target: Path, spec: str, calling: str | None,
     answer back to a bare name would re-introduce exactly the same-named-static
     conflation the keying exists to prevent."""
     from compose.scope import origin_key
-    from crustify_oracle.layout import Layout
+    from wavefront.layout import Layout
 
     layout = Layout.discover(target)
     aliases = (_type_aliases(layout, target, spec) if spec not in _SPEC_KEYWORDS
@@ -384,7 +384,7 @@ def _call_closure(target: Path, names: list[str], files, *,
     merged.
     """
     from compose.scope import origin_key
-    from crustify_oracle.layout import Layout
+    from wavefront.layout import Layout
 
     layout = Layout.discover(target)
     callees, callers = _call_indexes(layout, target)
@@ -434,7 +434,7 @@ def _lifetime_pool(layout, target) -> list:
     holds a lifetime block for a symbol the scope does not carry.
     """
     scoped = _entries(layout, target, "symbols")
-    from crustify_oracle import store as _store
+    from wavefront import store as _store
 
     doc = _store.load(layout)
     in_scope = {e.get("name") for e in scoped}
@@ -457,7 +457,7 @@ def _lifetime_for(target: Path, type_name: str, array_only: bool = False) -> Non
     produced, not acted on). Prints JSON ``{type, matched_aliases,
     dropped_by:[{symbol,arg,arg_name,arg_type,defined_in,mode?}],
     fields_disposed_by:[...], cloned_by:[...]}``."""
-    from crustify_oracle.layout import Layout
+    from wavefront.layout import Layout
 
     layout = Layout.discover(target)
     aliases = (_type_aliases(layout, target, type_name)
@@ -531,9 +531,9 @@ def _enumerate(
     --in-tree`` is the second, i.e. the remaining backlog; ``--imported-only
     --out-of-tree`` is the permanent FFI floor."""
     from compose import scope
-    from crustify_oracle.layout import Layout
+    from wavefront.layout import Layout
 
-    from crustify_oracle import scope as _scope_mod
+    from wavefront import scope as _scope_mod
     layout = Layout.discover(target)
     file_set = set(files or [])
     arr, tagkey = (("types", "name") if kind == "type"
@@ -638,7 +638,7 @@ def _introspect(
     ``--field-touchers`` lists, or a ``--update`` findings ingest. (The entry's
     ``.rs`` module is found via
     ``crates locate --name``.)"""
-    from crustify_oracle import dag as D
+    from wavefront import dag as D
 
     if (fields or lifecycle_ops or users or field_touchers
             or update is not None):
@@ -661,7 +661,7 @@ def _introspect(
             entry = _load_type_entry(layout, target, node.id, node.defined_in) or {}
             pool = {s for grp in ("opaque_in", "non_opaque_in")
                     for syms in (entry.get(grp) or {}).values() for s in syms}
-            from crustify_oracle import scope as _scope_mod
+            from wavefront import scope as _scope_mod
             sj = (_scope_mod.try_build(layout, target)
                   if (imported_only or targeted_only or api_only) else None)
             if sj is not None:
@@ -709,7 +709,7 @@ def _introspect(
         op_pred = lambda _n: True            # noqa: E731
         if imported_only or targeted_only or api_only:
             from compose import scope as _sc
-            from crustify_oracle import scope as _scope_mod
+            from wavefront import scope as _scope_mod
             sj = _scope_mod.try_build(layout, target)
             if sj is None:
                 op_pred = lambda _n: False   # noqa: E731
@@ -762,7 +762,7 @@ def scope_touched_index(layout, target, which: str) -> dict:
     key = (str(layout.repo_root), str(target), which)
     if key in _TOUCHED_CACHE:
         return _TOUCHED_CACHE[key]
-    from crustify_oracle import scope as _scope_mod
+    from wavefront import scope as _scope_mod
     sj = _scope_mod.try_build(layout, target)
     if sj is None:
         return {}
@@ -921,7 +921,7 @@ def _schema(kind: str) -> str:
     Distinct from ``--update-help`` (:func:`_findings_schema`), which gives the
     submission *shape* + rules; meaning and shape are never duplicated. Empty
     string if the doc is unreadable."""
-    from crustify_oracle.resources import schema_dir
+    from wavefront.resources import schema_dir
 
     doc = schema_dir() / ("types.md" if kind == "type" else "syms.md")
     try:
@@ -1173,7 +1173,7 @@ def _update_type(layout, target, tag: str, defined_in: str | None,
     two halves the old single file conflated. That is what makes the store safe
     to keep structure-free -- nothing is checked against a stored copy of the
     layout that could have gone stale."""
-    from crustify_oracle import store as _store
+    from wavefront import store as _store
 
     raw = sys.stdin.read() if src == "-" else Path(src).read_text()
     try:
@@ -1485,7 +1485,7 @@ def _update_sym(layout, target, name: str, defined_in: str | None,
     or double-claimed callsite, or ptr-invariant violations; else partial-merge
     (primary) + idempotent fork replace, under a lock + atomic rename."""
 
-    from crustify_oracle import store as _store
+    from wavefront import store as _store
 
     raw = sys.stdin.read() if src == "-" else Path(src).read_text()
     try:
@@ -1770,7 +1770,7 @@ def _harvest_sym_agent(rec: dict, full: dict) -> None:
     applied to a scratch copy of the composed entry and harvested here. Keeps
     one implementation of the merge rules rather than a second one that knows
     only the store shape."""
-    from crustify_oracle import store as _store
+    from wavefront import store as _store
     for k in ("lifetime",):
         if full.get(k) is not None:
             rec[k] = full[k]
@@ -1789,7 +1789,7 @@ def _harvest_sym_agent(rec: dict, full: dict) -> None:
 def _records(target, kind, names, files, *, imported_only=False,
              targeted_only=False) -> None:
     # record(s): always the whole record.
-    from crustify_oracle import manifests as _m
+    from wavefront import manifests as _m
 
     load = _load_type_entry if kind == "type" else _load_sym_entry
     recs: list = []
@@ -1841,8 +1841,8 @@ def _resolve(target, *, kind: str, name: str, files: list[str] | None,
     ``with_ops=False`` skips that: reverse-deriving the lifecycle needs the
     SYMBOL records as well as the type ones, so a plain record lookup was
     composing the whole symbol side to build an op list nothing then read."""
-    from crustify_oracle import dag as D
-    from crustify_oracle.layout import Layout
+    from wavefront import dag as D
+    from wavefront.layout import Layout
 
     verb = "type" if kind == "type" else "sym"
     noun = "type" if kind == "type" else "symbol"
@@ -1984,7 +1984,7 @@ def _dag_loc(by_key, by_name, names, files, layer, as_json, keep=None,
                 and (n.node_kind == "type" or not is_folded_op(n))
                 and (keep is None or keep(n))]
     elif names:
-        from crustify_oracle import dag as D
+        from wavefront import dag as D
         file_set = set(files or [])
         D.require_unambiguous(names, by_key, by_name, file_set,
                               stage="query dag --loc")
@@ -2028,7 +2028,7 @@ def _scope_predicate(layout, target, imported_only: bool, targeted_only: bool,
     if not (imported_only or targeted_only or api_only):
         return None
     from compose import scope as _sc
-    from crustify_oracle import scope as _scope_mod
+    from wavefront import scope as _scope_mod
     sj = _scope_mod.try_build(layout, target)
     if sj is None:
         return lambda _n: False
@@ -2089,8 +2089,8 @@ def query_dag(
     query uses the implementation/body-deep graph."""
     from collections import deque
 
-    from crustify_oracle import dag as D
-    from crustify_oracle.layout import Layout
+    from wavefront import dag as D
+    from wavefront.layout import Layout
 
     layout = Layout.discover(target)
     dag = D.build(layout, target, stage="query dag",
@@ -2233,9 +2233,9 @@ def query_files(
         single-flag forms print a bare list (xargs-friendly).
     """
     from compose import scope as scope_mod
-    from crustify_oracle.layout import Layout
+    from wavefront.layout import Layout
 
-    from crustify_oracle import scope as _scope_mod
+    from wavefront import scope as _scope_mod
     layout = Layout.discover(target)
     doc = _scope_mod.build(layout, target, stage="query files")
 

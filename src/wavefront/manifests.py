@@ -1,7 +1,7 @@
 """manifests.py — the type / symbol records, composed on demand.
 
 The composer emits the structural half from the CodeQL tables; the authored
-half comes from `ownership-store.json` (:mod:`crustify.store`). A consumer sees
+half comes from `ownership-store.json` (:mod:`wavefront.store`). A consumer sees
 the whole record.
 
 Composing costs 1.7s for types and 2.2s for symbols, and narrowing does not
@@ -13,7 +13,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from crustify_oracle.layout import Layout
+from wavefront.layout import Layout
 
 
 #: (repo_root, target, kind) -> {rel_dir: [entry]}. Process-lifetime: the CSVs
@@ -45,7 +45,7 @@ def build(layout: Layout, target: Path, kind: str, *, stage: str,
         return hit
 
     from compose.filter_spec import FilterSpec
-    from crustify_oracle import scope as _scope_mod, store as _store
+    from wavefront import scope as _scope_mod, store as _store
 
     if kind == "types":
         from compose.types_manifest import compose as _compose
@@ -56,7 +56,7 @@ def build(layout: Layout, target: Path, kind: str, *, stage: str,
     if not (t1 / "functions.csv").is_file():
         raise SystemExit(
             f"{stage}: no CodeQL T1 tables at {t1}. "
-            f"Run `wavefront {target} extract-ql` first.")
+            f"Run `wavefront {layout.repo_root} extract-ql` first.")
 
     # `scope_json_path=None` disables the seed gate and port/wrap
     # classification, widening the emit to the repo-wide universe.
@@ -149,7 +149,7 @@ def _materialize_forks(by_dir: dict, doc: dict) -> None:
     is materialized by cloning the primary and applying its findings, not
     overlaid onto a composed entry.
     """
-    from crustify_oracle import store as _store
+    from wavefront import store as _store
 
     primaries: dict[tuple[str, str], tuple] = {}
     for rel, entries in by_dir.items():

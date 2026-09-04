@@ -20,9 +20,6 @@
  *   body      : the replacement-list text, verbatim from the source
  *   def_file  : repository-relative path of the `#define` site's file
  *
- * Consumer: CrustifySymbolAnalyzer, for macro discovery + body-based
- * kind classification.
- *
  * No invocation-related filtering here — this query enumerates
  * macros that EXIST. Whether a macro is REACHED from port-scope code
  * is the job of edges/macro_expansions.ql, joined against this

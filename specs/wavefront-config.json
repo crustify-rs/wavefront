@@ -1,10 +1,12 @@
 {
   "_comment": [
-    "Example <repo>/crustify/oracle/targets/<target>/oracle-config.json.",
+    "Example wavefront-config.json passed explicitly with --config.",
     "Paths are repo-root-relative. A trailing slash expands recursively.",
+    "state_dir stores Wavefront's CodeQL tables, findings, and disposable cache.",
     "impl_files names sources and private headers implementing the library.",
     "api_headers names headers publishing its API. The oracle is objective-neutral."
   ],
+  "state_dir": ".wavefront",
   "impl_files": [
     "ssl/",
     "include/internal/statem.h"

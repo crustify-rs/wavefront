@@ -1,10 +1,10 @@
 """Command line interface for semantic queries, findings, and scheduling.
 
-    wavefront <repo_root> <target> extract-ql
-    wavefront <repo_root> <target> query types   --name X [...]
-    wavefront <repo_root> <target> query symbols --name X [...]
-    wavefront <repo_root> <target> query dag     [...]
-    wavefront <repo_root> <target> query files   [...]
+    wavefront <repo_root> --config PATH extract-ql
+    wavefront <repo_root> --config PATH query types   --name X [...]
+    wavefront <repo_root> --config PATH query symbols --name X [...]
+    wavefront <repo_root> --config PATH query dag     [...]
+    wavefront <repo_root> --config PATH query files   [...]
 
 Inventory and records are composed in memory. Dependency graphs use a private
 fingerprinted cache. `extract-ql`, `query --update`, and `schedule --output`
@@ -27,7 +27,7 @@ def _pin_hash_seed() -> None:
     env["PYTHONHASHSEED"] = "0"
     os.execve(
         sys.executable,
-        [sys.executable, "-m", "crustify_oracle.cli", *sys.argv[1:]],
+        [sys.executable, "-m", "wavefront.cli", *sys.argv[1:]],
         env,
     )
 
@@ -39,24 +39,21 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument(
         "repo_root",
-        help="Full path to the repository root (its artifacts live under "
-             "<repo_root>/crustify/). Explicit — crustify never walks the "
-             "filesystem to find it.",
+        help="Full path to the repository root. Explicit — Wavefront never "
+             "walks the filesystem to find it.",
     )
     p.add_argument(
-        "target",
-        help="Repo-relative target subdirectory the oracle is scoped to "
-             "(e.g. ssl/statem), matching "
-             "crustify/oracle/targets/<target>/oracle-config.json. Use . for "
-             "the repo root.",
+        "--config", type=Path, metavar="PATH",
+        help="Explicit wavefront-config.json for extraction, query, or schedule. "
+             "Relative paths are resolved from REPO_ROOT.",
     )
     sub = p.add_subparsers(dest="command", required=True)
 
     sub.add_parser(
         "extract-ql",
         help="Run the T1 (entities) + T2 (edges) .ql batches against the "
-             "CodeQL database at crustify/oracle/codeql/db/ and write one CSV per "
-             "query under crustify/oracle/codeql/{t1,t2}/. The database is NOT "
+             "CodeQL database below the config's state_dir and write one CSV per "
+             "query under its codeql/{t1,t2}/. The database is NOT "
              "created here — build the project under `codeql database create` "
              "yourself first. Everything else derives from these tables on "
              "demand. Takes minutes — run it only "
@@ -64,11 +61,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     schedule = sub.add_parser(
         "schedule",
-        help="Build an objective-neutral wave document with topological steps.",
+        help="Build an objective-neutral schedule with sequential waves.",
     )
     schedule.add_argument(
         "--output", type=Path, required=True, metavar="PATH",
-        help="Write the wave document to this exact free-form path. Its parent "
+        help="Write the schedule to this exact free-form path. Its parent "
              "directory must already exist.",
     )
     schedule.add_argument("--name", nargs="+", action="extend", default=None)
@@ -100,8 +97,7 @@ def _add_query_flags(p: argparse.ArgumentParser, *, facets: bool) -> None:
     scope / `--file`) as a name list; with `--name T` they
     introspect one entry — always the WHOLE record (several names → several
     records). On a type, `--fields`/`--lifecycle-ops` print its windowable lists
-    (`facets`). The .rs module of an entry is found via
-    `crustify-cli <repo> <target> crates locate --name <X>`, not here."""
+    (`facets`)."""
     sc = p.add_mutually_exclusive_group()
     sc.add_argument("--imported-only", action="store_true", dest="imported_only",
                     help="Narrow to the IMPORTED section — this campaign's "
@@ -113,7 +109,7 @@ def _add_query_flags(p: argparse.ArgumentParser, *, facets: bool) -> None:
                          "by imported code. (Facets are complete by default.)")
     sc.add_argument("--targeted-only", action="store_true", dest="targeted_only",
                     help="Narrow to the TARGETED section — the library this "
-                         "campaign OWNS: what `oracle-config.json`'s "
+                         "campaign OWNS: what `wavefront-config.json`'s "
                          "`impl_files` + `api_headers` name, DEFINITION-anchored. "
                          "Objective-neutral. Enumeration → targeted "
                          "entries; --lifecycle-ops/--users → targeted functions; "
@@ -128,7 +124,7 @@ def _add_query_flags(p: argparse.ArgumentParser, *, facets: bool) -> None:
     # owned by another — and refusing it would lose the one fact that
     # distinguishes a re-export from an ordinary import.
     p.add_argument("--api-only", action="store_true", dest="api_only",
-                   help="Narrow to the API view — what `oracle-config.json`'s "
+                   help="Narrow to the API view — what `wavefront-config.json`'s "
                         "`api_headers` PUBLISHES, selected on DECLARATION "
                         "sites (a public header publishes what it declares; "
                         "the bodies live in the .c files behind it). This is "
@@ -424,7 +420,7 @@ def _add_query_command(sub) -> None:
 
 def _dispatch_query(args: argparse.Namespace, target: Path) -> None:
     if args.subject == "files":
-        from crustify_oracle.query import query_files
+        from wavefront.query import query_files
         query_files(
             target,
             targeted_only=bool(getattr(args, "targeted_only", False)),
@@ -433,7 +429,7 @@ def _dispatch_query(args: argparse.Namespace, target: Path) -> None:
         )
         return
     if args.subject == "dag":
-        from crustify_oracle.query import query_dag
+        from wavefront.query import query_dag
         query_dag(
             target,
             names=getattr(args, "name", None),
@@ -448,7 +444,7 @@ def _dispatch_query(args: argparse.Namespace, target: Path) -> None:
             api_headers_only=bool(getattr(args, "api_headers_only", False)),
         )
         return
-    from crustify_oracle.query import query
+    from wavefront.query import query
     query(
         target,
         subject=args.subject,
@@ -478,45 +474,51 @@ def _dispatch_query(args: argparse.Namespace, target: Path) -> None:
 
 def _main() -> None:
     _pin_hash_seed()
-    from crustify_oracle import extract as extract_mod
-    from crustify_oracle.layout import set_repo_root
+    from wavefront import extract as extract_mod
+    from wavefront.layout import set_config_path, set_repo_root
 
     args = build_parser().parse_args()
 
     repo_root = Path(args.repo_root).resolve()
     set_repo_root(repo_root)
-    target_rel = (args.target or "").strip("/")
-    target = repo_root if target_rel in ("", ".") else (repo_root / target_rel)
-    target = target.resolve()
-    args._target_path = str(target)
 
     for cond, msg in (
         (not repo_root.exists(), f"repo_root does not exist: {repo_root}"),
-        (not (repo_root / "crustify").is_dir(),
-         f"no crustify/ under repo_root: {repo_root}"),
-        (not target.exists(), f"target does not exist: {target}"),
     ):
         if cond:
             print(f"error: {msg}", file=sys.stderr)
             sys.exit(1)
 
+    if args.config is None:
+        raise SystemExit(f"{args.command}: --config is required")
+    config_path = args.config
+    if not config_path.is_absolute():
+        config_path = repo_root / config_path
+    config_path = config_path.resolve()
+    if not config_path.is_file():
+        raise SystemExit(f"{args.command}: config does not exist: {config_path}")
+    set_config_path(config_path)
+    args._config_path = str(config_path)
+    scope = config_path
+
     if args.command == "extract-ql":
-        extract_mod.extract_ql(target)
+        extract_mod.extract_ql(repo_root)
         return
+
     if args.command == "schedule":
-        from crustify_oracle.layout import Layout
-        from crustify_oracle.schedule import (
+        from wavefront.layout import Layout
+        from wavefront.schedule import (
             build_raw_lifetime_wave, build_wave, write_wave,
         )
-        oracle_layout = Layout.discover(target)
+        layout = Layout.discover(scope)
         if args.lifetime_for:
             if args.name or args.files or args.dag_layer is not None:
                 raise SystemExit("schedule: --lifetime-for is its own selection")
             wave = build_raw_lifetime_wave(
-                oracle_layout, target, args.lifetime_for)
+                layout, scope, args.lifetime_for)
         else:
             wave = build_wave(
-                oracle_layout, target,
+                layout, scope,
                 names=args.name, files=args.files, dag_layer=args.dag_layer,
                 skip=args.skip, transitive=args.transitive,
                 api_headers_only=args.api_headers_only,
@@ -530,7 +532,7 @@ def _main() -> None:
               f"{args.output}")
         return
     if args.command == "query":
-        _dispatch_query(args, target)
+        _dispatch_query(args, scope)
         return
     raise SystemExit(f"wavefront: unknown command {args.command!r}")
 

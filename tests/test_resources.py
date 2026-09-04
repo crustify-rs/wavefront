@@ -4,8 +4,8 @@ import io
 import unittest
 from contextlib import redirect_stderr
 
-from crustify_oracle.cli import build_parser
-from crustify_oracle.resources import data_root, schema_dir
+from wavefront.cli import build_parser
+from wavefront.resources import data_root, schema_dir
 
 
 class ResourceOwnershipTests(unittest.TestCase):

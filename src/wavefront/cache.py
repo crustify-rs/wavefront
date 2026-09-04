@@ -1,8 +1,9 @@
 """cache.py — fingerprinted on-disk caches for the composed artifacts.
 
-The dependency graph is a pure function of `oracle-config.json` and the CodeQL
-tables. It is cached privately under `crustify/oracle/.cache/`; the in-memory
-inventory is never persisted.
+The dependency graph is a pure function of the explicitly selected
+`wavefront-config.json` and the CodeQL tables. It is cached privately under
+`<state_dir>/.cache/configs/<config-sha256>/`; the in-memory inventory is
+never persisted.
 
 `_VERSION` is the composer's contribution to the fingerprint: bump it when a
 composer changes what it emits from unchanged inputs.
@@ -33,7 +34,8 @@ _VERSION = 9
 def fingerprint(layout, target) -> dict:
     """The identity of every input the scope / dag composers read.
 
-    `oracle-config.json` by content hash. The CSVs by `(size, mtime_ns)`:
+    The explicit `wavefront-config.json` by content hash. The CSVs by
+    `(size, mtime_ns)`:
     `codeql/` is shared, so every worktree sees one inode.
 
     `ownership-store.json` is not an input — neither artifact depends on agent
@@ -41,14 +43,14 @@ def fingerprint(layout, target) -> dict:
     """
     inputs: dict[str, object] = {}
 
-    # `oracle-config.json` is hashed, not stat'd. It is tracked, so every
+    # `wavefront-config.json` is hashed, not stat'd. It is tracked, so every
     # worktree may hold its own copy with a different checkout mtime. Content
     # hashing keeps cache identity stable across those checkouts.
     cfg = layout.config(target)
     try:
-        inputs["oracle-config.json"] = hashlib.sha256(cfg.read_bytes()).hexdigest()
+        inputs["wavefront-config.json"] = hashlib.sha256(cfg.read_bytes()).hexdigest()
     except OSError:
-        inputs["oracle-config.json"] = None    # absent is itself a state
+        inputs["wavefront-config.json"] = None    # absent is itself a state
 
     # The CSVs stay on (size, mtime): they live under `codeql/`, which IS
     # shared, so every worktree sees the same inode and the same mtime. Hashing

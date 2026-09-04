@@ -1,6 +1,6 @@
-"""Compose objective-neutral target inventory from ``oracle-config.json``.
+"""Compose objective-neutral target inventory from ``wavefront-config.json``.
 
-`oracle-config.json` names TWO file sets, always, whatever the campaign:
+`wavefront-config.json` names TWO file sets, always, whatever the campaign:
 
   `impl_files`   the sources (and private headers) that IMPLEMENT the library
   `api_headers`  the headers that PUBLISH its API
@@ -49,7 +49,7 @@ _HEADER_EXTS = {".h", ".hpp"}
 _ALL_EXTS = _SOURCE_EXTS | _HEADER_EXTS
 
 _COMMENT = (
-    "The TARGETED section: every entity whose home file `oracle-config.json` "
+    "The TARGETED section: every entity whose home file `wavefront-config.json` "
     "names. The candidate file universe is `impl_files` + `api_headers` "
     "expanded (trailing-slash entries walked) minus `config.out_of_scope."
     "paths`; the ENTITY sets (functions/globals/macros/types) and the derived "
@@ -111,7 +111,7 @@ def _walk_dir(rel_dir: str, repo_root: Path, out_of_scope: list[str]) -> list[st
     return files
 
 
-#: The two top-level file-set keys of `oracle-config.json`.
+#: The two top-level file-set keys of `wavefront-config.json`.
 IMPL_FILES = "impl_files"
 API_HEADERS = "api_headers"
 
@@ -326,15 +326,15 @@ def _contributing_files(
 def compose(config_path: Path, t1_dir: Path, repo_root: Path | None = None) -> dict:
     """Emit the manifest's `targeted` section and its `api` view.
 
-    `t1_dir` is `<repo_root>/crustify/oracle/codeql/t1` — the entity tables
+    `t1_dir` is `<state_dir>/codeql/t1` — the entity tables
     produced by `analyze extract-ql`. Expanding `files` gives the
     candidate universe; the T1 tables decide which files and entities
     actually compiled under this build configuration.
 
     `repo_root` is the CLI's first positional (per the Layout contract); it is
-    **not** read from `oracle-config.json`, so the same in-repo config stays
+    **not** read from `wavefront-config.json`, so the same in-repo config stays
     portable across git worktrees. When omitted, it
-    is derived from the canonical `<repo_root>/crustify/oracle/codeql/t1` location of
+    is derived from the configured `<state_dir>/codeql/t1` location of
     `t1_dir`.
     """
     config = json.loads(config_path.read_text())

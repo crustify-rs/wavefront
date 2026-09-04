@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
 
-from crustify_oracle.dag import Node, NodeKey, load_nodes, load_type_meta
+from wavefront.dag import Node, NodeKey, load_nodes, load_type_meta
 
 
 def is_generator(node: Node) -> bool:
@@ -145,11 +145,9 @@ def _pack(units: list[Unit], *, max_syms: int, max_loc: int | None,
     return batches
 
 
-def _coalesce(by_layer: dict[int, list[Unit]], layers: list[int], *, closed: bool,
+def _coalesce(by_layer: dict[int, list[Unit]], layers: list[int], *,
               budgets: dict) -> list[list[int]]:
-    if not closed:
-        return [[layer] for layer in layers]
-    steps: list[list[int]] = []
+    waves: list[list[int]] = []
     index = 0
     while index < len(layers):
         group = [layers[index]]
@@ -161,14 +159,20 @@ def _coalesce(by_layer: dict[int, list[Unit]], layers: list[int], *, closed: boo
                 break
             group = candidate
             nxt += 1
-        steps.append(group)
+        waves.append(group)
         index = nxt
-    return steps
+    return waves
 
 
-def _node_doc(node: Node) -> dict:
+def _node_doc(node: Node, *, dependency_scope=None) -> dict:
     def refs(keys):
-        return [{"name": name, "defined_in": home} for name, home in keys]
+        entries = []
+        for name, home in keys:
+            entry = {"name": name, "defined_in": home}
+            if dependency_scope is not None:
+                entry["scope"] = dependency_scope((name, home))
+            entries.append(entry)
+        return entries
     return {
         "name": node.id,
         "defined_in": node.defined_in,
@@ -196,8 +200,8 @@ def _field_anchors(layout, target: Path, *,
     private aggregate with the same tag.
     """
     from compose import scope as compose_scope
-    from crustify_oracle import manifests, scope
-    from crustify_oracle.query import scope_touched_index
+    from wavefront import manifests, scope
+    from wavefront.query import scope_touched_index
 
     api_paths = None
     touched = None
@@ -233,10 +237,10 @@ def build_wave(layout, target: Path, *, names: list[str] | None,
                api_headers_only: bool = False, max_syms: int = 50,
                max_loc: int | None = 1000, max_types: int = 5,
                min_fields: int = 20, force: bool = False) -> dict:
-    """Return a stable, objective-neutral wave document."""
+    """Return a stable, objective-neutral sub-campaign schedule."""
     from collections import defaultdict
     from compose import scope as compose_scope
-    from crustify_oracle import dag as dag_mod, manifests, scope
+    from wavefront import dag as dag_mod, manifests, scope
 
     inventory = scope.build(layout, target, stage="schedule")
     graph = dag_mod.build(layout, target, stage="schedule",
@@ -323,50 +327,54 @@ def build_wave(layout, target: Path, *, names: list[str] | None,
         return "imported" if key in imported_allowed else "targeted"
     units = [Unit(n, list(declared.get(n.id, ([], set()))[0]), section(n))
              for n in nodes]
+    selected_keys = {node.key for node in nodes}
+
+    def dependency_scope(key: NodeKey) -> str:
+        if key in selected_keys:
+            return "wrap"
+        dependency = by_key.get(key)
+        if dependency is None:
+            return "ext"
+        return "wrap" if keep_scope(dependency) else "port"
     by_layer: dict[int, list[Unit]] = defaultdict(list)
     for unit in units:
         by_layer[unit.node.layer].append(unit)
     layers = sorted(by_layer)
     budgets = {"max_syms": max_syms, "max_loc": max_loc,
                "max_types": max_types, "min_fields": min_fields}
-    step_layers = _coalesce(by_layer, layers,
-                            closed=transitive and not blocked, budgets=budgets)
-    steps = []
+    # Closure selection and packing are independent. Adjacent selected layers
+    # may share a wave whenever they fit one batch: that single agent receives
+    # units in lower-to-higher layer order, so producer-before-consumer still
+    # holds even for a non-transitive selection. Never coalesce when packing
+    # would create sibling batches, because those batches execute in parallel.
+    wave_layers = _coalesce(by_layer, layers, budgets=budgets)
+    waves = []
     batch_count = 0
     batch_files: set[str | None] = set()
-    for group in step_layers:
-        step_units = [u for layer in group for u in by_layer[layer]]
-        batches = _pack(step_units, **budgets)
+    for group in wave_layers:
+        wave_units = [u for layer in group for u in by_layer[layer]]
+        batches = _pack(wave_units, **budgets)
         batch_count += len(batches)
         batch_files |= {batch.file for batch in batches}
-        steps.append({
-            "layers": group,
-            "unit_count": len(step_units),
+        waves.append({
+            "unit_count": len(wave_units),
             "batches": [{
                 "kind": batch.route,
                 "source_file": batch.file,
-                "items": [{**_node_doc(unit.node),
+                "items": [{**_node_doc(unit.node,
+                                       dependency_scope=dependency_scope),
                            "field_anchors": anchors.get(unit.node.key, [])}
                           for unit in batch.units],
             } for batch in batches],
         })
     return {
-        "schema_version": 2,
-        "oracle_target": layout.rel_target(target),
+        "schema_version": 3,
+        "oracle_config": layout.config_provenance(),
         "api_headers_only": api_headers_only,
         "budgets": budgets,
         "summary": {"unit_count": len(units), "layer_count": len(layers),
                     "batch_count": batch_count, "file_count": len(batch_files)},
-        "plan_items": [_node_doc(unit.node) for unit in units],
-        "dependency_nodes": [
-            {**_node_doc(by_key[key]),
-             "in_scope": keep_scope(by_key[key])}
-            for key in sorted({key for node in nodes
-                               for key in [*node.dep_types, *node.dep_syms]
-                               if key in by_key} - {node.key for node in nodes},
-                              key=lambda key: (key[0], key[1] or ""))
-        ],
-        "steps": steps,
+        "waves": waves,
     }
 
 
@@ -378,14 +386,13 @@ def build_raw_lifetime_wave(layout, target: Path, spec: str) -> dict:
             "deps": {"types": [], "symbols": []}, "fallback": [],
             "back_fill": [], "generates": [], "field_anchors": []}
     return {
-        "schema_version": 2, "oracle_target": layout.rel_target(target),
+        "schema_version": 3, "oracle_config": layout.config_provenance(),
         "api_headers_only": False,
         "budgets": {"max_syms": 1, "max_loc": None,
                     "max_types": 1, "min_fields": 0},
         "summary": {"unit_count": 1, "layer_count": 1,
                     "batch_count": 1, "file_count": 1},
-        "plan_items": [item], "dependency_nodes": [],
-        "steps": [{"layers": [0], "unit_count": 1, "batches": [{
+        "waves": [{"unit_count": 1, "batches": [{
             "kind": "raw-lifetime", "source_file": f"lifetime-for-{spec}",
             "items": [item],
         }]}],

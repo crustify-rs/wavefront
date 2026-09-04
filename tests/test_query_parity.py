@@ -5,9 +5,11 @@ import json
 import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
-from crustify_oracle.query import query_dag
+from wavefront.layout import set_config_path
+from wavefront.query import query_dag
 
 
 class QueryParityTests(unittest.TestCase):
@@ -21,11 +23,18 @@ class QueryParityTests(unittest.TestCase):
              "loc": 4, "deps": {"types": [], "syms": []}},
         ]]}
         output = io.StringIO()
-        with patch("crustify_oracle.dag.build", return_value=dag), \
-                patch("crustify_oracle.query._scope_predicate",
-                      return_value=lambda _node: True), \
-                redirect_stdout(output):
-            query_dag(Path("/tmp"), layer=0)
+        with TemporaryDirectory() as tmp:
+            config = Path(tmp) / "wavefront-config.json"
+            config.write_text(json.dumps({"state_dir": "analysis"}))
+            set_config_path(config)
+            try:
+                with patch("wavefront.dag.build", return_value=dag), \
+                        patch("wavefront.query._scope_predicate",
+                              return_value=lambda _node: True), \
+                        redirect_stdout(output):
+                    query_dag(Path(tmp), layer=0)
+            finally:
+                set_config_path(None)
         expected = json.dumps({
             "types": [{"id": "alpha_st", "layer": 0,
                        "defined_in": "include/alpha.h"}],

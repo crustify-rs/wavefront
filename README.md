@@ -11,29 +11,33 @@ python -m pip install -e .
 
 ## Inputs
 
-Every command starts with two positional arguments:
+Every command starts with the explicit repository root. Queries and schedules
+also take the exact authored inventory config:
 
 ```text
-wavefront REPO_ROOT TARGET COMMAND ...
+wavefront REPO_ROOT [--config PATH] COMMAND ...
 ```
 
 | Argument | Meaning |
 |---|---|
 | `REPO_ROOT` | Explicit repository root. The oracle never searches parent directories for it. |
-| `TARGET` | Repo-relative target directory and target ID, such as `ssl/statem`; use `.` for the repository root. |
+| `--config PATH` | Required by every command. The `wavefront-config.json` to compose; relative paths resolve from `REPO_ROOT`. |
 
-The authored target definition is
-`<repo>/crustify/oracle/targets/<target>/oracle-config.json`:
+An authored `wavefront-config.json` may live anywhere. Campaign-wide and
+narrowed scheduling configs may use any repository layout:
 
 ```json
 {
+  "state_dir": ".wavefront",
   "impl_files": ["src/"],
   "api_headers": ["include/public.h"],
   "out_of_scope": {"paths": []}
 }
 ```
 
-Paths are repository-relative. A trailing slash selects a directory
+`state_dir` is the explicit repository-relative or absolute home for CodeQL
+tables, ownership findings, and disposable caches. Inventory paths are
+repository-relative. A trailing slash selects a directory
 recursively. `impl_files` names implementation sources and private headers;
 `api_headers` names the headers that publish the target API. Both sets are
 always inventory inputs.
@@ -43,11 +47,11 @@ always inventory inputs.
 ### `extract-ql`
 
 ```sh
-wavefront REPO_ROOT TARGET extract-ql
+wavefront REPO_ROOT --config PATH extract-ql
 ```
 
 Runs the bundled T1 entity and T2 edge queries against
-`<repo>/crustify/oracle/codeql/db/`, writing CSVs under `codeql/{t1,t2}/`. It
+`<state_dir>/codeql/db/`, writing CSVs under `<state_dir>/codeql/{t1,t2}/`. It
 does not create the CodeQL database: build the project under
 `codeql database create` first. Run extraction again only when the database or
 query pack changes.
@@ -55,7 +59,7 @@ query pack changes.
 ### `query`
 
 ```sh
-wavefront REPO_ROOT TARGET query SUBJECT [FLAGS]
+wavefront REPO_ROOT --config PATH query SUBJECT [FLAGS]
 ```
 
 `SUBJECT` is `types`, `symbols`, `files`, or `dag`. Queries are read-only
@@ -106,14 +110,18 @@ Examples:
 
 ```sh
 # Enumerate the target's published types.
-wavefront /work/project src query types --api-only
+wavefront /work/project --config crustify/wavefront/wavefront-config.json \
+  query types --api-only
 
 # Inspect one type, then discover the findings schema.
-wavefront /work/project src query types --name widget_st --fields
-wavefront /work/project src query types --update-help
+wavefront /work/project --config crustify/wavefront/wavefront-config.json \
+  query types --name widget_st --fields
+wavefront /work/project --config crustify/wavefront/wavefront-config.json \
+  query types --update-help
 
 # Find functions that take widget_st and eventually call widget_release.
-wavefront /work/project src query symbols \
+wavefront /work/project --config crustify/wavefront/wavefront-config.json \
+  query symbols \
   --taking widget_st --calling widget_release --depth 3
 ```
 
@@ -151,12 +159,12 @@ globals, and macros.
 ### `schedule`
 
 ```sh
-wavefront REPO_ROOT TARGET schedule --output PATH SELECTION [FLAGS]
+wavefront REPO_ROOT --config PATH schedule --output PATH SELECTION [FLAGS]
 ```
 
 Scheduling selects semantic units, optionally closes over their dependencies,
-orders them into barrier-separated topological steps, and packs each step into
-batches. It writes an objective-neutral wave document; the translation runner
+orders them into barrier-separated topological waves, and packs each wave into
+batches. It writes an objective-neutral sub-campaign schedule; the translation runner
 adds the wrap/port objective and execution concurrency later.
 
 Selection and output flags:
@@ -168,7 +176,7 @@ Selection and output flags:
 | `--file FILE [FILE ...]` | Select every unit defined in these files, or narrow a named selection to them. |
 | `--dag-layer N` | Select every eligible node at topological layer `N`; it may be combined with names. |
 | `--lifetime-for void\|string` | Emit the synthetic raw-pointer or string-lifetime wave. This is exclusive of names, files, and layers. |
-| `--transitive` | Include the selected units' in-scope dependency closure. Complete adjacent layers may be coalesced when they fit one batch. |
+| `--transitive` | Include the selected units' in-scope dependency closure. |
 | `--skip NAME [NAME ...]` | Remove named units after selection. The option may be repeated. |
 | `--force` | Keep lifecycle primitives that normally ride with their owning type or raw-lifetime tier. |
 | `--api-headers-only` | Seed from published declarations and traverse the public-signature graph rather than implementation bodies. |
@@ -187,32 +195,40 @@ For example:
 ```sh
 mkdir -p /work/project/crustify/campaigns/widget/logs
 
-wavefront /work/project src schedule \
+wavefront /work/project \
+  --config crustify/campaigns/src/widget/wavefront-config.json schedule \
   --name widget_new widget_free \
   --transitive \
   --max-types 2 \
   --output /work/project/crustify/campaigns/widget/waves.json
 ```
 
-The complete schema-v2 output example is
+The complete schema-v3 output example is
 [`examples/waves.json`](examples/waves.json). Its major sections are:
 
 - `budgets` and `summary`: the applied packing settings and aggregate counts;
-- `plan_items`: every selected unit, once;
-- `dependency_nodes`: referenced graph nodes not independently scheduled;
-- `steps`: barrier-separated layers containing concurrently executable batches;
+- `waves`: sequential, barrier-separated groups containing concurrently executable batches;
+- `waves[*].batches[*].items`: every selected unit exactly once; dependency
+  references carry `scope: wrap|port|ext`, so no duplicate plan or dependency
+  table or wave-level layer copy is needed;
 - `field_anchors`: fields a type wrapper should expose for this target.
 
-Steps execute in order. Batches within a step may execute concurrently.
+Waves execute in order. Batches within a wave may execute concurrently.
+Adjacent dependency layers are folded into one wave whenever their selected
+units fit a single batch, whether or not `--transitive` selected the units.
+Folding never produces parallel producer/consumer batches.
 
 ## Artifacts
 
-All semantic artifacts live under `<repo>/crustify/oracle/`:
+All semantic artifacts live under the config's explicit `state_dir`:
 
 - `codeql/{db,t1,t2}` — database and extracted facts;
 - `ownership-store.json` — submitted ownership findings;
-- `targets/<target>/oracle-config.json` — authored inventory;
 - `.cache/` — disposable deterministic caches.
+
+Dependency-graph caches are content-addressed by the config hash, so identical
+configs share a cache regardless of filename and editing a config cannot reuse
+a stale graph.
 
 The inventory is composed in memory. There is no persisted `scope.json` or
 `oracle.json`. Before using a query subject for the first time, also read its

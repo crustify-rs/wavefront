@@ -10,15 +10,15 @@ requires-python = ">=3.13"
 dependencies = []
 
 [project.scripts]
-wavefront = "crustify_oracle.cli:main"
+wavefront = "wavefront.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["crustify_oracle*", "compose*"]
+include = ["wavefront*", "compose*"]
 
 [tool.setuptools.data-files]
-"share/wavefront" = ["qlpack.yml", "codeql-pack.lock.yml", "identity.qll"]
-"share/wavefront/entities" = ["entities/*.ql"]
-"share/wavefront/edges" = ["edges/*.ql"]
-"share/wavefront/scratch" = ["scratch/*.ql"]
+"share/wavefront" = ["src/qlpack.yml", "src/codeql-pack.lock.yml", "src/identity.qll"]
+"share/wavefront/entities" = ["src/entities/*.ql"]
+"share/wavefront/edges" = ["src/edges/*.ql"]
+"share/wavefront/scratch" = ["src/scratch/*.ql"]
 "share/wavefront/schemas" = ["docs/schemas/*.md"]

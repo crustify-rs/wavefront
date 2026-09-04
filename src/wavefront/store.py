@@ -4,7 +4,7 @@ Holds only what no composer can infer: ownership (`ptr`), lifecycle
 (`lifetime`), refcount and locking bindings, the agent's notes, and enough to
 key each record. A field's `type` / `ref` / `array`, an argument's `position` /
 `const` / `depth`, `kind`, `declared_in`, footprints and `casted` are composed
-on demand and merged in at read time by :mod:`crustify_oracle.manifests`, so a
+on demand and merged in at read time by :mod:`wavefront.manifests`, so a
 consumer sees a whole record.
 
     types[]    name, defined_in                    <- key
@@ -38,7 +38,7 @@ _COMMENT = (
     "casts) is composed from the CodeQL tables on demand and merged in at read "
     "time, so a re-extract rewrites nothing here. Written only by "
     "`wavefront <repo> <target> query {types,symbols} --update`; read "
-    "through crustify_oracle.manifests. Hand-edit at your own risk: "
+    "through wavefront.manifests. Hand-edit at your own risk: "
     "`--update` validates a submission against the composed skeleton (unknown "
     "field, wrong kind, ptr-invariant violation) and this file does not."
 )
@@ -170,7 +170,7 @@ def update(layout, apply: Callable[[dict], Any]) -> None:
     """
     import fcntl
 
-    from crustify_oracle.cache import atomic_write
+    from wavefront.cache import atomic_write
 
     p = path(layout)
     p.parent.mkdir(parents=True, exist_ok=True)

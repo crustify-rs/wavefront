@@ -3,8 +3,8 @@
 The composer modules (`syms_manifest`, `types_manifest`)
 consume T1 + T2 CSVs at fixed paths:
 
-  <repo_root>/crustify/oracle/codeql/t1/<query_name>.csv  ← entities/
-  <repo_root>/crustify/oracle/codeql/t2/<query_name>.csv  ← edges/
+  <state_dir>/codeql/t1/<query_name>.csv  ← entities/
+  <state_dir>/codeql/t2/<query_name>.csv  ← edges/
 
 This module produces those CSVs by:
 
@@ -130,7 +130,7 @@ def extract_all(
 
 def extract_t1_t2(
     db: Path,
-    crustify_root: Path,
+    pack_root: Path,
     out_root: Path,
 ) -> tuple[int, int]:
     """Run both T1 (entities/) and T2 (edges/) query batches.
@@ -139,8 +139,8 @@ def extract_t1_t2(
 
     Returns ``(total_succeeded, total_failed)``.
     """
-    entities_dir = crustify_root / "entities"
-    edges_dir = crustify_root / "edges"
+    entities_dir = pack_root / "entities"
+    edges_dir = pack_root / "edges"
 
     print(f"[wavefront extract-ql] extracting T1 (entities) → "
           f"{out_root / 't1'}/")

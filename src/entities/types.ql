@@ -64,11 +64,6 @@
  *                 `aliases` for chain walking); all non-typedef
  *                 rows.
  *
- * Consumer: CrustifyTypeAnalyzer, for type enumeration,
- * `non_opaque_in` / `defined_in` resolution, and typedef → struct
- * scope reconciliation. CrustifySymbolAnalyzer indirectly via
- * `depends_on.types` tag normalisation.
- *
  * Consumer-side policy (NOT applied here):
  *
  *   Consumers building safe-wrapper layers (the type analyzer)
@@ -83,9 +78,8 @@
  *
  *   This filter is intentionally NOT baked into the query — non-
  *   type-analyzer consumers need the full entity set:
- *     - CrustifySymbolAnalyzer's `depends_on.types` tag
- *       normalisation needs enum/union tags appearing in
- *       signatures.
+ *     - Symbol-side `depends_on.types` tag normalisation needs
+ *       enum/union tags appearing in signatures.
  *     - Future ABI compatibility / repr(C) flow-through checks
  *       need every UserType.
  *     - Opaque struct entries (`kind=struct AND def_file=""`)
