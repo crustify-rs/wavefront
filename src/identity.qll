@@ -1,5 +1,5 @@
 /**
- * Shared type-identity primitives for the crustify query pack.
+ * Shared type-identity primitives for the wavefront query pack.
  *
  * C gives an aggregate a name in two places, and CodeQL surfaces only
  * one of them on the `UserType` itself:

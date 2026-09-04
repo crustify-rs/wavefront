@@ -64,7 +64,7 @@ def build(layout, target: Path, *, stage: str,
           api_headers_only: bool = False) -> dict:
     """Compose this target's DAG **in memory** and return it.
 
-    Both sides come from :mod:`crustify_oracle.manifests` -- there is no analysis tree
+    Both sides come from :mod:`wavefront.manifests` -- there is no analysis tree
     to walk. The graph is a function of the CodeQL tables and `in-memory inventory`
     alone; the store overlay contributes nothing to it, by design (a
     submission must never move a layer).
@@ -73,7 +73,7 @@ def build(layout, target: Path, *, stage: str,
     implementation/body-deep graph.
     """
     from compose.deps_dag import compose as _compose
-    from crustify_oracle import cache as _cache, manifests as _manifests, scope as _scope
+    from wavefront import cache as _cache, manifests as _manifests, scope as _scope
 
     # The dag cache is the valuable one: a hit skips scope AND both manifest
     # composes, not just the layering — 5.8s down to a 4.7 MB parse. Its

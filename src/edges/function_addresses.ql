@@ -27,10 +27,6 @@
  *                         definition site, or "" if no definition is
  *                         in the DB
  *   access_line         : 1-indexed line number of the access site
- *
- * Consumer: CrustifySymbolAnalyzer for `called_by.ref` on
- * `function_*` entries; CrustifyTypeAnalyzer for callback-slot
- * field-population discovery (e.g. ops table entries).
  */
 import cpp
 

@@ -769,7 +769,7 @@ def compose_import(
     return {
         "_comment": (
             "The IMPORTED section: everything the TARGETED set reaches that "
-            "`oracle-config.json` does not name — the FFI frontier, i.e. this "
+            "`wavefront-config.json` does not name — the FFI frontier, i.e. this "
             "campaign's EXTERNAL dependencies. "
             "DERIVED and regenerable from `targeted`; recompute when it changes. "
             "Computed by compose/import_closure.py by expanding each targeted "

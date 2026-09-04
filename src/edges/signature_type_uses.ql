@@ -36,11 +36,6 @@
  *                         definition is in the DB
  *   position            : "return" | "param_<i>"
  *
- * Consumer: CrustifySymbolAnalyzer for `depends_on.types.{port,wrap}`
- * population on function entries; CrustifyTypeAnalyzer for
- * inverted "which functions touch this type" lookup driving the op
- * candidate set.
- *
  * No `hasDefinition()` filter on the function — declaration-only
  * externs still carry signature types worth recording (a wrap-side
  * function whose body is missing still has a type surface that may

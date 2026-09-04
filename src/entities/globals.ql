@@ -23,10 +23,6 @@
  *                 of all declaration entries (typically the headers
  *                 carrying the `extern` declaration); may be empty
  *
- * Consumer: CrustifySymbolAnalyzer, for global enumeration; also
- * CrustifyTypeAnalyzer when looking up a global's type for
- * `depends_on.types` population.
- *
  * No `hasDefinition()` filter at the outer level — consumers need
  * declaration-only externs to identify boundary-crossing globals.
  * The def_file "" sentinel surfaces the missing-definition case

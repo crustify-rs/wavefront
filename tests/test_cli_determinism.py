@@ -5,13 +5,13 @@ import sys
 import unittest
 from unittest.mock import mock_open, patch
 
-from crustify_oracle.cli import _pin_hash_seed, main
+from wavefront.cli import _pin_hash_seed, main
 
 
 class CliDeterminismTests(unittest.TestCase):
     def test_cli_reexecs_with_stable_hash_seed(self) -> None:
         with patch.dict(os.environ, {"PYTHONHASHSEED": "random"}), \
-                patch.object(sys, "argv", ["wavefront", "repo", ".",
+                patch.object(sys, "argv", ["wavefront", "repo", "--config", "scope.json",
                                            "query", "files"]), \
                 patch("os.execve") as execute:
             _pin_hash_seed()
@@ -19,7 +19,7 @@ class CliDeterminismTests(unittest.TestCase):
         self.assertEqual(executable, sys.executable)
         self.assertEqual(
             argv,
-            [sys.executable, "-m", "crustify_oracle.cli", "repo", ".",
+            [sys.executable, "-m", "wavefront.cli", "repo", "--config", "scope.json",
              "query", "files"],
         )
         self.assertEqual(environment["PYTHONHASHSEED"], "0")
@@ -32,7 +32,7 @@ class CliDeterminismTests(unittest.TestCase):
 
     def test_cli_silences_a_closed_stdout_pipe(self) -> None:
         replacement = mock_open()
-        with patch("crustify_oracle.cli._main", side_effect=BrokenPipeError), \
+        with patch("wavefront.cli._main", side_effect=BrokenPipeError), \
                 patch("builtins.open", replacement), \
                 patch.object(sys, "stdout"):
             main()

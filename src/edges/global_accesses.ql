@@ -31,9 +31,6 @@
  *   global_linkage      : "global_static" | "global_extern"
  *   access_kind         : "read" | "write" | "addr"
  *   access_line         : 1-indexed line number of the access site
- *
- * Consumer: CrustifySymbolAnalyzer (for `called_by.ref` on
- * `global_*` entries and `depends_on.syms` on functions).
  */
 import cpp
 

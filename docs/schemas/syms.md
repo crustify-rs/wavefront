@@ -227,7 +227,7 @@ If your target type is:
   byte-level, untyped objects (`void *`). Look first for primitives from the
   standard library (`free`, `munmap`, `mmap`, `calloc`, `malloc`, `realloc`,
   `memcpy`, `memmove`, `strdup`, `strndup`, etc.). Then fetch the list of
-  project-defined lifetime primitives by querying `curstify-oracle` for methods
+  project-defined lifetime primitives by querying `wavefront` for methods
   calling the standard ones identified in the previous step. Continue looking up
   a few more hops up the callgraph to identify lifetime primitives that are
   specialized.  Filter to those taking `void` as argument to narrow the search
@@ -235,7 +235,7 @@ If your target type is:
 
   - The special keyword `string`, then look for lifetime primitives for
   NUL-terminated strings. You can fetch the list of lifetime candidates by
-  querying `curstify-oracle` for methods taking a `char *`/ `unsigned char *` /
+  querying `wavefront` for methods taking a `char *`/ `unsigned char *` /
   `u8 *`/`uint8_t *`/ etc. as an argument AND filtering for those calling one of
   the raw/void lifetime primitives identified by a previous run. Continue
   looking up a few more hops up the callgraph to identify more specialized
@@ -244,7 +244,7 @@ If your target type is:
 
   - A `<type-tag>`, then look for lifetime primitives that for the given type
   tag.  You can fetch the list of lifetime candidates by querying
-  `curstify-oracle` for methods taking `<type-tag> *` as an argument AND filter
+  `wavefront` for methods taking `<type-tag> *` as an argument AND filter
   for those that invoke one of the raw/void lifetime primitives identified in a
   previous run. Explore a few additional hops up the call graph to identify the
   real, top-level dropper(s)/field disposer(s) and cloner(s) of the type, which

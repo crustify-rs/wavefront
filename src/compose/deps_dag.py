@@ -285,7 +285,7 @@ def _entries_of(src, kind: str) -> list:
     legacy analysis-root path.
 
     The pair is the live form -- records composed from the CodeQL tables and
-    overlaid with `ownership-store.json` by :mod:`crustify_oracle.manifests`, with no
+    overlaid with `ownership-store.json` by :mod:`wavefront.manifests`, with no
     per-stem tree to walk. The path form stays for this module's own CLI.
     """
     if isinstance(src, tuple):
@@ -1002,7 +1002,7 @@ def _emit_node(nodes, comp):
 
 def _populate_nfields(codeql_dir: Path, types: dict[str, TypeNode]) -> None:
     """Set each type's ``nfields`` to its **full** struct field count from the
-    T1 ``fields.csv`` (``<crustify>/codeql/t1/fields.csv``, a sibling of the
+    T1 ``fields.csv`` (``<state_dir>/codeql/t1/fields.csv``, a sibling of the
     analysis tree). This is the whole struct, NOT the target-accessed subset that
     ``types.json``'s ``fields[]`` narrows to — a struct's translated surface
     (``define_ctype!`` + accessors) scales with its field layout, so a type's

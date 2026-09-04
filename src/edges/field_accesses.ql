@@ -34,10 +34,6 @@
  *   access_kind         : "read" | "write" | "addr"
  *   access_line         : 1-indexed line number of the access site
  *
- * Consumer: CrustifyTypeAnalyzer for `non_opaque_in` (which
- * files touch a struct's fields directly) and `fields[].used_by`
- * (port vs wrap users per field).
- *
  * `struct_name` carries the declaring aggregate's IDENTITY, not
  * `getName()` verbatim: an anonymous aggregate declared inline as a
  * typedef's underlying type (`typedef struct { ... } T;`) resolves to

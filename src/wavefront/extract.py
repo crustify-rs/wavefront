@@ -1,10 +1,10 @@
 """extraction — the one composer stage with side effects.
 
 Runs the T1 (entities) + T2 (edges) `.ql` batches against the CodeQL database
-at `crustify/oracle/codeql/db/` and writes one CSV per query under
-`crustify/oracle/codeql/{t1,t2}/`. Every other artifact derives from those tables on
-demand: scope and the dag through :mod:`crustify_oracle.cache`, the type and
-symbol records through :mod:`crustify_oracle.manifests`.
+below the config's explicit `state_dir` and writes one CSV per query under its
+`codeql/{t1,t2}/`. Every other artifact derives from those tables on
+demand: scope and the dag through :mod:`wavefront.cache`, the type and
+symbol records through :mod:`wavefront.manifests`.
 
 The database itself is not produced here — configuring the project, building it
 under `codeql database create --language=cpp --command=...`, and depositing the
@@ -16,8 +16,8 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from crustify_oracle.layout import Layout
-from crustify_oracle.resources import data_root
+from wavefront.layout import Layout
+from wavefront.resources import data_root
 
 
 def extract_ql(target: Path) -> None:

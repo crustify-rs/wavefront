@@ -37,10 +37,6 @@
  *   invocation_file     : repository-relative path of the invocation
  *                         site's file
  *   invocation_line     : 1-indexed line number of the invocation
- *
- * Consumer: CrustifySymbolAnalyzer (for `called_by.call` / `ref`
- * on macros, and `depends_on.syms.{port,wrap}` on functions whose
- * bodies expand wrap-side macros).
  */
 import cpp
 

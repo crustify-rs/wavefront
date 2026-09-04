@@ -1,15 +1,16 @@
 """scope.py — the per-target scope manifest, composed in memory.
 
-`in-memory inventory` is a pure function of `oracle-config.json` (hand-authored) and the
-CodeQL T1/T2 tables. Every stage read it off disk, which made it the one
-artifact whose staleness a human could cause directly: edit `oracle-config.json`,
+`in-memory inventory` is a pure function of the explicit, hand-authored
+`wavefront-config.json` and the CodeQL T1/T2 tables. Every stage reads the
+selected config off disk, which once made it the one
+artifact whose staleness a human could cause directly: edit `wavefront-config.json`,
 forget `analyze scope`, and wrap/query/dag all run against the previous port
 set without a word. That is exactly the failure `dag.build` removed for the
 graph, and the same fix applies — compose it, don't cache it.
 
 Two halves, both composer-only:
 
-  ``targeted``  from `oracle-config.json` + T1, ~0.12s
+  ``targeted``  from `wavefront-config.json` + T1, ~0.12s
   ``imported``  the closure of ``targeted`` over T1/T2, ~1.4s (dominated by
                 parsing `macro_expansions.csv` and friends)
 
@@ -30,7 +31,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from crustify_oracle.layout import Layout
+from wavefront.layout import Layout
 
 
 #: (repo_root, target) -> composed manifest. Process-lifetime only: a stage is
@@ -58,18 +59,19 @@ def build(layout: Layout, target: Path, *, stage: str) -> dict:
     if not (t1 / "functions.csv").is_file():
         raise SystemExit(
             f"{stage}: no CodeQL T1 tables at {t1}. "
-            f"Run `wavefront {target} extract-ql` first.")
+            f"Run `wavefront {layout.repo_root} extract-ql` first.")
     config_path = layout.config(target)
     if not config_path.is_file():
         raise SystemExit(
-            f"{stage}: no oracle-config.json at {config_path}. It is authored by "
+            f"{stage}: no wavefront-config.json at {config_path}. It is selected "
+            f"with --config and authored by "
             f"hand — it names the implementation and API file sets — and "
             f"there is nothing to derive scope from without it.")
     includes_csv = t1 / "includes.csv"
     if not includes_csv.is_file():
         raise SystemExit(
             f"{stage}: no includes.csv at {includes_csv}. "
-            f"Run `wavefront {target} extract-ql` first.")
+            f"Run `wavefront {layout.repo_root} extract-ql` first.")
 
     import json
     config = json.loads(config_path.read_text())

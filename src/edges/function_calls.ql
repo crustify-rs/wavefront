@@ -32,10 +32,6 @@
  *                      definition in the DB
  *   call_line        : 1-indexed line number of the call site
  *
- * Consumer: CrustifySymbolAnalyzer (for `called_by.call` and
- * `depends_on.syms` population); CrustifyTypeAnalyzer (for op
- * candidate discovery via inverted callee → caller lookup).
- *
  * Indirect calls through function pointers are recorded with the
  * static target the call resolves to when CodeQL can determine it;
  * if the target is unresolved, the row is dropped (no edge can be
