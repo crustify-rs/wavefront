@@ -1,4 +1,4 @@
-# wavefront
+# Wavefront
 
 Deterministic semantic analysis and scheduling for C-to-Rust work. It does not
 run translation agents and does not know whether a campaign wraps or ports.
@@ -218,3 +218,9 @@ The inventory is composed in memory. There is no persisted `scope.json` or
 `oracle.json`. Before using a query subject for the first time, also read its
 live `--help`; it is the authority for validation rules and edge cases. Submit
 findings only with `--update`; never edit `ownership-store.json` directly.
+
+## Acknowledgements
+
+This material is based upon work supported by the Defense Advanced Research
+Projects Agency (DARPA) Translating All C To Rust (TRACTOR) program under
+Agreement No. HR00112590134.
