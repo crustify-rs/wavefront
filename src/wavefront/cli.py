@@ -18,6 +18,13 @@ import os
 import sys
 from pathlib import Path
 
+from wavefront.schedule import (
+    DEFAULT_MAX_LOC,
+    DEFAULT_MAX_SYMS,
+    DEFAULT_MAX_TYPES,
+    DEFAULT_MIN_FIELDS,
+)
+
 
 def _pin_hash_seed() -> None:
     """Run every CLI command with the hash seed used by parity fixtures."""
@@ -79,14 +86,20 @@ def build_parser() -> argparse.ArgumentParser:
         "--api-headers-only", action="store_true",
         help="Seed from published declarations and stop symbol traversal at signatures.",
     )
-    schedule.add_argument("--max-syms", type=int, default=50,
-                          help="Maximum symbols per batch (default: 50).")
-    schedule.add_argument("--max-loc", type=int, default=1000,
-                          help="Maximum summed symbol body LoC per batch (default: 1000).")
-    schedule.add_argument("--max-types", type=int, default=5,
-                          help="Maximum types per type batch (default: 5).")
-    schedule.add_argument("--min-fields", type=int, default=20,
-                          help="Close a type batch at this declared-field floor (default: 20).")
+    schedule.add_argument(
+        "--max-syms", type=int, default=DEFAULT_MAX_SYMS,
+        help=f"Maximum symbols per batch (default: {DEFAULT_MAX_SYMS}).")
+    schedule.add_argument(
+        "--max-loc", type=int, default=DEFAULT_MAX_LOC,
+        help="Maximum summed symbol body LoC per batch "
+             f"(default: {DEFAULT_MAX_LOC}).")
+    schedule.add_argument(
+        "--max-types", type=int, default=DEFAULT_MAX_TYPES,
+        help=f"Maximum types per type batch (default: {DEFAULT_MAX_TYPES}).")
+    schedule.add_argument(
+        "--min-fields", type=int, default=DEFAULT_MIN_FIELDS,
+        help="Close a type batch at this declared-field floor "
+             f"(default: {DEFAULT_MIN_FIELDS}).")
     _add_query_command(sub)
     return p
 
