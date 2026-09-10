@@ -6,9 +6,9 @@
   },
   "api_headers_only": false,
   "budgets": {
-    "max_syms": 50,
-    "max_loc": 1000,
-    "max_types": 5,
+    "max_syms": 25,
+    "max_loc": 500,
+    "max_types": 2,
     "min_fields": 20
   },
   "summary": {

@@ -185,9 +185,9 @@ Batch flags:
 
 | Flag | Default | Meaning |
 |---|---:|---|
-| `--max-syms N` | `50` | Maximum symbols or callbacks in one symbol batch. |
-| `--max-loc N` | `1000` | Maximum summed symbol body LoC in one batch; `0` disables this cap. |
-| `--max-types N` | `5` | Maximum types in one type batch. |
+| `--max-syms N` | `25` | Maximum symbols or callbacks in one symbol batch. |
+| `--max-loc N` | `500` | Maximum summed symbol body LoC in one batch; `0` disables this cap. |
+| `--max-types N` | `2` | Maximum types in one type batch. |
 | `--min-fields N` | `20` | Close a type batch before adding another type once this declared-field threshold is reached; wide types are isolated. |
 
 For example:

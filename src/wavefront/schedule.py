@@ -9,6 +9,11 @@ from typing import Callable
 
 from wavefront.dag import Node, NodeKey, load_nodes, load_type_meta
 
+DEFAULT_MAX_SYMS = 25
+DEFAULT_MAX_LOC = 500
+DEFAULT_MAX_TYPES = 2
+DEFAULT_MIN_FIELDS = 20
+
 
 def is_generator(node: Node) -> bool:
     return (node.node_kind == "symbol"
@@ -234,9 +239,12 @@ def _field_anchors(layout, target: Path, *,
 def build_wave(layout, target: Path, *, names: list[str] | None,
                files: list[str] | None = None, dag_layer: int | None = None,
                skip: list[str] | None = None, transitive: bool = False,
-               api_headers_only: bool = False, max_syms: int = 50,
-               max_loc: int | None = 1000, max_types: int = 5,
-               min_fields: int = 20, force: bool = False) -> dict:
+               api_headers_only: bool = False,
+               max_syms: int = DEFAULT_MAX_SYMS,
+               max_loc: int | None = DEFAULT_MAX_LOC,
+               max_types: int = DEFAULT_MAX_TYPES,
+               min_fields: int = DEFAULT_MIN_FIELDS,
+               force: bool = False) -> dict:
     """Return a stable, objective-neutral sub-campaign schedule."""
     from collections import defaultdict
     from compose import scope as compose_scope
