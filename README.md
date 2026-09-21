@@ -203,7 +203,8 @@ wavefront /work/project \
   --output /work/project/crustify/campaigns/widget/waves.json
 ```
 
-The complete schema-v3 output example is
+Field meaning is in [`docs/schemas/schedule.md`](docs/schemas/schedule.md); the
+complete schema-v3 output example is
 [`examples/waves.json`](examples/waves.json). Its major sections are:
 
 - `budgets` and `summary`: the applied packing settings and aggregate counts;
