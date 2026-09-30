@@ -178,14 +178,28 @@ predicate anonEmbeddedField(UserType root, Field f, string path) {
   exists(Field outer |
     outer.getDeclaringType() = root and
     f.getDeclaringType() = anonMemberAggregate(outer) and
-    path = outer.getName() + "." + f.getName()
+    not isUnnamedMember(f) and
+    path = memberPathPrefix(outer) + f.getName()
   )
   or
   exists(Field outer, string sub |
     outer.getDeclaringType() = root and
     anonEmbeddedField(anonMemberAggregate(outer), f, sub) and
-    path = outer.getName() + "." + sub
+    path = memberPathPrefix(outer) + sub
   )
+}
+
+/**
+ * `f` has no declarator name: a C11 anonymous struct/union member
+ * (`struct { union { int a; float b; }; }`). CodeQL names it
+ * `(unknown field)`. Its own members are members of the enclosing aggregate
+ * (`s.a`), so it names no field and contributes no access-path segment.
+ */
+predicate isUnnamedMember(Field f) { f.getName() = "(unknown field)" or f.getName() = "" }
+
+/** The access-path segment `outer` contributes: `name.`, or nothing when unnamed. */
+string memberPathPrefix(Field outer) {
+  if isUnnamedMember(outer) then result = "" else result = outer.getName() + "."
 }
 
 /**

@@ -162,7 +162,8 @@ where
     // Ordinary field of a named struct/union, or of an anonymous aggregate
     // that a typedef names (`typedef struct { … } git_cache;`).
     ownerOf(f.getDeclaringType(), struct_name, struct_def_file) and
-    field_name = f.getName()
+    field_name = f.getName() and
+    not isUnnamedMember(f)
   )
   or
   (
