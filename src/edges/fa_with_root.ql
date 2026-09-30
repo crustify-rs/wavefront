@@ -58,15 +58,18 @@ Type rootContainerOfExpr(Expr e) {
  * differently.
  */
 string rootFieldPath(FieldAccess fa) {
-  if isAnonNamed(fa.getTarget().getDeclaringType().getName())
-  then (
-    exists(FieldAccess q | q = fa.getQualifier() |
-      result = rootFieldPath(q) + "." + fa.getTarget().getName()
-    )
-    or
-    not fa.getQualifier() instanceof FieldAccess and result = fa.getTarget().getName()
+  exists(string own |
+    (if isUnnamedMember(fa.getTarget()) then own = "" else own = fa.getTarget().getName()) and
+    if isAnonNamed(fa.getTarget().getDeclaringType().getName()) and fa.getQualifier() instanceof FieldAccess
+    then result = joinPath(rootFieldPath(fa.getQualifier()), own)
+    else result = own
   )
-  else result = fa.getTarget().getName()
+}
+
+/** `a.b`, dropping the separator around an empty segment (an unnamed member). */
+bindingset[a, b]
+string joinPath(string a, string b) {
+  if a = "" then result = b else if b = "" then result = a else result = a + "." + b
 }
 
 Type rootNamedDeclaringType(FieldAccess fa) {
@@ -86,6 +89,9 @@ string structDefFileOf(Type t) {
 from FieldAccess fa, Field f, Type rootT
 where f = fa.getTarget()
   and rootT = rootNamedDeclaringType(fa)
+  // An access to an unnamed member itself names no field; the accesses
+  // through it carry the member paths.
+  and not isUnnamedMember(f)
 select enclosingNameOf(fa) as enclosing_name,
        pathOf(fa.getFile()) as access_file,
        canonicalTypeName(f.getDeclaringType()) as struct_name,

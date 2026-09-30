@@ -103,7 +103,8 @@ where
     // landed at layer 0 with no deps and `git_repository`'s closure lost 16
     // of its 45 types.
     ownerOf(f.getDeclaringType(), struct_name, struct_def_file) and
-    field_name = f.getName()
+    field_name = f.getName() and
+    not isUnnamedMember(f)
     or
     // Field of an ANONYMOUS aggregate embedded by value: its type is a
     // dependency of the OWNING named struct, recorded under the qualified
