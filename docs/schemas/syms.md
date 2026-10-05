@@ -168,14 +168,15 @@ field, see [`lifetime`](#lifetime).
 
 ## lifetime
 
-Which lifecycle-primitive role THIS symbol plays, and on which of its args.
-Agent-filled; `null` in the composer skeleton. Present on functions and
-callbacks (the kinds with a call boundary); absent on globals and macros -- a
-global's ownership has no acting method, and a macro has no args. The arg it
-acts on is named in `for`.
+Which lifecycle-primitive role THIS symbol plays, and on which of its args (or,
+for an `alloc` constructor that returns its object, on its return). Agent-filled; `null` in the
+composer skeleton. Present on functions and callbacks (the kinds with a call
+boundary); absent on globals and macros -- a global's ownership has no acting
+method, and a macro has no args. The subject is named in `for`.
 
 - **`for`** -- the arg the role acts on, BY NAME, as a bare name (`s`, not
-  `arg:s` and not a position). Must be one of this symbol's pointer args.
+  `arg:s` and not a position). Must be one of this symbol's pointer args, or
+  `"return"` for an `alloc` constructor that returns its object.
 - **`is_dropper`** -- `true` if the symbol frees the arg's own STORAGE (i.e. the
   heap allocation): a full destructor. Requires the arg to be `owned`.
 - **`is_disposer`** -- `true` if the symbol frees the storage of the arg's
@@ -183,38 +184,53 @@ acts on is named in `for`.
   leaves the object reusable. Independent of `owned`/`borrowed` (a cleanup
   borrows the container).
 - **`is_cloner`** -- `null`, or `{deep, upref}`: the symbol produces a copy of
-  the arg. `deep` = a fresh allocation -> `Clone for CBox` on a type with no
-  refcount, else a plain method (a refcounted type's `Clone` is its up_ref).
-  `upref` = a refcount bump -> also `Clone for CBox`, via
-  `impl_cloned!(N, c, up_ref = …)`.
+  the arg. `deep` = a fresh allocation, independent of the source. `upref` = a
+  refcount bump, so the "copy" is the same object.
   Both MAY be set: a body that branches between the two, or a `void *` whose
   concrete element decides at runtime. Requires the arg to be `borrowed` (it
   reads the source to copy it).
+- **`is_constructor`** -- `null`, or `{alloc, init}`: the symbol produces an
+  object. `alloc` = it hands the caller a new object it owns and must release,
+  either by return (`for: "return"`; requires the return to be `owned`) or
+  through an out-parameter (`for` names that pointer-to-pointer arg, depth >= 2,
+  as in `int foo_new(foo **out)`). `init` = it initializes caller-provided
+  storage in place (`for` names that single-pointer arg, depth 1). The arg of
+  either form must not be immutable. Exactly one is set. A routine returning
+  storage that is not yet a valid object -- one a separate `init` must
+  complete -- is an allocator, not an `alloc` constructor.
 
 `is_dropper` and `is_disposer` are **mutually exclusive**: the arg's storage is
 either released or retained, never both. A full destructor is `is_dropper` alone
 -- it tears the fields down on the way, but its observable contract is that the
 allocation is gone; a cleanup that resets the fields in place is `is_disposer`
-alone.
+alone. A constructor plays no other role: its subject is produced, not released
+or copied.
 
 **Invariants** (enforced on `--update`): `null` is both "not a lifecycle
 primitive" and the unanalyzed state, and is always accepted; a non-null block
 must assert at least one role (`is_dropper` | `is_disposer` |
-`is_cloner.{deep,upref}`) -- otherwise submit `null`; `for` is required and
-names a real pointer arg of this symbol, by bare name; `is_dropper` and
-`is_disposer` are mutually exclusive booleans; `is_cloner.deep`/`.upref` are
-explicit booleans (never null); `is_dropper` implies that arg is `owned`;
-`is_cloner` implies that arg is `borrowed` -- both checked against the arg's
-`ptr` as it stands AFTER the update, and skipped while that `ptr` is still
-`null` (there is no ownership fact yet to contradict).
+`is_cloner.{deep,upref}` | `is_constructor.{alloc,init}`) -- otherwise submit
+`null`; `for` is required and names a real pointer arg of this symbol, by bare
+name, or `"return"` only when `is_constructor.alloc` is set (allowed on a
+symbol with no pointer args, but not without a pointer return); an `alloc`
+through an arg names a pointer-to-pointer (depth >= 2) and an `init` a single
+pointer (depth 1) -- checked from the composer's `depth`, so even before the
+arg's `ptr` is analyzed; `is_dropper`
+and `is_disposer` are mutually exclusive booleans; the `is_cloner` and
+`is_constructor` modes are explicit booleans (never null), and
+`is_constructor.alloc` / `.init` are mutually exclusive; a constructor sets no
+other role; `is_dropper` implies that arg is `owned`; `is_cloner` implies that
+arg is `borrowed`; `alloc` by return implies the return is `owned`; a
+constructor's arg is not immutable -- all checked against the subject's `ptr` as it stands
+AFTER the update, and skipped while that `ptr` is still `null` (there is no
+ownership fact yet to contradict).
 
 ### How to disocver lifetime primitives
 
 Unless otherwise stated, we are only interested in storage (i.e. heap allocation)
 droppers/freers, field disposers (for user-defined types taken by-value, i.e.
-embedded or on stack), and their cloners/duplicators. These will then be used
-to implement `Drop` and `Clone` on its future Rust newtypes, allowing references
-to this type to be owned / moved in Rust-native code.
+embedded or on stack), their cloners/duplicators, and their constructors (an
+`alloc` returning a new object, or an `init` filling caller storage).
 
 Generally, we record a function as a lifetime primitive only if it has more than
 one caller / referencer / consumer, or if it is publicly exposed; if it only lives to

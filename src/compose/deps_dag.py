@@ -53,9 +53,9 @@ declaration moved 1,021 nodes by a layer), and merely *listing* the ops made the
 FILE one. The graph is a pure function of the C —
 field types, signature types, ``depends_on`` and the cast graph, every one
 composer-derived from CodeQL — so the same tree always yields the same bytes.
-The wrap scheduler still co-emits a type with its methods; it reverse-derives
-them from the analysis tree at schedule time (``_schedule.load_type_meta`` ->
-``ordered_ops``), which also means a submission takes effect on the next wave
+Lifecycle roles are agent findings submitted after the plan is made, so the
+scheduler neither bundles nor filters by them; the query views reverse-derive
+them from the analysis tree on demand (``load_type_meta`` / ``ordered_ops``),
 with no recompose in between.
 
 Nothing is dropped: external/libc symbols and builtins referenced by

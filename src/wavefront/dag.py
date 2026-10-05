@@ -181,14 +181,12 @@ def ordered_ops(node: Node, by_key: dict[SymKey, Node], lifecycle: set[str],
                 in_scope: Callable[[Node], bool]) -> list[Node]:
     """A type's ops as the **canonical, windowable list**: the symbol nodes named
     by ``lifecycle`` that are ``in_scope``, ordered **lifecycle-first**
-    (droppers/disposers/cloners) then alphabetical. This is the single ordering
-    both the scheduler and ``query types --name T --lifecycle-ops`` consume.
+    (droppers/disposers/cloners/constructors) then alphabetical. This is the
+    ordering ``query types --name T --lifecycle-ops`` reports.
 
     Membership comes from ``lifecycle`` — the op-name set reverse-derived from
-    the analysis tree's ``lifetime`` records (:func:`load_type_meta` for the
-    scheduler, ``_resolve`` for query) — and not from the DAG. Reading it at
-    schedule time means a submission takes effect on the next wave without
-    rebuilding the graph.
+    the analysis tree's ``lifetime`` records (``_resolve`` in query) — and not
+    from the DAG, so a submission shows up without rebuilding the graph.
 
     A lifetime record names a FUNCTION, not a ``(name, defined_in)`` key, so
     membership is by id over ``by_key``; ``node_kind`` guards the case of a type
@@ -202,17 +200,17 @@ def ordered_ops(node: Node, by_key: dict[SymKey, Node], lifecycle: set[str],
 
 def load_type_meta(entry_pair) -> dict[str, tuple[list[str], set[str]]]:
     """type tag -> (field names, lifecycle op names). Fields drive the
-    the agent's accessor working set; the lifecycle set names its ops. Neither
-    is a budget any more — a type is one batch.
+    agent's accessor working set; the lifecycle set names its ops. Neither is a
+    budget any more — a type is one batch.
 
     A type stores no lifecycle of its own — it is reverse-derived from the
-    symbols whose ``lifetime`` acts on an arg of that type (droppers, cloners,
-    field-disposers). Allocators and locking fns are deliberately not bundled;
-    they reach the wrap set through the normal call graph.
+    symbols whose ``lifetime`` acts on that type (droppers, cloners,
+    field-disposers, constructors). These are agent findings, recorded as facts
+    and reported by `query`; the scheduler reads only the fields, since a plan
+    is made before any finding exists.
 
-    Takes the composed ``(types, syms)`` pair, so a wave schedules against the
-    same records `query` reports and the same store an agent just submitted to
-    — one source, no fork to keep in step. Isolating an experimental arm is a
+    Takes the composed ``(types, syms)`` pair, so it reads the same records
+    `query` reports — one source, no fork to keep in step. Isolating an experimental arm is a
     git branch now, which is what ``--out-suffix`` was hand-rolling with
     filenames."""
     from compose.scope import build_lifecycle_index, type_method_syms

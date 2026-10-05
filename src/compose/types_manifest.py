@@ -836,7 +836,7 @@ _COMMENT = (
     "(port-defined ∪ target-reachable); port types keep the full "
     "footprint. The agent fills each pointer field's `ptr` ownership block and "
     "any guarded field's `locked_by`; a type stores NO lifecycle of its own -- "
-    "which routines drop/dispose/clone it is reverse-derived from the acting "
+    "which routines drop/dispose/clone/construct it is reverse-derived from the acting "
     "symbols (`query symbols --lifetime-for <TAG>`). "
     "`casted` {to,from} is the composer-filled raw struct<->struct cast graph "
     "(see _comment_casted) — engine erasure, downcasts "

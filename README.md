@@ -98,7 +98,7 @@ Symbol-only views:
 
 | Flag | Meaning |
 |---|---|
-| `--lifetime-for SPEC` | Find submitted droppers, disposers, and cloners acting on a type, `void`, or `string`. No `--name` is needed. |
+| `--lifetime-for SPEC` | Find submitted droppers, disposers, cloners, and constructors acting on a type, `void`, or `string`. No `--name` is needed. |
 | `--taking SPEC` | Find candidate symbols with an argument matching a type, `void`, or `string`. No `--name` is needed. |
 | `--calling FN[,FN...]` | With `--taking`, keep candidates that reach one of the named functions. |
 | `--callees` | Walk outward from `--name` through the raw call graph. |
@@ -178,7 +178,6 @@ Selection and output flags:
 | `--lifetime-for void\|string` | Emit the synthetic raw-pointer or string-lifetime wave. This is exclusive of names, files, and layers. |
 | `--transitive` | Include the selected units' in-scope dependency closure. |
 | `--skip NAME [NAME ...]` | Remove named units after selection. The option may be repeated. |
-| `--force` | Keep lifecycle primitives that normally ride with their owning type or raw-lifetime tier. |
 | `--api-headers-only` | Seed from published declarations and traverse the public-signature graph rather than implementation bodies. |
 
 Batch flags:

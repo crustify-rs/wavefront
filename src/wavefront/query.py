@@ -301,7 +301,11 @@ def _type_aliases(layout, target, type_name: str) -> set:
 
 _LIFETIME_FIELD = {"is_dropper": "dropped_by",
                    "is_disposer": "fields_disposed_by",
-                   "is_cloner": "cloned_by"}
+                   "is_cloner": "cloned_by",
+                   "is_constructor": "constructed_by"}
+# Roles whose value is a `{mode: bool}` block rather than a bare bool.
+_LIFETIME_MODES = {"is_cloner": ("deep", "upref"),
+                   "is_constructor": ("alloc", "init")}
 
 
 def _taking(target: Path, spec: str, calling: str | None,
@@ -445,18 +449,20 @@ def _lifetime_pool(layout, target) -> list:
 
 def _lifetime_for(target: Path, type_name: str, array_only: bool = False) -> None:
     """Reverse lifecycle lookup for a type: every symbol whose entry-level
-    `lifetime` acts on an ARG of that type, grouped into the type's dropped_by /
-    fields_disposed_by / cloned_by candidates (from is_dropper / is_disposer /
-    is_cloner). These are the Drop / dispose / Clone routines the type wrapper
-    records.
+    `lifetime` acts on a subject of that type, grouped into the type's
+    dropped_by / fields_disposed_by / cloned_by / constructed_by candidates
+    (from is_dropper / is_disposer / is_cloner / is_constructor).
 
-    The role is SYMBOL-level and names its subject arg in `lifetime.for`, so the
-    scan is one block per symbol resolved to that one arg — a symbol whose
+    The role is SYMBOL-level and names its subject in `lifetime.for`, so the
+    scan is one block per symbol resolved to that one subject — a symbol whose
     `lifetime.for` names an arg of a DIFFERENT type is not a candidate for this
-    type, even though it may take one. Returns are never subjects (a return is
-    produced, not acted on). Prints JSON ``{type, matched_aliases,
+    type, even though it may take one. The subject is an arg, except for an
+    `alloc` constructor that returns its object (`for: "return"`; reported with
+    `arg: null`, `arg_name: "return"`); one that stores it through an
+    out-parameter names that arg like any other role. Prints JSON
+    ``{type, matched_aliases,
     dropped_by:[{symbol,arg,arg_name,arg_type,defined_in,mode?}],
-    fields_disposed_by:[...], cloned_by:[...]}``."""
+    fields_disposed_by:[...], cloned_by:[...], constructed_by:[...]}``."""
     from wavefront.layout import Layout
 
     layout = Layout.discover(target)
@@ -464,7 +470,8 @@ def _lifetime_for(target: Path, type_name: str, array_only: bool = False) -> Non
                if type_name not in _SPEC_KEYWORDS else {type_name})
     result = {"type": type_name, "matched_aliases": sorted(aliases),
               "array_only": array_only,
-              "dropped_by": [], "fields_disposed_by": [], "cloned_by": []}
+              "dropped_by": [], "fields_disposed_by": [], "cloned_by": [],
+              "constructed_by": []}
     seen = set()
     if True:
         for s in _lifetime_pool(layout, target):
@@ -472,8 +479,13 @@ def _lifetime_for(target: Path, type_name: str, array_only: bool = False) -> Non
             if not isinstance(lf, dict):
                 continue
             subject = lf.get("for")
-            a = next((x for x in s.get("ptr_args") or []
-                      if x.get("name") == subject), None)
+            if subject == _RETURN_SUBJECT:
+                ret = s.get("ptr_ret")
+                a = ({**ret, "position": None, "name": _RETURN_SUBJECT}
+                     if isinstance(ret, dict) else None)
+            else:
+                a = next((x for x in s.get("ptr_args") or []
+                          if x.get("name") == subject), None)
             if a is None:
                 continue
             if not _arg_matches_spec(a, type_name, aliases,
@@ -483,13 +495,14 @@ def _lifetime_for(target: Path, type_name: str, array_only: bool = False) -> Non
                 continue
             for flag, field in _LIFETIME_FIELD.items():
                 v = lf.get(flag)
-                # `is_cloner` carries its {deep, upref} modes; is_dropper /
+                # `is_cloner` / `is_constructor` carry their modes; is_dropper /
                 # is_disposer are bare bools.
-                if flag == "is_cloner":
-                    if not (isinstance(v, dict)
-                            and (v.get("deep") or v.get("upref"))):
+                if flag in _LIFETIME_MODES:
+                    if not isinstance(v, dict):
                         continue
-                    modes = [m for m in ("deep", "upref") if v.get(m)]
+                    modes = [m for m in _LIFETIME_MODES[flag] if v.get(m)]
+                    if not modes:
+                        continue
                 else:
                     if v is not True:
                         continue
@@ -509,8 +522,9 @@ def _lifetime_for(target: Path, type_name: str, array_only: bool = False) -> Non
                 if modes is not None:
                     row["mode"] = modes
                 result[field].append(row)
-    for field in ("dropped_by", "fields_disposed_by", "cloned_by"):
-        result[field].sort(key=lambda r: (r["symbol"], r["arg"]))
+    for field in _LIFETIME_FIELD.values():
+        result[field].sort(key=lambda r: (r["symbol"], r["arg"] is not None,
+                                          r["arg"] or 0))
     print(json.dumps(result, indent=2))
 
 
@@ -906,7 +920,16 @@ _PTR_AGENT_KEYS = {"scalar", "array", "string", "owned", "borrowed",
 # `is_cloner` = null | {deep, upref} -- `deep` copies into a fresh allocation,
 # `upref` bumps a refcount; the two co-exist on a body that branches between
 # them, and on an untyped `void *` whose concrete element decides at runtime.
-_LIFETIME_KEYS = {"for", "is_dropper", "is_disposer", "is_cloner"}
+# `is_constructor` = null | {alloc, init} -- `alloc` hands the caller a new
+# object it owns, through the return (`for` is `"return"`) or an out-parameter
+# (`for` names a pointer-to-pointer arg); `init` initializes caller-provided
+# storage in place (`for` names that single-pointer arg). Exactly one is set,
+# and a constructor plays no other role, since its subject is produced rather
+# than acted on.
+_LIFETIME_KEYS = {"for", "is_dropper", "is_disposer", "is_cloner",
+                  "is_constructor"}
+# The `for` value naming the return as a constructor's subject.
+_RETURN_SUBJECT = "return"
 _FORK_KEYS = {"ptr_args", "ptr_ret", "lifetime", "callsites"}
 # The concurrency binding on a global or struct-field record: the
 # lock object guarding the slot plus its acquire/release op lists. It sits at the
@@ -992,10 +1015,12 @@ def _findings_schema(kind: str) -> dict:
             }
         },
         "ptr_ret": "{ptr: <same block as ptr_args[pos].ptr>} | null",
-        "lifetime": ("null | {for: <arg name>, is_dropper: bool, is_disposer: "
-                     "bool, is_cloner: {deep: bool, upref: bool}|null}   "
+        "lifetime": ("null | {for: <arg name> | \"return\", is_dropper: bool, "
+                     "is_disposer: bool, is_cloner: {deep: bool, upref: bool}|null, "
+                     "is_constructor: {alloc: bool, init: bool}|null}   "
                      "(functions/callbacks: THIS symbol's lifecycle role, on the "
-                     "arg named by `for`; null = no role)"),
+                     "arg named by `for`, or on the return (`for: \"return\"`) "
+                     "for an alloc that returns its object; null = no role)"),
         "ptr": "<same block as ptr_args[pos].ptr> | null   (globals only)",
         "locked_by": ("null | {lock: <name>, lock_op: [<fn>], unlock_op: [<fn>]}"
                       "   (globals only)"),
@@ -1099,7 +1124,7 @@ def _ptr_invariant_errors(field: str, ptr: dict, field_type: str) -> list[str]:
     if isinstance(borrowed, dict) and not borrowed.get("lifetime"):
         e.append(f"field {field!r}: borrowed set but lifetime unset")
     if "lifetime" in ptr:
-        e.append(f"field {field!r}: `lifetime` (is_dropper/is_disposer/is_cloner) "
+        e.append(f"field {field!r}: `lifetime` (is_dropper/is_disposer/is_cloner/is_constructor) "
                  "is a symbol-level block -- a struct field's "
                  "lifecycle derives from its field-type's record, not from the "
                  "field")
@@ -1332,23 +1357,28 @@ def _sym_ptr_invariant_errors(label: str, blk: dict, const: bool,
     # records — it lives on the entry's top-level `lifetime`, which names its
     # subject arg in `for`.
     if "lifetime" in blk:
-        e.append(f"{label}: `lifetime` (is_dropper/is_disposer/is_cloner) is a "
+        e.append(f"{label}: `lifetime` (is_dropper/is_disposer/is_cloner/is_constructor) is a "
                  "SYMBOL-level block, not a ptr key — submit it at the top level "
                  "of the findings, naming this arg in `lifetime.for`")
     return e
 
 
-def _lifetime_errors(label: str, lf, arg_ptr_by_name: dict | None) -> list[str]:
+def _lifetime_errors(label: str, lf, arg_ptr_by_name: dict | None,
+                     ret_ptr=None, has_ret: bool | None = None,
+                     arg_depth_by_name: dict | None = None) -> list[str]:
     """Validate a SYMBOL-level `lifetime` block: which lifecycle-primitive role
-    this function/callback plays, and on which arg.
+    this function/callback plays, and on which arg (or, for an `alloc`
+    constructor, possibly on its return).
 
     `null` is both "no lifecycle role" and the composer's unprocessed state, so
     it is always accepted. A non-null block is
-    ``{for, is_dropper, is_disposer, is_cloner}``:
+    ``{for, is_dropper, is_disposer, is_cloner, is_constructor}``:
 
       - **`for`** -- the arg the role acts on, BY NAME. Same vocabulary as a
         borrowed pointer's `arg:<name>` source, so every arg-dependent fact in
         the schema references args one way; the positional form is rejected.
+        An `alloc` constructor's subject is its return, named `"return"`, or
+        the out-parameter it stores the new object through.
       - **`is_dropper`** (bool) -- frees the arg's own STORAGE (a full dtor).
       - **`is_disposer`** (bool) -- frees the storage of the arg's FIELDS but
         KEEPS the arg's own storage (a teardown / `*_cleanup` / reset).
@@ -1356,6 +1386,11 @@ def _lifetime_errors(label: str, lf, arg_ptr_by_name: dict | None) -> list[str]:
         fresh allocation, `upref` bumps its refcount. Both modes may be set at
         once: a body that branches between them, or an untyped `void *` whose
         concrete element decides at runtime.
+      - **`is_constructor`** -- null | {alloc, init}: `alloc` hands the
+        caller a new object it owns and must release, by return or through an
+        out-parameter (a pointer-to-pointer arg); `init` initializes
+        caller-provided storage in place (a single-pointer arg). Exactly one
+        mode is set, and a constructor plays no other role.
 
     `is_dropper` and `is_disposer` are MUTUALLY EXCLUSIVE -- the arg's storage is
     either released or retained, never both, so a full destructor is `is_dropper`
@@ -1363,21 +1398,27 @@ def _lifetime_errors(label: str, lf, arg_ptr_by_name: dict | None) -> list[str]:
     the allocation is gone) and a cleanup that resets the fields in place is
     `is_disposer` alone. A block that asserts NO role is rejected: submit `null`.
 
-    Interaction rules with the named arg's ownership (`arg_ptr_by_name` maps arg
-    name -> its post-merge `ptr` block; pass `None` to skip when the caller lacks
-    arg context):
+    Interaction rules with the subject's ownership (`arg_ptr_by_name` maps arg
+    name -> its post-merge `ptr` block, `ret_ptr` is the return's, and
+    `arg_depth_by_name` maps arg name -> its pointer depth; pass
+    `arg_ptr_by_name=None` to skip when the caller lacks that context):
       - `is_dropper`  => that arg is `owned` (you free the storage of what you own).
       - `is_cloner`   => that arg is `borrowed` (it reads the source to copy it).
       - `is_disposer` => EITHER (a full dtor owns it; a `*_cleanup` borrows it).
-    An arg whose `ptr` is still `null` (unanalyzed) is exempt from these — the
-    ownership fact does not exist yet to contradict.
+      - `alloc` by return => the return is `owned` (the caller must release it).
+      - `alloc` by out-parameter => that arg is a pointer-to-pointer (depth >= 2)
+        and not immutable (the new object's pointer is stored through it).
+      - `init`        => that arg is a single pointer (depth 1) and not
+        immutable (it is the storage being written).
+    A subject whose `ptr` is still `null` (unanalyzed) is exempt from these —
+    the ownership fact does not exist yet to contradict.
     """
     e: list[str] = []
     if lf is None:
         return e
     if not isinstance(lf, dict):
         e.append(f"{label}: must be null or "
-                 "{for, is_dropper, is_disposer, is_cloner}")
+                 "{for, is_dropper, is_disposer, is_cloner, is_constructor}")
         return e
     bad = set(lf) - _LIFETIME_KEYS
     if bad:
@@ -1391,33 +1432,68 @@ def _lifetime_errors(label: str, lf, arg_ptr_by_name: dict | None) -> list[str]:
                  "a routine either frees the arg's storage (is_dropper, which "
                  "subsumes tearing its fields down) or keeps it and resets the "
                  "fields (is_disposer), never both")
-    cloned = lf.get("is_cloner")
-    if cloned is not None:
-        if not isinstance(cloned, dict) or (set(cloned) - {"deep", "upref"}):
-            e.append(f"{label}.is_cloner: must be null or {{deep, upref}}")
-            cloned = None
-        else:
-            # A submitted `is_cloner` replaces the prior wholesale, so both modes
-            # must be stated -- reject a null left where false was meant.
-            for mode in ("deep", "upref"):
-                if not isinstance(cloned.get(mode), bool):
-                    e.append(f"{label}.is_cloner.{mode}: must be an explicit "
-                             "boolean")
+
+    def _modes(key: str, modes: tuple[str, ...]) -> dict | None:
+        """A `{mode: bool}` block with every mode stated: a submitted block
+        replaces the prior wholesale, so a null left where false was meant is
+        rejected."""
+        blk = lf.get(key)
+        if blk is None:
+            return None
+        if not isinstance(blk, dict) or (set(blk) - set(modes)):
+            e.append(f"{label}.{key}: must be null or "
+                     "{" + ", ".join(modes) + "}")
+            return None
+        for mode in modes:
+            if not isinstance(blk.get(mode), bool):
+                e.append(f"{label}.{key}.{mode}: must be an explicit boolean")
+        return blk
+
+    cloned = _modes("is_cloner", ("deep", "upref"))
     any_clone = isinstance(cloned, dict) and bool(
         cloned.get("deep") or cloned.get("upref"))
+    ctor = _modes("is_constructor", ("alloc", "init"))
+    alloc = isinstance(ctor, dict) and ctor.get("alloc") is True
+    init = isinstance(ctor, dict) and ctor.get("init") is True
+    if alloc and init:
+        e.append(f"{label}.is_constructor: alloc and init are mutually "
+                 "exclusive — the subject is either the returned object "
+                 "(alloc, `for: \"return\"`) or caller storage (init)")
+    other_role = (lf.get("is_dropper") is True or lf.get("is_disposer") is True
+                  or any_clone)
+    if (alloc or init) and other_role:
+        e.append(f"{label}: a constructor plays no other role — its subject is "
+                 "produced, not released or copied; record those roles on the "
+                 "routines that perform them")
     # A block that claims nothing is not a finding — `null` is how "this symbol
     # is not a lifecycle primitive" is recorded, and it is what the composer
     # already emits.
-    if not (lf.get("is_dropper") is True or lf.get("is_disposer") is True
-            or any_clone):
+    if not (other_role or alloc or init):
         e.append(f"{label}: asserts no role — set at least one of is_dropper / "
-                 "is_disposer / is_cloner.{deep,upref}, or submit `lifetime: "
-                 "null` for a symbol that is not a lifecycle primitive")
+                 "is_disposer / is_cloner.{deep,upref} / "
+                 "is_constructor.{alloc,init}, or submit `lifetime: null` for a "
+                 "symbol that is not a lifecycle primitive")
 
     subject = lf.get("for")
     if not isinstance(subject, str) or not subject.strip():
         e.append(f"{label}.for: required — name the arg this role acts on "
-                 "(a bare arg name, not `arg:<name>` and not a position)")
+                 "(a bare arg name, not `arg:<name>` and not a position), or "
+                 f"{_RETURN_SUBJECT!r} for an alloc constructor that returns "
+                 "its object")
+        return e
+    if subject == _RETURN_SUBJECT:
+        if not alloc:
+            e.append(f"{label}.for: {_RETURN_SUBJECT!r} names the return, which "
+                     "only an alloc constructor acts on — a dropper, disposer, "
+                     "cloner or init acts on an arg")
+            return e
+        if has_ret is False:
+            e.append(f"{label}: an alloc constructor returns the new object, "
+                     "but this symbol has no pointer return")
+            return e
+        if isinstance(ret_ptr, dict) and ret_ptr.get("owned") is not True:
+            e.append(f"{label}: is_constructor.alloc requires the return to be "
+                     "owned (the caller must release it)")
         return e
     if arg_ptr_by_name is None:
         return e
@@ -1432,6 +1508,20 @@ def _lifetime_errors(label: str, lf, arg_ptr_by_name: dict | None) -> list[str]:
                  f"(expected one of {sorted(arg_ptr_by_name)})")
         return e
 
+    # Depth is composer-extracted, so it separates the two arg-subject
+    # constructors even while the arg's ownership is unanalyzed.
+    depth = (arg_depth_by_name or {}).get(subject)
+    if isinstance(depth, int):
+        if alloc and depth < 2:
+            e.append(f"{label}: is_constructor.alloc through an arg needs an "
+                     f"out-parameter (a pointer-to-pointer); {subject!r} has "
+                     f"depth {depth} — if the routine fills this storage in "
+                     "place, it is `init`")
+        if init and depth != 1:
+            e.append(f"{label}: is_constructor.init fills caller storage through "
+                     f"a single pointer; {subject!r} has depth {depth} — if the "
+                     "routine stores a new object through it, it is `alloc`")
+
     # Cross-check against the subject arg's ownership, as it will stand AFTER
     # this update (a findings doc may set the role and the ownership together).
     blk = arg_ptr_by_name[subject]
@@ -1443,6 +1533,9 @@ def _lifetime_errors(label: str, lf, arg_ptr_by_name: dict | None) -> list[str]:
     if any_clone and not isinstance(blk.get("borrowed"), dict):
         e.append(f"{label}: is_cloner requires arg {subject!r} to be borrowed "
                  "(it reads the source to copy it)")
+    if (alloc or init) and blk.get("mutable") is False:
+        e.append(f"{label}: is_constructor requires arg {subject!r} to be "
+                 "writable (it stores the new object, or initializes it, there)")
     return e
 
 
@@ -1586,6 +1679,14 @@ def _update_sym(layout, target, name: str, defined_in: str | None,
                     out[a["name"]] = rec["ptr"]
             return out
 
+        def _post_merge_ret_ptr(ret_f):
+            """The return's `ptr` block as it will stand AFTER this update —
+            the submitted one where there is one, the on-disk one otherwise.
+            An alloc constructor's ownership is checked against it."""
+            if isinstance(ret_f, dict) and "ptr" in ret_f:
+                return ret_f["ptr"]
+            return (entry.get("ptr_ret") or {}).get("ptr")
+
         # Validates one ownership contract — the primary's (`where=""`) or a
         # fork's. Both shapes are identical, so forks reuse it verbatim.
         # `has_lt` distinguishes an omitted `lifetime` (leave as-is) from an
@@ -1651,14 +1752,22 @@ def _update_sym(layout, target, name: str, defined_in: str | None,
                         f"{where}lifetime: {name!r} is {ekind!r} — a lifecycle "
                         f"role is a property of a function/callback acting on an "
                         f"arg; a type's Drop/Clone is reverse-derived from those")
-                elif not has_args:
+                elif not has_args and not (
+                        isinstance(lifetime_f, dict)
+                        and lifetime_f.get("for") == _RETURN_SUBJECT):
                     errors.append(
                         f"{where}lifetime: {name!r} has no pointer args, so there "
-                        f"is nothing for `for` to name")
+                        f"is nothing for `for` to name (an alloc constructor "
+                        f"names its return: `for: {_RETURN_SUBJECT!r}`)")
                 else:
                     errors.extend(_lifetime_errors(
                         f"{where}lifetime", lifetime_f,
-                        _post_merge_arg_ptrs(args_f)))
+                        _post_merge_arg_ptrs(args_f),
+                        ret_ptr=_post_merge_ret_ptr(ret_f),
+                        has_ret=entry.get("ptr_ret") is not None,
+                        arg_depth_by_name={
+                            a["name"]: a.get("depth")
+                            for a in arg_by_pos.values() if a.get("name")}))
 
         _check_ptr(f.get("ptr_args"), pr, "",
                    f.get("lifetime"), "lifetime" in f)
