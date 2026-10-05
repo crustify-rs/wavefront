@@ -243,8 +243,7 @@ def build_wave(layout, target: Path, *, names: list[str] | None,
                max_syms: int = DEFAULT_MAX_SYMS,
                max_loc: int | None = DEFAULT_MAX_LOC,
                max_types: int = DEFAULT_MAX_TYPES,
-               min_fields: int = DEFAULT_MIN_FIELDS,
-               force: bool = False) -> dict:
+               min_fields: int = DEFAULT_MIN_FIELDS) -> dict:
     """Return a stable, objective-neutral sub-campaign schedule."""
     from collections import defaultdict
     from compose import scope as compose_scope
@@ -312,22 +311,10 @@ def build_wave(layout, target: Path, *, names: list[str] | None,
 
     pair = (manifests.entries(layout, target, "types", stage="schedule"),
             manifests.entries(layout, target, "symbols", stage="schedule"))
+    # Each type unit carries its declared fields. Lifecycle roles are agent
+    # findings submitted after this plan is made, so they neither bundle nor
+    # filter anything here: every selected symbol is scheduled.
     declared = load_type_meta(pair)
-    bound_ops = {op for _tag, (_fields, ops) in declared.items() for op in ops}
-    for entry in pair[1]:
-        lifetime = entry.get("lifetime")
-        if isinstance(lifetime, dict) and any(lifetime.get(key) for key in (
-                "is_dropper", "is_disposer", "is_cloner")):
-            bound_ops.add(entry.get("name"))
-    if not force:
-        dropped = sorted({node.id for node in nodes if node.id in bound_ops})
-        if dropped:
-            print(f"[wavefront schedule] dropped {len(dropped)} lifecycle "
-                  "primitive(s) emitted by their owning type or raw tier: "
-                  + ", ".join(dropped[:8]) + (" …" if len(dropped) > 8 else ""))
-            nodes = [node for node in nodes if node.id not in bound_ops]
-    if not nodes:
-        raise SystemExit("schedule: nothing selected after lifecycle filtering")
     anchors = _field_anchors(layout, target,
                              api_headers_only=api_headers_only)
     def section(node: Node) -> str:

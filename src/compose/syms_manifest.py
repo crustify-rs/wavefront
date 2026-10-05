@@ -423,8 +423,10 @@ def _null_lifetime():
     `lifetime.for` -- by NAME, the same way a borrowed `ptr` names its source
     (`arg:<name>`), so both arg-dependent facts use one vocabulary. Null means
     "no lifecycle role" and is also the unprocessed state; a filled block is
-    `{for, is_dropper, is_disposer, is_cloner}` and must assert at least one
-    role. Globals and macros have no call boundary and carry no such slot."""
+    `{for, is_dropper, is_disposer, is_cloner, is_constructor}` and must assert
+    at least one role. An `alloc` constructor's subject is its return (`for:
+    "return"`) or the out-parameter it stores the new object through. Globals
+    and macros have no call boundary and carry no such slot."""
     return None
 
 

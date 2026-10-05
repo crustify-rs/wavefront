@@ -80,7 +80,6 @@ def build_parser() -> argparse.ArgumentParser:
     schedule.add_argument("--file", nargs="+", dest="files", default=None)
     schedule.add_argument("--dag-layer", type=int, default=None)
     schedule.add_argument("--skip", nargs="+", action="extend", default=None)
-    schedule.add_argument("--force", action="store_true")
     schedule.add_argument("--transitive", action="store_true")
     schedule.add_argument(
         "--api-headers-only", action="store_true",
@@ -214,19 +213,23 @@ def _add_query_flags(p: argparse.ArgumentParser, *, facets: bool) -> None:
                                 "set of functions that access it.")
     else:
         # Symbols-only REVERSE lifecycle lookup, parameterized by a TYPE (no
-        # --name). Feeds the type WRAPPER: which symbols realize TYPE's Drop /
-        # dispose / Clone, read off each symbol's entry-level lifetime block.
+        # --name): which symbols drop / dispose / clone / construct TYPE, read
+        # off each symbol's entry-level lifetime block.
         facet.add_argument(
             "--lifetime-for", default=None, metavar="SPEC", dest="lifetime_for",
             help="Reverse lifecycle lookup (READ: roles that already exist): "
                  "every symbol whose `lifetime` block (is_dropper/is_disposer/"
-                 "is_cloner) acts on an arg matching SPEC, grouped into the "
-                 "type's dropped_by / fields_disposed_by / cloned_by. SPEC is "
+                 "is_cloner/is_constructor) acts on a subject matching SPEC, "
+                 "grouped into the type's dropped_by / fields_disposed_by / "
+                 "cloned_by / constructed_by. SPEC is "
                  "a struct tag / typedef, or the keyword `void` (raw byte-level, "
                  "untyped) or `string` (NUL-terminated; the char family or the "
-                 "wrapper's own ptr.string verdict). The subject arg is the one "
-                 "named by `lifetime.for`, so a symbol that merely TAKES a SPEC "
-                 "arg without acting on it is not listed. No --name needed.")
+                 "wrapper's own ptr.string verdict). The subject is the arg "
+                 "named by `lifetime.for`, or the return for an alloc "
+                 "constructor that returns its object (`for: \"return\"`), "
+                 "so a symbol that merely "
+                 "TAKES a SPEC arg without acting on it is not listed. No --name "
+                 "needed.")
         facet.add_argument(
             "--taking", default=None, metavar="SPEC", dest="taking",
             help="CANDIDATE discovery (the inverse of --lifetime-for, which reads "
@@ -537,7 +540,6 @@ def _main() -> None:
                 api_headers_only=args.api_headers_only,
                 max_syms=args.max_syms, max_loc=args.max_loc,
                 max_types=args.max_types, min_fields=args.min_fields,
-                force=args.force,
             )
         write_wave(args.output, wave)
         print(f"[wavefront schedule] {wave['summary']['unit_count']} "

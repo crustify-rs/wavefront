@@ -359,7 +359,8 @@ def clone_op_names(cloned_by) -> list[str]:
 
 def _empty_lifecycle() -> dict:
     return {"dropped_by": [], "cloned_by": {"deep": [], "upref": []},
-            "fields_disposed_by": []}
+            "fields_disposed_by": [],
+            "constructed_by": {"alloc": [], "init": []}}
 
 
 def _entry_pair(src) -> tuple[list, list]:
@@ -392,14 +393,17 @@ def build_lifecycle_index(analysis_root) -> dict[str, dict]:
 
     A concrete type stores no lifecycle of its own. The fact lives once, on the
     acting symbol: ``syms.json``'s entry-level ``lifetime``
-    ``{for, is_dropper, is_disposer, is_cloner}`` (see docs/schemas/syms.md).
+    ``{for, is_dropper, is_disposer, is_cloner, is_constructor}`` (see
+    docs/schemas/syms.md). The subject is the arg named by ``for`` (an
+    ``alloc`` constructor's out-parameter included), or the returned object
+    when ``for`` is ``"return"``.
     This inverts that relation — the composer-side equivalent of
     ``query symbols --lifetime-for`` — so the dag / consistency / schedule
     stages read one derived index instead of a field that could drift from the
     symbol that actually implements the role.
 
     Returns ``tag -> {dropped_by: [fn], cloned_by: {deep: [fn], upref: [fn]},
-    fields_disposed_by: [fn]}``, keyed by the CANONICAL type tag: a symbol's arg
+    fields_disposed_by: [fn], constructed_by: {alloc: [fn], init: [fn]}}``, keyed by the CANONICAL type tag: a symbol's arg
     records its pointee type as written (``SSL``), which is resolved through the
     types tree's ``typedef`` aliases to the struct tag (``ssl_st``) so both
     spellings land on one entry. Types with no role are absent, not empty.
@@ -425,8 +429,11 @@ def build_lifecycle_index(analysis_root) -> dict[str, dict]:
         lf = s.get("lifetime")
         if not isinstance(lf, dict):
             continue
-        arg = next((a for a in s.get("ptr_args") or []
-                    if a.get("name") == lf.get("for")), None)
+        if lf.get("for") == "return":
+            arg = s.get("ptr_ret") if isinstance(s.get("ptr_ret"), dict) else None
+        else:
+            arg = next((a for a in s.get("ptr_args") or []
+                        if a.get("name") == lf.get("for")), None)
         fn = s.get("name")
         if arg is None or not fn:
             continue
@@ -443,6 +450,11 @@ def build_lifecycle_index(analysis_root) -> dict[str, dict]:
             for mode in ("deep", "upref"):
                 if cl.get(mode):
                     rec["cloned_by"][mode].append(fn)
+        ctor = lf.get("is_constructor")
+        if isinstance(ctor, dict):
+            for mode in ("alloc", "init"):
+                if ctor.get(mode):
+                    rec["constructed_by"][mode].append(fn)
 
     def _dedup(xs):
         seen: set[str] = set()
@@ -453,6 +465,8 @@ def build_lifecycle_index(analysis_root) -> dict[str, dict]:
         rec["fields_disposed_by"] = _dedup(rec["fields_disposed_by"])
         for mode in ("deep", "upref"):
             rec["cloned_by"][mode] = _dedup(rec["cloned_by"][mode])
+        for mode in ("alloc", "init"):
+            rec["constructed_by"][mode] = _dedup(rec["constructed_by"][mode])
     return out
 
 
@@ -487,13 +501,21 @@ def type_fields_disposed_by(entry: dict, lifecycle=None) -> list:
     return _lifecycle_of(entry, lifecycle)["fields_disposed_by"]
 
 
+def type_constructed_by(entry: dict, lifecycle=None) -> dict:
+    """The type's ``{alloc, init}`` constructor block, reverse-derived from the
+    symbols whose ``lifetime.is_constructor`` produces an object of this type
+    (``alloc``, by return) or initializes one in place (``init``, by arg)."""
+    return _lifecycle_of(entry, lifecycle)["constructed_by"]
+
+
 def type_method_syms(entry: dict, lifecycle=None) -> list[str]:
     """The C function names that are this type's methods — its method surface,
     deduped, lifecycle-first.
 
     Wholly DERIVED, never stored: the type's lifecycle (``dropped_by`` ∪
-    ``cloned_by.{deep,upref}`` ∪ ``fields_disposed_by``), reverse-derived from
-    the acting symbols via ``lifecycle``. Field accessors are NOT part of the
+    ``cloned_by.{deep,upref}`` ∪ ``fields_disposed_by`` ∪
+    ``constructed_by.{alloc,init}``), reverse-derived from the acting symbols
+    via ``lifecycle``. Field accessors are NOT part of the
     surface -- the wrapper derives per-field accessors from the field layout
     directly, so a C field-accessor function is an ordinary free function here.
     """
@@ -501,33 +523,9 @@ def type_method_syms(entry: dict, lifecycle=None) -> list[str]:
     out: list[str] = list(lc["dropped_by"])
     out += clone_op_names(lc["cloned_by"])
     out += lc["fields_disposed_by"]
+    out += lc["constructed_by"]["alloc"] + lc["constructed_by"]["init"]
     seen: set[str] = set()
     return [x for x in out if not (x in seen or seen.add(x))]
-
-
-def type_method_fns(analysis_root: Path, lifecycle=None) -> set[str]:
-    """Union of every type's method surface (lifecycle ops) across the analysis
-    tree. These are **folded** into their owning type's wrap unit (emitted by
-    `wrap types` at the *type's* layer), so they must never be selected as
-    standalone sym units — the wrap/port layer-slice selection subtracts this
-    set, and the port stage uses it as its lifecycle filter.
-
-    Builds the lifecycle index itself when not handed one, since it already
-    walks the same tree."""
-    root = Path(analysis_root)
-    if lifecycle is None:
-        lifecycle = build_lifecycle_index(root)
-    fns: set[str] = set()
-    for tj in root.rglob("types.json"):
-        try:
-            doc = json.loads(tj.read_text())
-        except (OSError, ValueError):
-            continue
-        recs = doc if isinstance(doc, list) else (doc.get("types") or [])
-        for rec in recs:
-            if isinstance(rec, dict):
-                fns.update(type_method_syms(rec, lifecycle))
-    return fns
 
 
 def in_scope_pred(scope_json, section: str, **kw):
