@@ -34,7 +34,9 @@ from pathlib import Path
 #:      API mode projects them onto the public API.
 #: 12 — T3 tables (`compose/t3.py`) add edges; macro generators come from
 #:      `type_generators.csv` only.
-_VERSION = 12
+#: 13 — a callback the targeted inventory publishes gets a record even
+#:      when no target body reaches it.
+_VERSION = 13
 
 
 def fingerprint(layout, target) -> dict:

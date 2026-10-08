@@ -922,7 +922,11 @@ def compose(
     # never ported (it becomes an `extern "C" fn` type), so it is
     # always wrap; inclusion is the wrap-reach gate (filter mode) or a direct
     # --name seed (seed mode). The same `_import_reachable` gate that admits
-    # wrap structs admits a callback (it is keyed by type name).
+    # wrap structs admits a callback (it is keyed by type name). A callback the
+    # in-memory inventory already classifies TARGETED -- its declaring header is
+    # one of the target's own (`api_headers`) -- is admitted outright: the target
+    # publishes it, so it needs a record even when no target body touches it
+    # (a callback published by one subsystem and invoked only by another).
     from .types_manifest import _import_reachable  # noqa: E402 (avoid import cycle)
     seen_cb: set[str] = set()
     for r in types:
@@ -933,6 +937,7 @@ def compose(
             continue
         seen_cb.add(name)
         if scope_enabled and not seed_mode and (name, "") not in imp_keys \
+                and (name, "") not in tgt_funcs \
                 and not _import_reachable(
                     reach, name, "", by_name, target_paths):
             continue
@@ -972,7 +977,7 @@ def compose(
                 elif kind and kind.startswith("global"):
                     reachable = reach.is_global_port_reachable(name, def_file)
                 elif kind == "callback":
-                    reachable = _import_reachable(
+                    reachable = (name, "") in tgt_funcs or _import_reachable(
                         reach, name, "", by_name, target_paths)
                 else:
                     # Macros (kind=null until agent classification).
