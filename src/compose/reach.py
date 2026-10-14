@@ -98,6 +98,7 @@ class Reach:
         self._build_function_ptr_arg_indexes(csv_dir_t2 / "function_pointer_args.csv")
         self._build_function_ptr_return_indexes(csv_dir_t2 / "function_pointer_returns.csv")
         self._build_cast_indexes(csv_dir_t2 / "casts.csv")
+        self._build_slot_cast_indexes(csv_dir_t2)
         # T1-side entity CSV — fields metadata. Optional.
         if csv_dir_t1 is not None:
             self._build_field_metadata_indexes(csv_dir_t1 / "fields.csv")
@@ -289,6 +290,19 @@ class Reach:
             if f and t:
                 self._cast_to[f].add(t)
                 self._cast_from[t].add(f)
+
+    def _build_slot_cast_indexes(self, t2: Path) -> None:
+        # Slot-mediated casts (edges/arg_casts.ql + edges/field_casts.ql),
+        # joined by compose/slot_casts.py: D -> param/ret/field ... -> T. Kept
+        # apart from the raw graph above -- a pair here passes through
+        # type-erased slots and carries the slots that witness it.
+        from . import slot_casts
+        rows: list[dict] = []
+        for name in ("arg_casts.csv", "field_casts.csv"):
+            if (t2 / name).exists():
+                rows += _load_csv(t2 / name)
+        self._slot_cast_to, self._slot_cast_from = slot_casts.by_type(
+            slot_casts.compose(rows))
 
     def _build_callback_sig_type_indexes(self, path: Path) -> None:
         # Forward only: (callback_name, callback_def_file) → list of
@@ -763,6 +777,16 @@ class Reach:
         """Tags cast INTO this type (the type appears as a cast result).
         Sorted. The type's raw `casted.from`."""
         return sorted(self._cast_from.get(tag, set()))
+
+    def slot_casts_to(self, tag: str) -> list[dict]:
+        """`{type, via}` records: tags this type is cast INTO through value
+        slots. The type's `casted_via.to`."""
+        return list(self._slot_cast_to.get(tag, []))
+
+    def slot_casts_from(self, tag: str) -> list[dict]:
+        """`{type, via}` records: tags cast INTO this type through value
+        slots. The type's `casted_via.from`."""
+        return list(self._slot_cast_from.get(tag, []))
 
     def callback_sig_types_of(self, cb_name: str, cb_def_file: str) -> list[tuple[str, str, str, str]]:
         """Signature type uses of a CALLBACK typedef — `(type_name, type_kind,

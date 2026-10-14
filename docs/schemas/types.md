@@ -40,6 +40,28 @@ pointer-cast graph (`edges/casts.ql`). `to` = tags this type is cast INTO (it is
 a cast operand); `from` = tags cast INTO this type (it is a cast result). Both
 are canonical struct tags (typedef spellings resolved), `[]` when none.
 
+## casted_via
+
+`{to: [{type, via}], from: [{type, via}]}`, composer-filled from the
+SLOT-MEDIATED cast graph (`edges/arg_casts.ql` + `edges/field_casts.ql`,
+joined by `compose/slot_casts.py`). It holds the casts `casted` cannot see
+because a type-erased slot sits between the two types:
+
+    av_log(avctx, ...)          AVCodecContext -> param av_log.0     (from)
+    av_vlog(avcl, ...)          param av_log.0 -> param av_vlog.0    (forward)
+    *(AVClass **) avcl          param av_vlog.0 -> AVClass           (to)
+
+gives `AVCodecContext.casted_via.to ∋ {type: AVClass, via: [entry, exit]}`.
+`via` names the slot the type enters and the slot read as the other type
+(one element when they coincide), as `kind:name.member@file` with `kind` in
+`param` | `ret` | `field`.
+
+Every edge is a conversion or hand-off written at the slot access itself;
+no flow through locals or memory is followed. Pairs join edges field-based
+(one slot per field, all instances merged) and path-insensitively, so a pair
+is a may-relation over those abstractions, not a guarantee that one
+execution performs the cast.
+
 ## opaque_in
 
 Composer-filled `{file: [symbols]}` footprint: functions that touch this type

@@ -243,7 +243,7 @@ def _merge_depends_on(existing: dict, incoming: dict) -> dict:
 # rule as before).
 _TYPE_COMPOSER_KEYS = (
     "typedef", "kind", "declared_in", "defined_in",
-    "casted", "opaque_in", "non_opaque_in",
+    "casted", "casted_via", "opaque_in", "non_opaque_in",
 )
 
 

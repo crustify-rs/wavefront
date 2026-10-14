@@ -1,0 +1,5 @@
+"rel","src_kind","src_name","src_file","src_member","src_decl","src_ctype","dst_kind","dst_name","dst_file","dst_member","dst_decl","dst_ctype","site_fn","site_file","line"
+"forward","field","Holder","slots.c","opaque","","void *","field","Holder","slots.c","other","","void *","copy_field","slots.c",29
+"to","field","Holder","slots.c","opaque","","void *","type","Payload","slots.c","","Payload","","get","slots.c",24
+"from","type","Payload","slots.c","","Payload","","field","Holder","slots.c","opaque","","void *","","slots.c",34
+"from","type","Payload","slots.c","","Payload","","field","Holder","slots.c","opaque","","void *","store_local","slots.c",30

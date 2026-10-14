@@ -480,6 +480,7 @@ def _struct_skeleton(
         "name": struct_name, "typedef": typedefs, "kind": kind,
         "declared_in": declared_in, "defined_in": defined_in,
         "casted": {"to": [], "from": []},
+        "casted_via": {"to": [], "from": []},
         "fields": fields,
     }
 
@@ -490,7 +491,8 @@ def _enum_skeleton(
     e = {
         "name": name, "typedef": typedefs, "kind": "enum",
         "declared_in": declared_in, "defined_in": defined_in,
-        "casted": {"to": [], "from": []}, "fields": [],
+        "casted": {"to": [], "from": []},
+        "casted_via": {"to": [], "from": []}, "fields": [],
     }
     return e
 
@@ -799,6 +801,8 @@ def compose(
                 _tag = scope.entry_tag(e)
                 e["casted"] = {"to": reach.casts_to(_tag),
                                "from": reach.casts_from(_tag)}
+                e["casted_via"] = {"to": reach.slot_casts_to(_tag),
+                                   "from": reach.slot_casts_from(_tag)}
         entries.sort(key=lambda e: scope.entry_tag(e) or "")
 
     # Template-by-macro families: `generated_by` names the macro that minted
@@ -841,6 +845,10 @@ _COMMENT = (
     "`casted` {to,from} is the composer-filled raw struct<->struct cast graph "
     "(see _comment_casted) — engine erasure, downcasts "
     "and ASN1 punning all coexist there, unclassified. "
+    "`casted_via` {to,from} is the slot-mediated cast graph "
+    "(edges/arg_casts.ql + edges/field_casts.ql): casts that pass through "
+    "parameters, returns and fields, type-erased ones included, each with "
+    "the slots that witness it. "
     "Anonymous-aggregate fields carry the raw type string; deep inlining "
     "deferred (see docs/TODO.md)."
 )

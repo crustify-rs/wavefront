@@ -1,0 +1,13 @@
+"rel","src_kind","src_name","src_file","src_member","src_decl","src_ctype","dst_kind","dst_name","dst_file","dst_member","dst_decl","dst_ctype","site_fn","site_file","line"
+"forward","field","Holder","slots.c","opaque","","void *","ret","get_raw","slots.c","ret","","void *","get_raw","slots.c",25
+"forward","field","Holder","slots.c","opaque","","void *","param","sink","","0","","void *","pass_field","slots.c",28
+"forward","field","Class","slots.c","name","","const char *","ret","vlog","slots.c","ret","","const char *","vlog","slots.c",14
+"forward","param","use_raw","slots.c","0","Holder","Holder *","param","get_raw","slots.c","0","Holder","Holder *","use_raw","slots.c",26
+"forward","param","put_direct","slots.c","1","Payload","Payload *","field","Holder","slots.c","other","","void *","put_direct","slots.c",23
+"forward","param","put","slots.c","1","Payload","Payload *","field","Holder","slots.c","opaque","","void *","put","slots.c",22
+"forward","param","use_log","slots.c","1","CtxB","CtxB *","param","log_","slots.c","0","","void *","use_log","slots.c",16
+"forward","param","use_log","slots.c","0","CtxA","CtxA *","param","log_","slots.c","0","","void *","use_log","slots.c",16
+"forward","param","log_","slots.c","0","","void *","param","vlog","slots.c","0","","void *","log_","slots.c",15
+"to","ret","get_raw","slots.c","ret","","void *","type","Payload","slots.c","","Payload","","use_raw","slots.c",26
+"to","param","derived_extra","slots.c","0","Base","Base *","type","Derived","slots.c","","Derived","","derived_extra","slots.c",19
+"to","param","vlog","slots.c","0","","void *","type","Class","slots.c","","Class","","vlog","slots.c",14
