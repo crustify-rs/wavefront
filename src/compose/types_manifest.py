@@ -803,6 +803,10 @@ def compose(
                                "from": reach.casts_from(_tag)}
                 e["casted_via"] = {"to": reach.slot_casts_to(_tag),
                                    "from": reach.slot_casts_from(_tag)}
+                for fld in e.get("fields") or ():
+                    v = reach.erased_field_variants(_tag, fld.get("name"))
+                    if v is not None:
+                        fld["erased_as"] = v
         entries.sort(key=lambda e: scope.entry_tag(e) or "")
 
     # Template-by-macro families: `generated_by` names the macro that minted

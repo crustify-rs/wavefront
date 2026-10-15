@@ -301,8 +301,9 @@ class Reach:
         for name in ("arg_casts.csv", "field_casts.csv"):
             if (t2 / name).exists():
                 rows += _load_csv(t2 / name)
-        self._slot_cast_to, self._slot_cast_from = slot_casts.by_type(
-            slot_casts.compose(rows))
+        composed = slot_casts.compose(rows)
+        self._slot_cast_to, self._slot_cast_from = slot_casts.by_type(composed.pairs)
+        self._erased_fields = slot_casts.by_field(composed.variants)
 
     def _build_callback_sig_type_indexes(self, path: Path) -> None:
         # Forward only: (callback_name, callback_def_file) → list of
@@ -787,6 +788,12 @@ class Reach:
         """`{type, via}` records: tags cast INTO this type through value
         slots. The type's `casted_via.from`."""
         return list(self._slot_cast_from.get(tag, []))
+
+    def erased_field_variants(self, tag: str, field: str) -> dict | None:
+        """`{stored, read_as}` for a type-erased pointer field: the named
+        types written into it and the ones its reads are converted to. The
+        field's `erased_as`; None when the field is named or never cast."""
+        return self._erased_fields.get((tag, field))
 
     def callback_sig_types_of(self, cb_name: str, cb_def_file: str) -> list[tuple[str, str, str, str]]:
         """Signature type uses of a CALLBACK typedef — `(type_name, type_kind,

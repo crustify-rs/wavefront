@@ -56,11 +56,16 @@ gives `AVCodecContext.casted_via.to ∋ {type: AVClass, via: [entry, exit]}`.
 (one element when they coincide), as `kind:name.member@file` with `kind` in
 `param` | `ret` | `field`.
 
+Only PARAMETERS propagate: a parameter is one value per call. Fields and
+returns are one slot for every instance or call, so they yield a pair only
+when both sides are named -- a `Base *` field read as `Derived *`, or a
+`Derived *` stored into it -- and a type-erased field is recorded on its
+field record as `erased_as` instead (see `fields`).
+
 Every edge is a conversion or hand-off written at the slot access itself;
-no flow through locals or memory is followed. Pairs join edges field-based
-(one slot per field, all instances merged) and path-insensitively, so a pair
-is a may-relation over those abstractions, not a guarantee that one
-execution performs the cast.
+no flow through locals or memory is followed, so casts are missed rather
+than invented. Parameter paths are still path-insensitive: a cast guarded
+by a type check joins every type that reaches its parameter.
 
 ## opaque_in
 
@@ -121,6 +126,13 @@ string cannot show, both of which used to collapse to a bare scalar with no
   vtable struct is a dependency LEAF: every slot renders `..(*)(..)`, so the
   DAG sees no edge and would schedule the struct before the types its function
   pointers traffic in. An ordinary `T *` field needs no help and carries none.
+- **`erased_as`** -- composer-filled, present ONLY on a type-erased pointer
+  field (`void *`, `uint8_t *`, ...) that some code casts: `{stored: [tags],
+  read_as: [tags]}`, the named types written into it and the ones its reads
+  are converted to (`AVCodecContext.priv_data`: `stored` one context,
+  `read_as` every codec's). These are the field's VARIANTS -- which type a
+  given instance holds is a runtime choice -- so they never become
+  `casted_via` pairs.
 
 Three agent-fillable keys ride on a field record:
 
