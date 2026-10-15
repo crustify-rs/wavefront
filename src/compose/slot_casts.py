@@ -41,10 +41,14 @@ from __future__ import annotations
 
 import csv
 import functools
+import re
 from collections import defaultdict
 from collections.abc import Iterable
 from pathlib import Path
 from typing import NamedTuple
+
+#: `void *`, `const void *`, `void **`, ... -- a C type that names nothing.
+_VOID_PTR = re.compile(r"^(?:(?:const|volatile)\s+)*void\s*(?:\*\s*(?:const\s*)?)+$")
 
 #: A slot: (kind, name, file, member). Types are keyed by tag alone, as in
 #: the raw cast graph (`casts.csv` names no file).
@@ -119,9 +123,12 @@ class Composed(NamedTuple):
     pairs: dict[tuple[str, str], tuple[Slot, ...]]
     #: `{field slot: (stored, read_as)}` for every type-erased field.
     variants: dict[Slot, tuple[frozenset[str], frozenset[str]]]
-    #: `{param slot: types}` for every type-erased parameter: the named types
-    #: its value is read as, in its own body or after forwarding. This is the
-    #: type the signature erases (`av_log.0` -> AVClass).
+    #: `{param slot: types}` for every `void *` parameter: the named types its
+    #: value is read as, in its own body or after forwarding. This is the type
+    #: the signature erases (`av_log.0` -> AVClass). A typed scalar pointer
+    #: (`unsigned *flags`) erases nothing, so it carries none even when it is
+    #: forwarded into a `void *` that some branch reads as a struct
+    #: (`av_parse_cpu_caps.0` -> ... -> `write_number(void *dst)`).
     param_reads: dict[Slot, frozenset[str]]
 
 
@@ -139,6 +146,7 @@ def compose(rows: Iterable[dict]) -> Composed:
     exits: dict[Slot, set[str]] = defaultdict(set)      # param -> T it is read as
     params: set[Slot] = set()
     declared: set[Slot] = set()                         # params with a named decl
+    void_params: set[Slot] = set()                      # params declared `void *`
     pairs: dict[tuple[str, str], tuple[Slot, ...]] = {}
     stored: dict[Slot, set[str]] = defaultdict(set)
     read_as: dict[Slot, set[str]] = defaultdict(set)
@@ -147,9 +155,11 @@ def compose(rows: Iterable[dict]) -> Composed:
     for r in rows:
         sk, src, sdecl = _end(r, "src")
         dk, dst, ddecl = _end(r, "dst")
-        for kind, end, decl in ((sk, src, sdecl), (dk, dst, ddecl)):
+        for side, kind, end, decl in (("src", sk, src, sdecl), ("dst", dk, dst, ddecl)):
             if kind == "param":
                 params.add(end)
+                if _VOID_PTR.match(r.get(f"{side}_ctype") or ""):
+                    void_params.add(end)
                 if decl:
                     enters[decl].add(end)
                     declared.add(end)
@@ -206,7 +216,7 @@ def compose(rows: Iterable[dict]) -> Composed:
 
     variants = {f: (frozenset(stored.get(f, ())), frozenset(read_as.get(f, ())))
                 for f in sorted(erased) if stored.get(f) or read_as.get(f)}
-    param_reads = {p: frozenset(reach_of[p]) for p in sorted(params)
+    param_reads = {p: frozenset(reach_of[p]) for p in sorted(void_params)
                    if p not in declared and reach_of.get(p)}
     return Composed(pairs, variants, param_reads)
 

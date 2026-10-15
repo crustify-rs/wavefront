@@ -28,7 +28,9 @@ from pathlib import Path
 #:      campaigns, `imported` is always the external closure, and the new
 #:      `api` view carries the declaration-anchored public surface. The
 #:      seeded import walk and `imported.seeds` are gone.
-_VERSION = 9
+#: 10 — slot-mediated casts (arg_casts/field_casts) order the dag: cast pairs
+#:      join the cast graph, `void *` params depend on what they are read as.
+_VERSION = 10
 
 
 def fingerprint(layout, target) -> dict:

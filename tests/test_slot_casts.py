@@ -160,6 +160,18 @@ class SlotCastComposeTests(unittest.TestCase):
             ("Holder", "other"): {"stored": ["Payload"], "read_as": []},
         })
 
+    def test_only_void_parameters_carry_reads(self) -> None:
+        # f(unsigned *flags) forwards into g(void *dst), which one branch reads
+        # as R: g erases R, f erases nothing.
+        rows = [
+            _edge("forward", ("param", "f", "0", ""), ("param", "g", "0", "")),
+            _edge("to", ("param", "g", "0", ""), ("type", "R", "", "R")),
+        ]
+        rows[0]["src_ctype"], rows[0]["dst_ctype"] = "unsigned int *", "void *"
+        rows[1]["src_ctype"] = "void *"
+        reads = slot_casts.compose(rows).param_reads
+        self.assertEqual({k[1]: sorted(v) for k, v in reads.items()}, {"g": ["R"]})
+
     def test_by_type_mirrors_pairs(self) -> None:
         to, from_ = slot_casts.by_type(self._golden_pairs())
         self.assertEqual([r["type"] for r in to["CtxA"]], ["Class"])
