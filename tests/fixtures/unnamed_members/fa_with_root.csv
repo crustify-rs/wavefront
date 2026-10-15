@@ -1,0 +1,22 @@
+enclosing_name,access_file,struct_name,root_struct_name,root_struct_def_file,field_name,field_path,access_kind,access_line
+use_conn,members.c,(unnamed class/struct/union),Conn,members.c,hostname,ext.hostname,read,66
+use_conn,members.c,(unnamed class/struct/union),Conn,members.c,inner,ext.inner,read,66
+use_conn,members.c,(unnamed class/struct/union),Conn,members.c,port,ext.port,write,66
+use_conn,members.c,Conn,Conn,members.c,ext,ext,read,66
+use_conn,members.c,Inner,Inner,members.c,v,v,read,66
+use_data,members.c,(unnamed class/struct/union),Data,members.c,l1,l1,read,64
+use_data,members.c,(unnamed class/struct/union),Data,members.c,l2,l2,read,64
+use_data,members.c,Data,Data,members.c,level,level,read,64
+use_data,members.c,Level1,Level1,members.c,min,min,read,64
+use_data,members.c,Level2,Level2,members.c,max,max,read,64
+use_expr,members.c,(unnamed class/struct/union),Expr,members.c,func0,func0,read,65
+use_expr,members.c,(unnamed class/struct/union),Expr,members.c,func1,func1,read,65
+use_nest,members.c,(unnamed class/struct/union),Nest,members.c,x,x,read,67
+use_nest,members.c,(unnamed class/struct/union),Nest,members.c,y,y,read,67
+use_nest,members.c,(unnamed class/struct/union),Nest,members.c,z,z,read,67
+use_plain,members.c,Inner,Inner,members.c,v,v,read,69
+use_plain,members.c,Plain,Plain,members.c,a,a,read,69
+use_plain,members.c,Plain,Plain,members.c,in,in,read,69
+use_shape,members.c,(unnamed class/struct/union),Shape,members.c,p,p,write,68
+use_shape,members.c,(unnamed class/struct/union),Shape,members.c,q,q,read,68
+use_shape,members.c,Shape,Shape,members.c,k,k,read,68
