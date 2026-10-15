@@ -13,7 +13,8 @@ from pathlib import Path
 from wavefront.resources import data_root
 
 FIXTURE = Path(__file__).parent / "fixtures" / "unnamed_members"
-QUERIES = ("entities/fields", "edges/field_type_uses", "edges/fa_with_root")
+QUERIES = ("entities/fields", "edges/field_type_uses", "edges/fa_with_root",
+           "edges/field_accesses")
 UNNAMED = "(unknown field)"
 
 
@@ -68,7 +69,7 @@ class UnnamedMemberGoldenTests(unittest.TestCase):
     silently bring the `(unknown field)` paths back."""
 
     def test_no_table_names_an_unnamed_member(self) -> None:
-        for name in ("fields", "field_type_uses", "fa_with_root"):
+        for name in ("fields", "field_type_uses", "fa_with_root", "field_accesses"):
             for r in _golden(name):
                 self.assertNotIn(UNNAMED, " ".join(r.values()), (name, r))
 
@@ -119,6 +120,21 @@ class UnnamedMemberGoldenTests(unittest.TestCase):
             self.assertIn(row, paths)
         # The unnamed member itself is never an access of its own.
         self.assertFalse([r for r in _golden("fa_with_root") if r["field_name"] == ""])
+
+    def test_raw_accesses_name_no_unnamed_member_of_a_named_struct(self) -> None:
+        # The raw edge keys on the IMMEDIATE declaring type, so `d->l1` is an
+        # access of the unnamed union's `l1`; the union member itself, keyed
+        # on `Data`, would hand the scheduler a bogus anchor.
+        rows = _golden("field_accesses")
+        named = {r["struct_name"] for r in _golden("fields")}
+        for r in rows:
+            if r["struct_name"] in named:
+                self.assertIn((r["struct_name"], r["field_name"]),
+                              {(f["struct_name"], f["field_name"])
+                               for f in _golden("fields")}, r)
+        self.assertIn(("use_data", "Data", "level"),
+                      {(r["enclosing_name"], r["struct_name"], r["field_name"])
+                       for r in rows})
 
 
 if __name__ == "__main__":
