@@ -237,6 +237,14 @@ def _add_query_flags(p: argparse.ArgumentParser, *, facets: bool) -> None:
                  "SPEC (tag / typedef / `void` / `string`). Pair with --calling "
                  "to keep only those that reach a lifecycle primitive. No --name "
                  "needed.")
+        facet.add_argument(
+            "--returning", default=None, metavar="SPEC", dest="returning",
+            help="CANDIDATE discovery by RETURN: every symbol whose pointer "
+                 "return matches SPEC (tag / typedef / `void` / `string`) -- "
+                 "where allocators and `alloc` constructors hand their object "
+                 "back, which --taking cannot see (`malloc(size_t)` takes no "
+                 "`void *`). Pair with --calling to keep those that reach an "
+                 "allocation primitive. No --name needed.")
         # The raw use-graph closure around a symbol. Distinct from `query dag
         # --name F --depth N`, which walks the ORDERING graph: scope-narrowed
         # (an imported symbol contributes no callees at all) and carrying the
@@ -257,7 +265,8 @@ def _add_query_flags(p: argparse.ArgumentParser, *, facets: bool) -> None:
                  "shape. Needs --name.")
         p.add_argument(
             "--calling", default=None, metavar="FN[,FN...]", dest="calling",
-            help="Narrow --taking to symbols that reach one of these routines "
+            help="Narrow --taking / --returning to symbols that reach one of "
+                 "these routines "
                  "within --depth hops (via the composer's depends_on.syms). "
                  "A dropper/cloner must ultimately reach a raw primitive -- but "
                  "the top-level one often does so through a helper, so >1 hop is "
@@ -275,7 +284,8 @@ def _add_query_flags(p: argparse.ArgumentParser, *, facets: bool) -> None:
                  "trade the caller owns, and what a large one costs is output.")
         p.add_argument(
             "--array", action="store_true", dest="array",
-            help="With --lifetime-for/--taking: keep only args whose ptr carries "
+            help="With --lifetime-for/--taking/--returning: keep only matches "
+                 "whose ptr carries "
                  "an `array` shape (a buffer, not a lone pointee). Only "
                  "meaningful on an analyzed record.")
 
@@ -480,6 +490,7 @@ def _dispatch_query(args: argparse.Namespace, target: Path) -> None:
         schema=bool(getattr(args, "schema", False)),
         lifetime_for=getattr(args, "lifetime_for", None),
         taking=getattr(args, "taking", None),
+        returning=getattr(args, "returning", None),
         calling=getattr(args, "calling", None),
         callees=bool(getattr(args, "callees", False)),
         callers=bool(getattr(args, "callers", False)),

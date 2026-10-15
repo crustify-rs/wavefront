@@ -225,7 +225,7 @@ constructor's arg is not immutable -- all checked against the subject's `ptr` as
 AFTER the update, and skipped while that `ptr` is still `null` (there is no
 ownership fact yet to contradict).
 
-### How to disocver lifetime primitives
+### How to discover lifetime primitives
 
 Unless otherwise stated, we are only interested in storage (i.e. heap allocation)
 droppers/freers, field disposers (for user-defined types taken by-value, i.e.
@@ -246,8 +246,15 @@ If your target type is:
   project-defined lifetime primitives by querying `wavefront` for methods
   calling the standard ones identified in the previous step. Continue looking up
   a few more hops up the callgraph to identify lifetime primitives that are
-  specialized.  Filter to those taking `void` as argument to narrow the search
-  space. Look for lifetime primitives that process both scalars and arrays.
+  specialized.  Filter releasers and cloners to those taking `void` as
+  argument (`--taking void`). Allocators hand their object back instead of
+  taking one -- `malloc(size_t)` takes no `void *` -- so find them by return
+  (`--returning void --calling malloc,calloc --depth N`) and submit each as an
+  `alloc` constructor. Record whether an allocator zeroes its memory (in the
+  record's `note`): a zeroing allocator returns initialized memory, a plain one
+  does not. A `realloc`-style routine releases and allocates the same slot, so
+  it is not a constructor (a constructor plays no other role). Look for
+  lifetime primitives that process both scalars and arrays.
 
   - The special keyword `string`, then look for lifetime primitives for
   NUL-terminated strings. You can fetch the list of lifetime candidates by
@@ -256,7 +263,13 @@ If your target type is:
   the raw/void lifetime primitives identified by a previous run. Continue
   looking up a few more hops up the callgraph to identify more specialized
   primitives. Note that some of the void-tier primitives may also release
-  / clone NUL-terminated strings, so they ought to be submitted too.
+  / clone NUL-terminated strings, so they ought to be submitted too. String
+  constructors return a new NUL-terminated string (`asprintf`-like formatters,
+  tokenizers, path joiners): find them with `--returning string` and submit
+  them as `alloc` constructors. A routine that copies a string argument is a
+  cloner, not a constructor; and a raw byte allocator stays in the `void` tier
+  even when its memory later holds a string, because it does not return a
+  NUL-terminated one.
 
   - A `<type-tag>`, then look for lifetime primitives that for the given type
   tag.  You can fetch the list of lifetime candidates by querying
@@ -264,7 +277,11 @@ If your target type is:
   for those that invoke one of the raw/void lifetime primitives identified in a
   previous run. Explore a few additional hops up the call graph to identify the
   real, top-level dropper(s)/field disposer(s) and cloner(s) of the type, which
-  might call helpers that in turn call the raw/void lifetime primitives. If a
+  might call helpers that in turn call the raw/void lifetime primitives. Find
+  its constructors too: `alloc` ones return `<type-tag> *`
+  (`--returning <type-tag>`) or store it through an out-parameter
+  `<type-tag> **` (`--taking <type-tag>`, depth 2), and `init` ones fill a
+  caller's `<type-tag> *` in place. If a
   type is a POD disposed through a field disposer of an embedding parent,
   process the parent disposer. Look for lifetime primitives that process both
   scalars and arrays. Submit your findings for the symbols schema, not for the
