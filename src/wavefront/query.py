@@ -34,6 +34,7 @@ def query(
     schema: bool = False,
     lifetime_for: str | None = None,
     taking: str | None = None,
+    returning: str | None = None,
     calling: str | None = None,
     callees: bool = False,
     callers: bool = False,
@@ -74,6 +75,11 @@ def query(
         if subject != "symbols":
             raise SystemExit("query: --taking applies to symbols only.")
         _taking(target, taking, calling, depth, array)
+        return
+    if returning is not None:
+        if subject != "symbols":
+            raise SystemExit("query: --returning applies to symbols only.")
+        _taking(target, returning, calling, depth, array, by_return=True)
         return
     name_list = list(names or [])
     # --callees / --callers: the raw use-graph closure around a symbol. Needs a
@@ -309,16 +315,18 @@ _LIFETIME_MODES = {"is_cloner": ("deep", "upref"),
 
 
 def _taking(target: Path, spec: str, calling: str | None,
-            depth: int, array_only: bool) -> None:
+            depth: int, array_only: bool, *, by_return: bool = False) -> None:
     """CANDIDATE discovery for lifetime-primitive identification (the inverse of
     `--lifetime-for`, which reads flags that already exist).
 
-    Every symbol with an ARG matching `spec` -- a type tag/typedef, or the
-    `void` / `string` keyword. `--calling` narrows to those that reach one of
-    the named routines within `--depth` hops (a dropper/cloner must ultimately
-    reach a raw primitive; the top-level one often does so via a helper, so
-    depth > 1 is the norm). `--array` keeps only args whose ptr carries an
-    `array` shape. Prints JSON.
+    Every symbol with an ARG matching `spec` (`--taking`) -- a type
+    tag/typedef, or the `void` / `string` keyword -- or, with `by_return`, a
+    pointer RETURN matching it (`--returning`), which is where an allocator or
+    an `alloc` constructor hands its object back. `--calling` narrows to those
+    that reach one of the named routines within `--depth` hops (a lifecycle
+    primitive must ultimately reach a raw one; the top-level one often does so
+    via a helper, so depth > 1 is the norm). `--array` keeps only matches whose
+    ptr carries an `array` shape. Prints JSON.
 
     Both the candidate and each thing it reaches are reported as
     ``{name, defined_in}``: the walk is keyed on that pair, so collapsing the
@@ -334,7 +342,13 @@ def _taking(target: Path, spec: str, calling: str | None,
     idx = _call_indexes(layout, target)[0] if want else {}
     rows = []
     for s_ in _entries(layout, target, "symbols"):
-        hits = [a for a in s_.get("ptr_args") or []
+        if by_return:
+            ret = s_.get("ptr_ret")
+            pool = [{**ret, "position": None, "name": _RETURN_SUBJECT}] \
+                if isinstance(ret, dict) else []
+        else:
+            pool = s_.get("ptr_args") or []
+        hits = [a for a in pool
                 if _arg_matches_spec(a, spec, aliases)
                 and (not array_only or _arg_is_array(a))]
         if not hits:
@@ -347,14 +361,15 @@ def _taking(target: Path, spec: str, calling: str | None,
         rows.append({
             "symbol": s_.get("name"),
             "defined_in": s_.get("defined_in"),
-            "args": [{"position": a.get("position"), "name": a.get("name"),
-                      "type": a.get("type"), "depth": a.get("depth")}
-                     for a in hits],
+            ("returns" if by_return else "args"): [
+                {"position": a.get("position"), "name": a.get("name"),
+                 "type": a.get("type"), "depth": a.get("depth")}
+                for a in hits],
             **({"reaches": [_node(k) for k in reached]} if want else {}),
         })
     rows.sort(key=lambda r: (r["symbol"], r["defined_in"] or ""))
     print(json.dumps({
-        "taking": spec,
+        ("returning" if by_return else "taking"): spec,
         "matched_aliases": sorted(aliases),
         "calling": sorted(want) or None,
         "depth": depth if want else None,
