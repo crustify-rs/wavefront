@@ -81,6 +81,9 @@ string structDefFileOf(Field f) {
 
 from FieldAccess fa, Field f
 where f = fa.getTarget()
+  // An access to a C11 unnamed member itself names no field (its members
+  // are the enclosing aggregate's); `fa_with_root.ql` drops it the same way.
+  and not isUnnamedMember(f)
 select enclosingNameOf(fa) as enclosing_name,
        pathOf(fa.getFile()) as access_file,
        canonicalTypeName(f.getDeclaringType()) as struct_name,
