@@ -39,8 +39,11 @@ Pure: rows in, pairs and variants out. `Reach` feeds it the two CSVs.
 """
 from __future__ import annotations
 
+import csv
+import functools
 from collections import defaultdict
 from collections.abc import Iterable
+from pathlib import Path
 from typing import NamedTuple
 
 #: A slot: (kind, name, file, member). Types are keyed by tag alone, as in
@@ -116,6 +119,10 @@ class Composed(NamedTuple):
     pairs: dict[tuple[str, str], tuple[Slot, ...]]
     #: `{field slot: (stored, read_as)}` for every type-erased field.
     variants: dict[Slot, tuple[frozenset[str], frozenset[str]]]
+    #: `{param slot: types}` for every type-erased parameter: the named types
+    #: its value is read as, in its own body or after forwarding. This is the
+    #: type the signature erases (`av_log.0` -> AVClass).
+    param_reads: dict[Slot, frozenset[str]]
 
 
 def _keep(pairs: dict, key: tuple[str, str], witness: tuple[Slot, ...]) -> None:
@@ -131,6 +138,7 @@ def compose(rows: Iterable[dict]) -> Composed:
     succ: dict[Slot, set[Slot]] = defaultdict(set)      # param -> param
     exits: dict[Slot, set[str]] = defaultdict(set)      # param -> T it is read as
     params: set[Slot] = set()
+    declared: set[Slot] = set()                         # params with a named decl
     pairs: dict[tuple[str, str], tuple[Slot, ...]] = {}
     stored: dict[Slot, set[str]] = defaultdict(set)
     read_as: dict[Slot, set[str]] = defaultdict(set)
@@ -144,6 +152,7 @@ def compose(rows: Iterable[dict]) -> Composed:
                 params.add(end)
                 if decl:
                     enters[decl].add(end)
+                    declared.add(end)
             elif kind == "field" and not decl:
                 erased.add(end)
         rel = r["rel"]
@@ -197,7 +206,32 @@ def compose(rows: Iterable[dict]) -> Composed:
 
     variants = {f: (frozenset(stored.get(f, ())), frozenset(read_as.get(f, ())))
                 for f in sorted(erased) if stored.get(f) or read_as.get(f)}
-    return Composed(pairs, variants)
+    param_reads = {p: frozenset(reach_of[p]) for p in sorted(params)
+                   if p not in declared and reach_of.get(p)}
+    return Composed(pairs, variants, param_reads)
+
+
+TABLES = ("arg_casts.csv", "field_casts.csv")
+
+
+@functools.lru_cache(maxsize=4)
+def _load(t2: str, stamp: tuple) -> Composed:
+    rows: list[dict] = []
+    for name in TABLES:
+        path = Path(t2) / name
+        if path.exists():
+            with path.open(newline="") as f:
+                rows += csv.DictReader(f)
+    return compose(rows)
+
+
+def load(t2: Path) -> Composed:
+    """`compose` over a T2 directory's two tables, cached per table state:
+    the composer (`Reach`) and the scheduler (`deps_dag`) read the same
+    result in one process. Missing tables compose to nothing."""
+    stamp = tuple((p.stat().st_mtime_ns, p.stat().st_size) if p.exists() else None
+                  for p in (Path(t2) / n for n in TABLES))
+    return _load(str(t2), stamp)
 
 
 def by_type(pairs: dict[tuple[str, str], tuple[Slot, ...]]

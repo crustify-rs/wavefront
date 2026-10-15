@@ -77,9 +77,11 @@ from typing import Any
 try:                                  # package import (analyze.py)
     from . import scope as _scope
     from . import macro_families as _mf
+    from . import slot_casts
 except ImportError:                   # script execution (python3 deps_dag.py)
     import scope as _scope            # type: ignore
     import macro_families as _mf      # type: ignore
+    import slot_casts                 # type: ignore
 
 
 def _canonical_decl(declared_in: Any) -> str | None:
@@ -275,6 +277,13 @@ def collect_signature_type_refs_csv(codeql_dir: Path) -> dict[SymKey, set[str]]:
             name, type_name = row.get(name_col), row.get("type_name")
             if name and type_name:
                 out[(name, row.get(file_col) or None)].add(type_name)
+    # A type-erased parameter's REAL type: what its value is read as, in the
+    # function's own body or after forwarding (`av_log(void *avcl)` hands
+    # `avcl` to `av_vlog`, which reads `*(AVClass **)avcl`). The signature
+    # says `void *`; the API is `AVClass`-headed objects, and the wrapper
+    # needs AVClass first.
+    for (_kind, name, file, _pos), types in slot_casts.load(codeql_dir / "t2").param_reads.items():
+        out[(name, file or None)].update(types)
     return dict(out)
 
 
@@ -534,6 +543,14 @@ def collect_types_csv(codeql_dir: Path):
         if f and t and f != t:
             casts[f][0].add(t)          # f is cast TO t
             casts[t][1].add(f)          # t is cast FROM f
+    # Slot-mediated casts join the same graph: `AVCodecContext -> AVClass`
+    # through `av_log(avctx)` is a cast like any other, only with a
+    # type-erased parameter between its two ends (compose/slot_casts.py).
+    # Same in both modes -- the cast-centrality edge below reads these sets
+    # on API and non-API graphs alike.
+    for f, t in slot_casts.load(t2).pairs:
+        casts[f][0].add(t)
+        casts[t][1].add(f)
 
     edges: dict[TypeKey, list[tuple[str, str, str]]] = collections.defaultdict(list)
     for r in _scope.load_csv(t2 / "field_type_uses.csv"):

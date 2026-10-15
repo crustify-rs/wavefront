@@ -297,11 +297,7 @@ class Reach:
         # apart from the raw graph above -- a pair here passes through
         # type-erased slots and carries the slots that witness it.
         from . import slot_casts
-        rows: list[dict] = []
-        for name in ("arg_casts.csv", "field_casts.csv"):
-            if (t2 / name).exists():
-                rows += _load_csv(t2 / name)
-        composed = slot_casts.compose(rows)
+        composed = slot_casts.load(t2)
         self._slot_cast_to, self._slot_cast_from = slot_casts.by_type(composed.pairs)
         self._erased_fields = slot_casts.by_field(composed.variants)
 
