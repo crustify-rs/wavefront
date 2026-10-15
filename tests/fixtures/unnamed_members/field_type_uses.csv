@@ -1,0 +1,5 @@
+struct_name,struct_def_file,field_name,type_name,type_kind,type_def_file
+Conn,members.c,ext.inner,Inner,struct,members.c
+Data,members.c,l1,Level1,typedef,
+Data,members.c,l2,Level2,typedef,
+Plain,members.c,in,Inner,struct,members.c
