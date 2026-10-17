@@ -36,11 +36,15 @@ Every row becomes one DAG edge (`deps_dag`): a function or struct depends
 on what its erased slot holds, a derived type on its base, a generated
 type or macro on its generator. This module checks the NODES each row
 names -- that they exist, at those files, with the right shape (an erased
-slot really is `void *` / `void **`) -- and, in API mode, that they are
-public. It does not check the relation itself: whether the cast happens,
-or the chain that carries it, is the orchestrator's judgement and the
-reason the tier exists. A failing row is an error, never skipped: the
-tables are input, like the config.
+slot really is `void *` / `void **`). It does not check the relation
+itself: whether the cast happens, or the chain that carries it, is the
+orchestrator's judgement and the reason the tier exists. A failing row is
+an error, never skipped: the tables are input, like the config.
+
+The checks are the same in every mode, and the records (`types_manifest`,
+`import_closure`) see every row. API mode only PROJECTS: `load(...,
+api_paths)` leaves out the rows whose nodes are not public, as the DAG does
+for every other whole-program relation.
 """
 from __future__ import annotations
 
@@ -247,8 +251,7 @@ def _chased(path: Path, inv: _Inventory, api: frozenset[str] | None,
                 errs.append(f"{at}: base and derived are the same type")
             elif api is not None and not (inv.type_public(base, api)
                                           and inv.type_public(derived, api)):
-                errs.append(f"{at}: API mode: base and derived must both be "
-                            f"declared in api_headers")
+                pass                            # not public: no API edge
             else:
                 bases[derived].add(base)
             continue
@@ -268,7 +271,7 @@ def _chased(path: Path, inv: _Inventory, api: frozenset[str] | None,
                 errs.append(f"{at}: parameter {v['slot_member']} of {owner[0]} is "
                             f"{p.get('param_type')!r}, not void * / void **")
             elif api is not None and not inv.function_public(owner, api):
-                errs.append(f"{at}: API mode: {owner[0]} is not declared in api_headers")
+                pass                            # not public: no API edge
             else:
                 args[owner].add(base)
             continue
@@ -289,7 +292,7 @@ def _chased(path: Path, inv: _Inventory, api: frozenset[str] | None,
             errs.append(f"{at}: field {decl[0]}.{fpath} is {f.get('field_type')!r}, "
                         f"not void * / void **")
         elif api is not None and decl[1] not in api:
-            errs.append(f"{at}: API mode: {decl[0]} is not defined in api_headers")
+            pass                                # not a public layout: no API edge
         else:
             flds[decl].add((fpath, *base))
     return args, flds, bases
@@ -314,9 +317,6 @@ def _generators(path: Path, inv: _Inventory, api: frozenset[str] | None,
             errs.append(f"{at}: macro {macro[0]!r} is not defined in "
                         f"{macro[1] or '<none>'!r} (t1/macros.csv)")
             continue
-        if api is not None and macro[1] not in api:
-            errs.append(f"{at}: API mode: {macro[0]} is not defined in api_headers")
-            continue
         dk, derived = v["derived_kind"], (v["derived_name"], v["derived_def_file"])
         if dk not in DERIVED_KINDS:
             errs.append(f"{at}: derived_kind {dk!r} is not one of {list(DERIVED_KINDS)}")
@@ -328,6 +328,8 @@ def _generators(path: Path, inv: _Inventory, api: frozenset[str] | None,
             errs.append(f"{at}: derived: {bad}")
         elif dk == "macro" and derived == macro:
             errs.append(f"{at}: a macro does not generate itself")
+        elif api is not None and macro[1] not in api:
+            pass                                # not exported: no API edge
         else:
             gens[macro].add((dk, *derived))
     return gens
@@ -352,9 +354,9 @@ def _load(t3: str, t1: str, api: frozenset[str] | None, _stamp: tuple) -> Tables
 
 def load(t1: Path, api_paths=None) -> Tables:
     """The configured T3 tables, checked against `t1`. With `api_paths`
-    (API mode) every row must also be public. Empty when no `t3_dir` is
-    configured or it holds no tables. Raises `SystemExit` naming every
-    failing row."""
+    (API mode), projected onto the public API: rows naming a non-public
+    node are left out, never an error. Empty when no `t3_dir` is configured
+    or it holds no tables. Raises `SystemExit` naming every failing row."""
     if _DIR is None:
         return EMPTY
     stamp = tuple((p.stat().st_mtime_ns, p.stat().st_size) if p.is_file() else None

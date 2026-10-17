@@ -556,8 +556,15 @@ def collect_types_csv(codeql_dir: Path, api_paths: set[str] | None = None):
 
     casts: dict[str, tuple[set, set]] = collections.defaultdict(
         lambda: (set(), set()))
+    # API mode orders by public types only: a cast to or from an internal
+    # type (`git_patch -> git_patch_generated`) stays in the type records
+    # (`casted`) but adds no edge, as for slot casts and T3 rows.
+    public = (slot_casts.public_keep(t1, frozenset(api_paths))
+              if api_paths is not None else None)
     for r in _scope.load_csv(t2 / "casts.csv"):
         f, t = r.get("from_tag"), r.get("to_tag")
+        if public is not None and not (public("type", f, "") and public("type", t, "")):
+            continue
         if f and t and f != t:
             casts[f][0].add(t)          # f is cast TO t
             casts[t][1].add(f)          # t is cast FROM f

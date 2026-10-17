@@ -158,19 +158,29 @@ class T3Tests(unittest.TestCase):
             self.assertIn(f"{t3.GENERATORS}:{line}: ", msg)
             self.assertIn(needle, msg)
 
-    def test_api_mode_requires_public_nodes(self) -> None:
-        api = {"log.h"}
+    def test_api_mode_projects_onto_public_nodes(self) -> None:
+        # Same rows, both modes: every row is checked and kept for the records;
+        # API mode leaves out the ones naming an internal function, type,
+        # layout or macro -- never an error.
         rows = [chased("erased_arg", ("vlog", "log.c", "0"), ("Class", "log.h")),
-                chased("base_derived", base=("Class", "log.h"), derived=("Ctx", "log.h"))]
-        self.assertEqual(len(self.load(rows, [generator(("PUB_GEN", "log.h"), "type",
-                                                       ("Ctx", "log.h"))], api).bases), 1)
-        msg = self.errors([
-            chased("erased_arg", ("helper", "priv.c", "0"), ("Priv", "priv.c")),
-            chased("base_derived", base=("Class", "log.h"), derived=("Priv", "priv.c")),
-        ], [generator(("GEN", "gen.h"), "type", ("Priv", "priv.c"))], api=api)
-        self.assertIn("helper is not declared in api_headers", msg)
-        self.assertIn("base and derived must both be declared", msg)
-        self.assertIn("GEN is not defined in api_headers", msg)
+                chased("erased_arg", ("helper", "priv.c", "0"), ("Priv", "priv.c")),
+                chased("base_derived", base=("Class", "log.h"), derived=("Ctx", "log.h")),
+                chased("base_derived", base=("Class", "log.h"), derived=("Priv", "priv.c"))]
+        gens = [generator(("PUB_GEN", "log.h"), "type", ("Ctx", "log.h")),
+                generator(("GEN", "gen.h"), "type", ("Priv", "priv.c"))]
+        whole = self.load(rows, gens)
+        self.assertEqual(set(whole.erased_args), {("vlog", "log.c"), ("helper", "priv.c")})
+        self.assertEqual(set(whole.bases), {("Ctx", "log.h"), ("Priv", "priv.c")})
+        self.assertEqual(set(whole.generates), {("PUB_GEN", "log.h"), ("GEN", "gen.h")})
+        api = self.load(rows, gens, api={"log.h"})
+        self.assertEqual(set(api.erased_args), {("vlog", "log.c")})
+        self.assertEqual(set(api.bases), {("Ctx", "log.h")})
+        self.assertEqual(set(api.generates), {("PUB_GEN", "log.h")})
+
+    def test_api_mode_still_reports_bad_rows(self) -> None:
+        msg = self.errors([chased("erased_arg", ("helper", "priv.c", "9"), ("Priv", "priv.c"))],
+                          api={"log.h"})
+        self.assertIn("helper has no parameter '9'", msg)
 
     def test_missing_params_table_asks_for_extraction(self) -> None:
         (self.t1 / "params.csv").unlink()

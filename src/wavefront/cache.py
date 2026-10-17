@@ -38,7 +38,9 @@ from pathlib import Path
 #:      when no target body reaches it.
 #: 14 — cast edges follow the written direction; centrality only breaks cast
 #:      cycles; T3 `base_derived` replaces a pair's cast edge.
-_VERSION = 14
+#: 15 — API mode projects raw casts and T3 rows onto public nodes (T3 rows
+#:      off the API are left out, no longer an error).
+_VERSION = 15
 
 
 def fingerprint(layout, target) -> dict:

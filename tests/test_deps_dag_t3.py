@@ -94,5 +94,14 @@ class T3DagTests(unittest.TestCase):
         self.assertIn(ctx, types[inner].dep_types)
         self.assertIn(inner, types[cls].dep_types)
 
+    def test_api_mode_drops_casts_with_an_internal_side(self) -> None:
+        # Ctx is downcast to the internal Priv: the edge exists in the whole
+        # program, not in the API graph.
+        ctx, priv = ("Ctx", "log.h"), ("Priv", "priv.c")
+        whole, _ = self._graph(False, [("Ctx", "Priv")], pairs=False)
+        self.assertIn(priv, whole[ctx].dep_types)
+        api, _ = self._graph(True, [("Ctx", "Priv")], pairs=False)
+        self.assertNotIn(priv, api[ctx].dep_types)
+
 if __name__ == "__main__":
     unittest.main()
