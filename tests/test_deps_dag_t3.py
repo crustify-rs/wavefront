@@ -12,7 +12,7 @@ from test_t3 import _write, chased, generator, inventory
 class T3DagTests(unittest.TestCase):
     """Each T3 row is one edge, in the body-deep and the API graph."""
 
-    def _graph(self, api: bool):
+    def _graph(self, api: bool, casts=(), pairs=True):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             codeql = inventory(root).parent
@@ -24,13 +24,14 @@ class T3DagTests(unittest.TestCase):
                                                             "function_def_file", "type_name",
                                                             "type_kind", "type_def_file",
                                                             "position"])):
-                _write(codeql / "t2" / name, cols, [])
+                _write(codeql / "t2" / name, cols,
+                       [dict(zip(cols, c)) for c in casts] if name == "casts.csv" else [])
             d = root / "t3"
             _write(d / t3.CHASED, list(t3.CHASED_COLS), [
                 chased("erased_arg", ("vlog", "log.c", "0"), ("Class", "log.h")),
                 chased("erased_field", ("Holder", "log.h", "opaque"), ("Ctx", "log.h")),
-                chased("base_derived", base=("Class", "log.h"), derived=("Ctx", "log.h")),
-            ])
+            ] + ([chased("base_derived", base=("Class", "log.h"), derived=("Ctx", "log.h"))]
+                 if pairs else []))
             _write(d / t3.GENERATORS, list(t3.GENERATOR_COLS), [
                 generator(("PUB_GEN", "log.h"), "type", ("Inner", "log.h"))])
             t3.configure(d)
@@ -67,6 +68,17 @@ class T3DagTests(unittest.TestCase):
             self.assertIn(("PUB_GEN", "log.h"),                               # generator
                           types[("Inner", "log.h")].dep_syms, api)
 
+    def test_stated_pair_overrides_the_centrality_guess(self) -> None:
+        # Class is downcast to Ctx, and Ctx is cast to two siblings: Ctx is
+        # the more cast-central, so the guess makes the BASE depend on it.
+        casts = [("Class", "Ctx"), ("Ctx", "Holder"), ("Ctx", "Inner")]
+        cls, ctx = ("Class", "log.h"), ("Ctx", "log.h")
+        guessed, _ = self._graph(False, casts, pairs=False)
+        self.assertIn(ctx, guessed[cls].dep_types)
+        for api in (False, True):
+            types, _ = self._graph(api, casts)
+            self.assertNotIn(ctx, types[cls].dep_types, api)
+            self.assertIn(cls, types[ctx].dep_types, api)
 
 if __name__ == "__main__":
     unittest.main()

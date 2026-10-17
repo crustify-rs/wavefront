@@ -750,6 +750,11 @@ def _build_edges(types, syms, amap):
     # (parent↔child backrefs) can be flattened by weighted feedback-arc-set, not
     # collapsed into a co-scheduled blob.
     wedge: dict[tuple[str, str], int] = collections.defaultdict(int)
+    # `(base, derived)` pairs the orchestrator stated (T3 `base_derived`). They
+    # OVERRIDE the cast-centrality guess below: that guess never adds
+    # `base -> derived` for a stated pair, only the stated `derived -> base`.
+    chased_pairs = {(_resolve_ctype(ref, amap, types), key)
+                    for key, n in types.items() for ref in n.chased_bases}
     for key, n in types.items():
         for ref in n.ctype_refs:                     # field refs (hard layout)
             t = _resolve_ctype(ref, amap, types)
@@ -784,7 +789,8 @@ def _build_edges(types, syms, amap):
         if n.generated_by in syms:
             n.dep_syms.add(n.generated_by)
         # Chased base -> derived pair: the row states the direction, so no
-        # centrality guess. A cycle this closes is broken like any other.
+        # centrality guess (and the guess above skipped the reverse edge). A
+        # cycle a FIELD edge closes with it is broken like any other.
         for ref in n.chased_bases:
             t = _resolve_ctype(ref, amap, types)
             if t in types and t != key:
@@ -794,6 +800,8 @@ def _build_edges(types, syms, amap):
         my_deg = n.cast_degree()
         for t in (amap.get(x) for x in n.cast_to):
             tn = types.get(t) if t else None
+            if (key, t) in chased_pairs:
+                continue                             # stated: t derives from key
             if tn is not None and t != key and tn.cast_degree() > my_deg:
                 n.dep_types.add(t)
                 wedge[(key, t)] += 1
