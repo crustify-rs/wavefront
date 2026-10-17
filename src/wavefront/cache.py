@@ -36,7 +36,9 @@ from pathlib import Path
 #:      `type_generators.csv` only.
 #: 13 — a callback the targeted inventory publishes gets a record even
 #:      when no target body reaches it.
-_VERSION = 13
+#: 14 — cast edges follow the written direction; centrality only breaks cast
+#:      cycles; T3 `base_derived` replaces a pair's cast edge.
+_VERSION = 14
 
 
 def fingerprint(layout, target) -> dict:

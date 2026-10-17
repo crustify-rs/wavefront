@@ -134,7 +134,7 @@ class TypeNode:
     def cast_degree(self) -> int:
         """Cast-graph centrality: how many distinct types this one is cast
         to/from. A generic engine / polymorphic base is a high-degree hub;
-        an instance / derived is low-degree. Drives the erasure ordering edge."""
+        an instance / derived is low-degree. Breaks cast cycles only."""
         return len(self.cast_to | self.cast_from)
 
     @property
@@ -751,8 +751,8 @@ def _build_edges(types, syms, amap):
     # collapsed into a co-scheduled blob.
     wedge: dict[tuple[str, str], int] = collections.defaultdict(int)
     # `(base, derived)` pairs the orchestrator stated (T3 `base_derived`). They
-    # OVERRIDE the cast-centrality guess below: that guess never adds
-    # `base -> derived` for a stated pair, only the stated `derived -> base`.
+    # OVERRIDE the cast edges below: a stated pair never gets the written
+    # `base -> derived` cast edge, only the stated `derived -> base`.
     chased_pairs = {(_resolve_ctype(ref, amap, types), key)
                     for key, n in types.items() for ref in n.chased_bases}
     for key, n in types.items():
@@ -766,15 +766,6 @@ def _build_edges(types, syms, amap):
             res_ctype(ref, n.dep_types, n.dep_syms)
             if t in types and t != key:
                 wedge[(key, t)] += 1
-        # Cast-graph ordering edge (classifies the otherwise-ambiguous `casted`
-        # relation into a correct-direction dep). For each T this type is cast
-        # TO, add `tag -> T` ONLY when T is strictly more cast-central — i.e. T
-        # is cast to/from more types than `tag`. High cast-degree marks the hub:
-        # a generic engine erased to by many instances, or a polymorphic base
-        # downcast to by many derived. So the edge always points from the
-        # low-degree instance/derived UP to the high-degree engine/base it
-        # depends on — never the reverse — and the strict `>` keeps it acyclic
-        # (edges run low-degree → high-degree only, so no cast cycle can form).
         # Macro-generator ordering edge. The generator is the MACRO itself --
         # already a symbol node -- so this is a type -> symbol dep, and there is
         # no synthetic type to mint (which would collide with the macro's own
@@ -788,25 +779,50 @@ def _build_edges(types, syms, amap):
         # generators, keyed `(macro, def_file)`, so a one-off macro has no edge.
         if n.generated_by in syms:
             n.dep_syms.add(n.generated_by)
-        # Chased base -> derived pair: the row states the direction, so no
-        # centrality guess (and the guess above skipped the reverse edge). A
-        # cycle a FIELD edge closes with it is broken like any other.
+        # Chased base -> derived pair: the row states the direction (and the
+        # cast edges below skip the reverse). A cycle a FIELD edge closes with
+        # it is broken like any other.
         for ref in n.chased_bases:
             t = _resolve_ctype(ref, amap, types)
             if t in types and t != key:
                 n.dep_types.add(t)
                 wedge[(key, t)] += 1
 
-        my_deg = n.cast_degree()
-        for t in (amap.get(x) for x in n.cast_to):
-            tn = types.get(t) if t else None
-            if (key, t) in chased_pairs:
-                continue                             # stated: t derives from key
-            if tn is not None and t != key and tn.cast_degree() > my_deg:
-                n.dep_types.add(t)
-                wedge[(key, t)] += 1
         n.dep_types.discard(key)         # no self-edge
         wedge.pop((key, key), None)
+
+    # Cast-graph ordering edges. A cast is written in one direction: `X` cast
+    # TO `T` makes X depend on T (an upcast to a base, an erasure to an
+    # engine). T3 `base_derived` rows replace the edges of the pairs they
+    # state (the stated `derived -> base` edge is added above). What is left
+    # is directed as written -- except where the casts form a CYCLE (both
+    # directions written, or a ring through several types), which the
+    # written direction cannot settle. Only there does cast centrality
+    # decide: inside a cycle, `X -> T` survives only when T is cast to/from
+    # strictly more types than X -- the hub (a generic engine, a polymorphic
+    # base) is high-degree, so edges point from instance/derived up to it,
+    # and since they run low -> high degree no cast cycle survives.
+    cast_adj: dict[TypeKey, set[TypeKey]] = {key: set() for key in types}
+    for key, n in types.items():
+        for t in (amap.get(x) for x in n.cast_to):
+            if t in types and t != key and (key, t) not in chased_pairs:
+                cast_adj[key].add(t)
+    stated_adj = {key: set(adj) for key, adj in cast_adj.items()}
+    for base, derived in chased_pairs:
+        if base in types and derived in types:
+            stated_adj[derived].add(base)
+    cyclic: dict[TypeKey, int] = {}
+    for i, comp in enumerate(_tarjan(stated_adj)):
+        if len(comp) > 1:
+            cyclic.update((k, i) for k in comp)
+    for key, targets in cast_adj.items():
+        n = types[key]
+        for t in sorted(targets):
+            if (key in cyclic and cyclic.get(t) == cyclic[key]
+                    and types[t].cast_degree() <= n.cast_degree()):
+                continue
+            n.dep_types.add(t)
+            wedge[(key, t)] += 1
 
     # Array-cluster element inversion. A typed `CVec<T>` alias on cluster A
     # references element wrapper T, but the cluster is a foundational leaf (the

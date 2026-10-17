@@ -80,5 +80,19 @@ class T3DagTests(unittest.TestCase):
             self.assertNotIn(ctx, types[cls].dep_types, api)
             self.assertIn(cls, types[ctx].dep_types, api)
 
+    def test_centrality_only_breaks_cast_cycles(self) -> None:
+        # Priv <-> Ctx are cast both ways (a cycle); Inner is also cast to
+        # Ctx, so Ctx is the hub and only Priv -> Ctx survives. Class is
+        # cast to Inner, outside any cycle: kept as written although Inner is
+        # no more cast-central than Class.
+        casts = [("Priv", "Ctx"), ("Ctx", "Priv"), ("Inner", "Ctx"), ("Class", "Inner")]
+        types, _ = self._graph(False, casts, pairs=False)
+        priv, ctx = ("Priv", "priv.c"), ("Ctx", "log.h")
+        inner, cls = ("Inner", "log.h"), ("Class", "log.h")
+        self.assertIn(ctx, types[priv].dep_types)
+        self.assertNotIn(priv, types[ctx].dep_types)
+        self.assertIn(ctx, types[inner].dep_types)
+        self.assertIn(inner, types[cls].dep_types)
+
 if __name__ == "__main__":
     unittest.main()
