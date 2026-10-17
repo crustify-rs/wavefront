@@ -230,7 +230,10 @@ def build_index(
     # instances alias has to be emitted by somebody. Without this the macro is
     # in neither scope section and therefore unschedulable, the same dead end
     # the gate-missed callbacks sit in.
-    _generators = set(_mf.load(csv_dir_t1.parent))
+    # The orchestrator's families (T3 `type_generators.csv`), and the macros a
+    # generator expands into a family of their own.
+    _fams = _mf.load(csv_dir_t1.parent)
+    _generators = set(_fams) | {m for f in _fams.values() for m, _df in f["macros"]}
     ingest(macros, lambda r: "macro",
            lambda r: [r["def_file"]] if r.get("def_file") else [],
            tgt_macros,

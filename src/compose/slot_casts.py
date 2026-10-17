@@ -69,7 +69,7 @@ def _end(row: dict, side: str) -> tuple[str, Slot | str, str]:
     kind = row[f"{side}_kind"]
     if kind == "type":
         return kind, row[f"{side}_name"], ""
-    slot = (kind, row[f"{side}_name"], row[f"{side}_file"], row[f"{side}_member"])
+    slot = (kind, row[f"{side}_name"], row[f"{side}_def_file"], row[f"{side}_member"])
     return kind, slot, row.get(f"{side}_decl") or ""
 
 

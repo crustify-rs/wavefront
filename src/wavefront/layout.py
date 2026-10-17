@@ -40,6 +40,15 @@ class Layout:
                 f"Wavefront config at {config_path} needs a non-empty state_dir")
         root = Path(state_dir)
         self.root = (root if root.is_absolute() else self.repo_root / root).resolve()
+        # The third table tier (`compose/t3.py`): orchestrator-provided
+        # relations, relative to `state_dir`. Absent: no third tier.
+        t3_dir = config.get("t3_dir")
+        if t3_dir is not None and (not isinstance(t3_dir, str) or not t3_dir.strip()):
+            raise SystemExit(
+                f"Wavefront config at {config_path}: t3_dir must be a non-empty path")
+        self.t3: Path | None = None if t3_dir is None else (self.root / t3_dir).resolve()
+        from compose import t3 as _t3
+        _t3.configure(self.t3)
 
     @classmethod
     def discover(cls, start: Path) -> "Layout":

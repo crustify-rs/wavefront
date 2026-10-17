@@ -96,6 +96,9 @@ Every reference in `deps`, `fallback`, and `back_fill` is
 lets consumers understand dependency context without a second node table.
 `field_anchors` occurs on batched items and lists the field accessors assigned
 to that type batch.
+`generates` is non-empty only on a macro that `type_generators.csv` names as
+a generator (see `t3.md`): the instance types it mints, which the item routes
+as a type so one generic is written for them.
 
 Schema-v2 schedules with `steps`, `plan_items`, and `dependency_nodes` remain
 readable historical records and need not be rewritten. New schedules are always

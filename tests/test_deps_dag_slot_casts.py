@@ -9,8 +9,8 @@ from unittest.mock import patch
 from compose import deps_dag
 
 SLOT_COLS = ["rel",
-             "src_kind", "src_name", "src_file", "src_member", "src_decl", "src_ctype",
-             "dst_kind", "dst_name", "dst_file", "dst_member", "dst_decl", "dst_ctype",
+             "src_kind", "src_name", "src_def_file", "src_member", "src_decl", "src_ctype",
+             "dst_kind", "dst_name", "dst_def_file", "dst_member", "dst_decl", "dst_ctype",
              "site_fn", "site_file", "line"]
 
 
@@ -24,7 +24,7 @@ def _write(path: Path, cols: list[str], rows: list[dict]) -> None:
 
 def _end(kind: str, name: str, member: str = "", decl: str = "") -> dict:
     file = "include/log.h" if kind == "type" else "src/log.c"
-    return {"kind": kind, "name": name, "file": file, "member": member,
+    return {"kind": kind, "name": name, "def_file": file, "member": member,
             "decl": decl if kind != "type" else name,
             "ctype": "" if kind == "type" else "void *"}
 

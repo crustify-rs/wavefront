@@ -66,6 +66,31 @@ class ExtractLayoutTests(unittest.TestCase):
                              "campaigns/one/wavefront-config.json")
             self.assertEqual(len(provenance["sha256"]), 64)
 
+    def test_t3_dir_resolves_under_state_dir_and_feeds_the_fingerprint(self) -> None:
+        from compose import t3
+        from wavefront import cache
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            cfg = repo / "wavefront-config.json"
+            cfg.write_text('{"state_dir":"analysis","impl_files":["src/a.c"],'
+                           '"api_headers":[],"t3_dir":"t3"}\n')
+            set_repo_root(repo)
+            set_config_path(cfg)
+            self.addCleanup(t3.configure, None)
+            try:
+                layout = Layout.discover(repo)
+                self.assertEqual(layout.t3, (repo / "analysis" / "t3").resolve())
+                self.assertEqual(t3.configured(), layout.t3)
+                before = cache.fingerprint(layout, repo)["inputs"]
+                layout.t3.mkdir(parents=True)
+                (layout.t3 / t3.CHASED).write_text(",".join(t3.CHASED_COLS) + "\n")
+                after = cache.fingerprint(layout, repo)["inputs"]
+            finally:
+                set_config_path(None)
+                set_repo_root(repo)
+            self.assertNotIn(f"t3/{t3.CHASED}", before)
+            self.assertIn(f"t3/{t3.CHASED}", after)
+
 
 if __name__ == "__main__":
     unittest.main()

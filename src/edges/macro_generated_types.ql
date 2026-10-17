@@ -35,11 +35,11 @@
  *   generator_macro     : C identifier of the outermost macro that minted it
  *   generator_def_file  : repository-relative path of the macro's `#define`
  *
- * A single-instantiation macro is a definition, not a generator; grouping and
- * the >= 2 threshold are the consumer's, so this query does not filter.
- *
- * Consumer: `compose/types_manifest.py` — mints one synthetic generator record
- * per family (`macro_generator`), wiring `generates` / `generated_by`.
+ * Which minting macros are TEMPLATES is not decided here or anywhere in
+ * wavefront: a count of instances in one build cannot tell `GIT_HASHMAP_STRUCT`
+ * from a one-off like `FF_PAD_STRUCTURE`. This table is the evidence; the
+ * orchestrator writes the families it accepts to the T3 table
+ * `type_generators.csv` (`compose/t3.py`), which alone makes generators.
  */
 import cpp
 import identity

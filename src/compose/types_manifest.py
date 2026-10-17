@@ -820,7 +820,8 @@ def compose(
     for entries in entries_by_dir.values():
         for e in entries:
             key = (scope.entry_tag(e), e.get("defined_in") or "")
-            e["generated_by"] = _gen_of.get(key)
+            g = _gen_of.get(key)
+            e["generated_by"] = g[0] if g else None
     return entries_by_dir, dir_scope, focus_by_key
 
 

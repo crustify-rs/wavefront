@@ -178,14 +178,25 @@ predicate anonEmbeddedField(UserType root, Field f, string path) {
   exists(Field outer |
     outer.getDeclaringType() = root and
     f.getDeclaringType() = anonMemberAggregate(outer) and
-    path = outer.getName() + "." + f.getName()
+    path = memberPrefix(outer) + f.getName()
   )
   or
   exists(Field outer, string sub |
     outer.getDeclaringType() = root and
     anonEmbeddedField(anonMemberAggregate(outer), f, sub) and
-    path = outer.getName() + "." + sub
+    path = memberPrefix(outer) + sub
   )
+}
+
+/**
+ * The path segment `outer` contributes to a member below it: `name.`, or
+ * nothing for a C11 UNNAMED member (`struct S { union { void *u; }; }`),
+ * whose members C reaches as `s->u` -- the extractor names that field
+ * `(unknown field)`, which no C expression can spell.
+ */
+bindingset[outer]
+string memberPrefix(Field outer) {
+  if outer.getName() = ["", "(unknown field)"] then result = "" else result = outer.getName() + "."
 }
 
 /**

@@ -2,85 +2,65 @@
 
 A macro emitting a whole `typedef struct {…} name;` mints a family of
 same-shaped types that C links in no way at all: no cast, no common tag, no
-base (see `edges/macro_generated_types.ql` for why the relation has to be
-extracted rather than inferred). Downstream that means each instance is wrapped
-as an unrelated Rust type, when the family wants ONE generic plus aliases.
+base. Downstream that means each instance is wrapped as an unrelated Rust
+type, when the family wants ONE generic plus aliases.
 
-The generator needs no node of its own: the MACRO is already an entity. So the
-family hangs off it as `generates`, with `generated_by` on each instance. An
-earlier cut minted a synthetic type per family and collided with the macro's own
-node on `(name, defined_in)` — `Node.key` carries no `node_kind`.
+WHICH macros are templates is not a fact of the source. `GIT_HASHMAP_STRUCT`
+mints 24 same-shaped maps; `FF_PAD_STRUCTURE` mints `AVBPrint` and its
+padding helper once, and is a definition. Counting instances in the
+extracted build cannot tell them apart either -- `entry_short` mints its
+SHA256 twin only behind `#ifdef GIT_EXPERIMENTAL_SHA256`. So the judgement
+is the orchestrator's: it reads `t2/macro_generated_types.csv` (which
+macro invocation minted which type, extracted) and writes the families it
+accepts to the T3 table `type_generators.csv` (`compose/t3.py`). This module
+reads that table only; with no T3, there are no generators.
 
-`generated_by` / `generates` is a DIRECTED relation, unlike `casted`. A cast
-says nothing about which side depends on which, so `deps_dag` has to recover
-direction with a cast-centrality heuristic and a strict `>` guard; an instance
-always depends on its generator, so the edge is a fact and needs no inference
-(and cannot invert when an instance happens to carry genuine casts of its own).
+The generator needs no node of its own: the MACRO is already an entity. So
+the family hangs off it as `generates`, with `generated_by` on each
+instance. A row may also name a macro the generator expands into a family
+of its own (`derived_kind = macro`); that macro depends on its generator.
 
-**No count threshold.** Whether a macro minted one type or twenty in the
-extracted build says nothing about whether it is a template — conditional
-compilation decides that. The relation is emitted for every minting macro and
-the judgement is the agent's.
+`generated_by` / `generates` is a DIRECTED relation, unlike `casted`: an
+instance always depends on its generator, so the edge needs no inference.
 
-**Scope** is the macro's own. `import_closure` admits a generator regardless of
-call-site reachability (it expands at file scope, never from a function body),
-and `wrap._is_macro` exempts it from "macros are bindgen's" — the generic its
-instances alias is Rust this stage writes.
+**Scope** is the macro's own. `import_closure` admits a generator regardless
+of call-site reachability (it expands at file scope, never from a function
+body), and `wrap._is_macro` exempts it from "macros are bindgen's" — the
+generic its instances alias is Rust this stage writes.
 """
 from __future__ import annotations
 
-import collections
 from pathlib import Path
 from typing import Any
 
 try:
-    from . import scope as _scope
+    from . import t3 as _t3
 except ImportError:                       # script execution
-    import scope as _scope                # type: ignore
-
-#: Every minting macro is a generator, however many types this BUILD saw it
-#: mint. A count threshold looked principled and is not: it is a function of the
-#: extracted configuration, not of the C. `entry_short` / `entry_long`
-#: (`src/libgit2/index.c`) each mint two types in source -- the SHA256 pair sits
-#: behind `#ifdef GIT_EXPERIMENTAL_SHA256`, which this build does not define --
-#: so a >= 2 rule called them definitions here and would call them generators
-#: under another cmake flag. Emit the relation and let the wrapper agent decide
-#: whether a family of one earns a generic.
-MIN_MEMBERS = 1
-
-_CSV = "macro_generated_types.csv"
+    import t3 as _t3                      # type: ignore
 
 
-def load(codeql_dir: Path) -> dict[str, dict[str, Any]]:
-    """``{macro: {"def_file", "members": [(tag, def_file)]}}`` for every minting
-    macro. Empty when the table is absent — the relation
-    is additive, so a tree extracted before the query existed simply has no
-    families rather than failing."""
-    p = Path(codeql_dir) / "t2" / _CSV
-    if not p.is_file():
-        return {}
+def load(codeql_dir: Path, api_paths=None) -> dict[str, dict[str, Any]]:
+    """``{macro: {"def_file", "members": [(tag, def_file)], "macros":
+    [(macro, def_file)]}}`` for every generator in `type_generators.csv`.
+    Empty when no T3 is configured. With `api_paths` (API mode), every
+    generator must be defined in a public header."""
     fams: dict[str, dict[str, Any]] = {}
-    members: dict[str, list] = collections.defaultdict(list)
-    gen_file: dict[str, str] = {}
-    for r in _scope.load_csv(p):
-        m = r.get("generator_macro")
-        t = r.get("type_name")
-        if not (m and t):
-            continue
-        members[m].append((t, r.get("type_def_file") or ""))
-        gen_file.setdefault(m, r.get("generator_def_file") or "")
-    for m, mem in members.items():
-        uniq = sorted(set(mem))
-        if len(uniq) < MIN_MEMBERS:
-            continue
-        fams[m] = {"def_file": gen_file.get(m, ""), "members": uniq}
+    for (macro, mdf), derived in _t3.load(Path(codeql_dir) / "t1",
+                                          api_paths).generates.items():
+        fams[macro] = {
+            "def_file": mdf,
+            "members": sorted((n, df) for k, n, df in derived if k == "type"),
+            "macros": sorted((n, df) for k, n, df in derived if k == "macro"),
+        }
     return fams
 
 
-def generated_by(fams: dict[str, dict[str, Any]]) -> dict[tuple, str]:
-    """``{(tag, def_file): macro}`` — the reverse index, for stamping instances."""
-    out: dict[tuple, str] = {}
+def generated_by(fams: dict[str, dict[str, Any]]) -> dict[tuple, tuple[str, str]]:
+    """``{(tag, def_file): (macro, macro_def_file)}`` — the reverse index,
+    for stamping instances. Keyed to the macro's own definition, so two
+    same-named macros in different files stay apart."""
+    out: dict[tuple, tuple[str, str]] = {}
     for m, f in fams.items():
         for tag, df in f["members"]:
-            out[(tag, df)] = m
+            out[(tag, df)] = (m, f["def_file"])
     return out

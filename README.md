@@ -31,7 +31,8 @@ narrowed scheduling configs may use any repository layout:
   "state_dir": ".wavefront",
   "impl_files": ["src/"],
   "api_headers": ["include/public.h"],
-  "out_of_scope": {"paths": []}
+  "out_of_scope": {"paths": []},
+  "t3_dir": "t3"
 }
 ```
 
@@ -41,6 +42,12 @@ repository-relative. A trailing slash selects a directory
 recursively. `impl_files` names implementation sources and private headers;
 `api_headers` names the headers that publish the target API. Both sets are
 always inventory inputs.
+
+`t3_dir` is optional and relative to `state_dir`. It holds the third table
+tier: dependencies the extracted T1/T2 facts cannot show, such as a `void *`
+handed on through calls, and the macros accepted as type generators. They
+are authored outside wavefront, checked against T1 when loaded, and become
+DAG edges. See [`docs/schemas/t3.md`](docs/schemas/t3.md).
 
 ## Commands
 
@@ -223,6 +230,7 @@ Folding never produces parallel producer/consumer batches.
 All semantic artifacts live under the config's explicit `state_dir`:
 
 - `codeql/{db,t1,t2}` — database and extracted facts;
+- `<t3_dir>/` — authored relations (`chased_casts.csv`, `type_generators.csv`), when configured;
 - `ownership-store.json` — submitted ownership findings;
 - `.cache/` — disposable deterministic caches.
 

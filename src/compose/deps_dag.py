@@ -78,10 +78,12 @@ try:                                  # package import (analyze.py)
     from . import scope as _scope
     from . import macro_families as _mf
     from . import slot_casts
+    from . import t3 as _t3
 except ImportError:                   # script execution (python3 deps_dag.py)
     import scope as _scope            # type: ignore
     import macro_families as _mf      # type: ignore
     import slot_casts                 # type: ignore
+    import t3 as _t3                  # type: ignore
 
 
 def _canonical_decl(declared_in: Any) -> str | None:
@@ -110,7 +112,7 @@ def _sym_filekey(defined_in: Any, declared_in: Any) -> str | None:
 class TypeNode:
     __slots__ = ("tag", "def_file", "kind", "defined_in", "declared_in",
                  "ctype_refs", "dep_types", "dep_syms",
-                 "cast_to", "cast_from", "nfields", "generated_by")
+                 "cast_to", "cast_from", "nfields", "generated_by", "chased_bases")
 
     def __init__(self, tag: str, def_file: str = "") -> None:
         self.tag = tag
@@ -124,7 +126,10 @@ class TypeNode:
         self.cast_to: set[str] = set()      # casted.to tags (this -> T)
         self.cast_from: set[str] = set()    # casted.from tags (T -> this)
         self.nfields: int = 0               # full struct field count (its port LoC)
-        self.generated_by: str | None = None  # the macro that minted it, if any
+        # (macro, def_file) that minted it, per T3 `type_generators.csv`
+        self.generated_by: tuple[str, str] | None = None
+        # (base, def_file) this type is derived from, per T3 `chased_casts.csv`
+        self.chased_bases: set = set()
 
     def cast_degree(self) -> int:
         """Cast-graph centrality: how many distinct types this one is cast
@@ -285,6 +290,11 @@ def collect_signature_type_refs_csv(codeql_dir: Path, api_paths: set[str] | None
     for (_kind, name, file, _pos), types in slot_casts.load(
             codeql_dir / "t2", api_paths).param_reads.items():
         out[(name, file or None)].update(types)
+    # The same dependency where no cast is written in the function's own body:
+    # the orchestrator chased the erased value through the calls it is handed
+    # to (T3 `chased_casts.csv`, `erased_arg`).
+    for (name, file), bases in _t3.load(codeql_dir / "t1", api_paths).erased_args.items():
+        out[(name, file or None)].update(tag for tag, _df in bases)
     return dict(out)
 
 
@@ -462,6 +472,12 @@ def _collect(analysis_root: Path,
             n.sig_type_refs |= _sig_type_refs(e)
             if signature_refs is not None:
                 n.sig_type_refs |= signature_refs.get(key, set())
+    # Polymorphic pairs the orchestrator chased through type-erased slots
+    # (T3 `chased_casts.csv`, `base_derived`): directed, derived -> base.
+    if codeql_dir is not None:
+        for key, bases in _t3.load(codeql_dir / "t1", api_paths).bases.items():
+            if key in types:
+                types[key].chased_bases |= bases
     return types, syms, talias
 
 
@@ -502,7 +518,7 @@ def collect_types_csv(codeql_dir: Path, api_paths: set[str] | None = None):
     meta: dict[TypeKey, dict] = {}
     alias: dict[str, str] = {}          # typedef name -> underlying tag
     floating: dict[str, list] = collections.defaultdict(list)
-    _fams = _mf.load(codeql_dir)
+    _fams = _mf.load(codeql_dir, api_paths)
     _gen_of = _mf.generated_by(_fams)          # (tag, def_file) -> macro
     for r in _scope.load_csv(t1 / "types.csv"):
         n, df = r.get("name"), r.get("def_file") or ""
@@ -562,6 +578,10 @@ def collect_types_csv(codeql_dir: Path, api_paths: set[str] | None = None):
             continue
         edges[(sn, r.get("struct_def_file") or "")].append(
             (r.get("field_name") or "", tn, r.get("type_def_file") or ""))
+    # A type-erased field orders like a typed one once the orchestrator has
+    # chased what it holds (T3 `chased_casts.csv`, `erased_field`).
+    for owner, held in _t3.load(t1, api_paths).erased_fields.items():
+        edges[owner].extend(sorted(held))
     return meta, dict(edges), dict(casts), alias, _gen_of
 
 
@@ -758,13 +778,18 @@ def _build_edges(types, syms, amap):
         # Unlike `casted` below, the relation is DIRECTED at the source: an
         # instance always depends on the macro that minted it, since the generic
         # must exist before its aliases. No centrality heuristic, no `>` guard to
-        # invert when an instance carries genuine casts of its own. The >= 2
-        # threshold lives in `macro_families.load`, so a one-off macro is not a
-        # generator and produces no edge.
-        if n.generated_by:
-            g = next((k for k in syms if k[0] == n.generated_by), None)
-            if g is not None:
-                n.dep_syms.add(g)
+        # invert when an instance carries genuine casts of its own. Only the
+        # families the orchestrator accepted (T3 `type_generators.csv`) are
+        # generators, keyed `(macro, def_file)`, so a one-off macro has no edge.
+        if n.generated_by in syms:
+            n.dep_syms.add(n.generated_by)
+        # Chased base -> derived pair: the row states the direction, so no
+        # centrality guess. A cycle this closes is broken like any other.
+        for ref in n.chased_bases:
+            t = _resolve_ctype(ref, amap, types)
+            if t in types and t != key:
+                n.dep_types.add(t)
+                wedge[(key, t)] += 1
 
         my_deg = n.cast_degree()
         for t in (amap.get(x) for x in n.cast_to):
@@ -1134,12 +1159,20 @@ def compose(analysis_root, scope_json=None, codeql_dir: Path | None = None,
     # than minting a synthetic type, which would collide with this very node on
     # `(name, file)`. `generates` is also what lets the wrap scheduler make its
     # one exception to "macros are bindgen's" -- see `wrap._is_macro`.
-    for _m, _f in (_mf.load(codeql_dir).items() if codeql_dir else ()):
-        for _k in (k for k in syms if k[0] == _m):
-            syms[_k].generates = sorted({tag for tag, _df in _f["members"]})
+    _fams = (_mf.load(codeql_dir, layout_paths if api_headers_only else None)
+             if codeql_dir else {})
+    for _m, _f in _fams.items():
+        if (_m, _f["def_file"]) in syms:
+            syms[(_m, _f["def_file"])].generates = sorted(
+                {tag for tag, _df in _f["members"]})
 
     amap = _alias_map(analysis_root, types, talias)
     ext_syms, ext_types, wedge = _build_edges(types, syms, amap)
+    # A macro a generator expands into a family of its own depends on it.
+    for _m, _f in _fams.items():
+        for _d in _f["macros"]:
+            if _d in syms and (_m, _f["def_file"]) in syms:
+                syms[_d].dep_syms.add((_m, _f["def_file"]))
     nodes, adj = _build_graph(types, syms, ext_syms, ext_types)
     sccs = _tarjan(adj)
     # Flatten genuine cycles (parent↔child backrefs) with a weighted FAS: the

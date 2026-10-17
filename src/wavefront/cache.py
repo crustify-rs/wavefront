@@ -32,7 +32,9 @@ from pathlib import Path
 #:      join the cast graph, `void *` params depend on what they are read as.
 #: 11 — slot casts are direct only (no chains through erased hand-offs), and
 #:      API mode projects them onto the public API.
-_VERSION = 11
+#: 12 — T3 tables (`compose/t3.py`) add edges; macro generators come from
+#:      `type_generators.csv` only.
+_VERSION = 12
 
 
 def fingerprint(layout, target) -> dict:
@@ -69,6 +71,12 @@ def fingerprint(layout, target) -> dict:
                 inputs[p.name] = [-1, -1]
                 continue
             inputs[p.name] = [st.st_size, st.st_mtime_ns]
+
+    # The T3 tables are tracked, so -- like the config -- each worktree may
+    # hold its own checkout: hash their content.
+    from compose import t3 as _t3
+    for p in _t3.files():
+        inputs[f"t3/{p.name}"] = hashlib.sha256(p.read_bytes()).hexdigest()
     return {"version": _VERSION, "inputs": inputs}
 
 

@@ -14,7 +14,7 @@
  *   rel        : "from" | "to" | "forward"
  *   src_kind   : "type" | "param" | "ret" | "field"
  *   src_name   : struct tag, function name, or field owner tag
- *   src_file   : definition file of that entity ("" if only declared)
+ *   src_def_file : definition file of that entity ("" if only declared)
  *   src_member : "" (type) | parameter position | "ret" | field name
  *   src_decl   : named struct the slot is declared to hold, "" if erased
  *   src_ctype  : declared C type of the slot ("" for a type end)
@@ -35,8 +35,8 @@ where
   slotEdge(rel, sk, sn, sf, sm, sd, sc, dk, dn, df, dm, dd, dc, at) and
   (sk = ["param", "ret"] or dk = ["param", "ret"]) and
   siteOf(at, site_fn, site_file, line)
-select rel, sk as src_kind, sn as src_name, sf as src_file, sm as src_member,
+select rel, sk as src_kind, sn as src_name, sf as src_def_file, sm as src_member,
        sd as src_decl, sc as src_ctype,
-       dk as dst_kind, dn as dst_name, df as dst_file, dm as dst_member,
+       dk as dst_kind, dn as dst_name, df as dst_def_file, dm as dst_member,
        dd as dst_decl, dc as dst_ctype,
        site_fn, site_file, line

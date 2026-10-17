@@ -1,4 +1,4 @@
-"rel","src_kind","src_name","src_file","src_member","src_decl","src_ctype","dst_kind","dst_name","dst_file","dst_member","dst_decl","dst_ctype","site_fn","site_file","line"
+"rel","src_kind","src_name","src_def_file","src_member","src_decl","src_ctype","dst_kind","dst_name","dst_def_file","dst_member","dst_decl","dst_ctype","site_fn","site_file","line"
 "forward","field","Holder","slots.c","opaque","","void *","ret","get_raw","slots.c","ret","","void *","get_raw","slots.c",25
 "forward","field","Holder","slots.c","opaque","","void *","param","sink","","0","","void *","pass_field","slots.c",28
 "forward","field","Class","slots.c","name","","const char *","ret","vlog","slots.c","ret","","const char *","vlog","slots.c",14

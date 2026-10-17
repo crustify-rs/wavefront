@@ -27,7 +27,7 @@ def _edge(rel: str, src: tuple, dst: tuple) -> dict:
     row = {"rel": rel}
     for side, (kind, name, member, decl) in (("src", src), ("dst", dst)):
         row.update({f"{side}_kind": kind, f"{side}_name": name,
-                    f"{side}_file": "" if kind == "type" else "f.c",
+                    f"{side}_def_file": "" if kind == "type" else "f.c",
                     f"{side}_member": member, f"{side}_decl": decl})
     return row
 
