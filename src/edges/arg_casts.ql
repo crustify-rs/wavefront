@@ -6,8 +6,9 @@
  *
  * See `slots.qll` for the edge kinds, the endpoint encoding and the
  * syntactic-only rule (no dataflow: an edge is missed, never invented).
- * The composer joins `from` -> `forward`* -> `to` into slot-mediated
- * `casted` pairs.
+ * The composer pairs a `from` and a `to` at ONE slot into slot-mediated
+ * `casted` pairs; a `forward` counts only as the `from` of its named
+ * value's type, and an erased value handed on is not followed.
  *
  * # cols:
  *   rel        : "from" | "to" | "forward"

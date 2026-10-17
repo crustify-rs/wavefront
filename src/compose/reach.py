@@ -293,9 +293,9 @@ class Reach:
 
     def _build_slot_cast_indexes(self, t2: Path) -> None:
         # Slot-mediated casts (edges/arg_casts.ql + edges/field_casts.ql),
-        # joined by compose/slot_casts.py: D -> param/ret/field ... -> T. Kept
-        # apart from the raw graph above -- a pair here passes through
-        # type-erased slots and carries the slots that witness it.
+        # paired by compose/slot_casts.py: D -> slot -> T at one slot. Kept
+        # apart from the raw graph above -- a pair here meets at a
+        # type-erased slot and carries the slot that witnesses it.
         from . import slot_casts
         composed = slot_casts.load(t2)
         self._slot_cast_to, self._slot_cast_from = slot_casts.by_type(composed.pairs)

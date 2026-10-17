@@ -19,7 +19,10 @@
  *     param av_log.0      -> param av_vlog.0       (forward)
  *     param av_vlog.0     -> type AVClass          (to)
  *
- * and the composer joins them into `AVCodecContext casted_to AVClass`.
+ * The composer pairs only casts at ONE slot (`compose/slot_casts.py`): the
+ * last edge alone says `av_vlog.0` erases AVClass, and a context passed
+ * straight to `av_vlog` pairs with it. The erased hand-off is a call chain,
+ * recorded here but not followed.
  *
  * STRICTLY SYNTACTIC. Every edge is a conversion or a hand-off written AT
  * the slot access itself (through parentheses and conversions only); no

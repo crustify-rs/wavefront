@@ -255,7 +255,8 @@ def _sig_type_refs(entry: dict) -> set[str]:
     return refs
 
 
-def collect_signature_type_refs_csv(codeql_dir: Path) -> dict[SymKey, set[str]]:
+def collect_signature_type_refs_csv(codeql_dir: Path, api_paths: set[str] | None = None
+                                    ) -> dict[SymKey, set[str]]:
     """Exact user-type refs keyed by their function/callback definition.
 
     ``depends_on.types`` deliberately unions signature and body-local type
@@ -277,12 +278,12 @@ def collect_signature_type_refs_csv(codeql_dir: Path) -> dict[SymKey, set[str]]:
             name, type_name = row.get(name_col), row.get("type_name")
             if name and type_name:
                 out[(name, row.get(file_col) or None)].add(type_name)
-    # A type-erased parameter's REAL type: what its value is read as, in the
-    # function's own body or after forwarding (`av_log(void *avcl)` hands
-    # `avcl` to `av_vlog`, which reads `*(AVClass **)avcl`). The signature
-    # says `void *`; the API is `AVClass`-headed objects, and the wrapper
-    # needs AVClass first.
-    for (_kind, name, file, _pos), types in slot_casts.load(codeql_dir / "t2").param_reads.items():
+    # A type-erased parameter's REAL type: what its own body reads it as
+    # (`av_vlog(void *avcl)` reads `*(AVClass **)avcl`). The signature says
+    # `void *`; the API is `AVClass`-headed objects, and the wrapper needs
+    # AVClass first. With `api_paths`, public functions and types only.
+    for (_kind, name, file, _pos), types in slot_casts.load(
+            codeql_dir / "t2", api_paths).param_reads.items():
         out[(name, file or None)].update(types)
     return dict(out)
 
@@ -316,7 +317,8 @@ def _collect(analysis_root: Path,
              port_fields: dict[str, set[str]] | None = None,
              codeql_dir: Path | None = None,
              in_scope_types: set | None = None,
-             layout_paths: set[str] | None = None):
+             layout_paths: set[str] | None = None,
+             api_paths: set[str] | None = None):
     """Collect nodes/edges from the analysis tree, narrowed to one target.
 
     The tree is scope-agnostic and ACCUMULATES across targets: an entry that
@@ -353,9 +355,9 @@ def _collect(analysis_root: Path,
     syms: dict[SymKey, SymNode] = {}
     layout_paths = layout_paths or set()
 
-    tmeta, tedges, tcasts, talias, tgen = (collect_types_csv(codeql_dir) if codeql_dir
-                                     else ({}, {}, {}, {}, {}))
-    signature_refs = (collect_signature_type_refs_csv(codeql_dir)
+    tmeta, tedges, tcasts, talias, tgen = (collect_types_csv(codeql_dir, api_paths)
+                                           if codeql_dir else ({}, {}, {}, {}, {}))
+    signature_refs = (collect_signature_type_refs_csv(codeql_dir, api_paths)
                       if codeql_dir is not None else None)
     for key, m in tmeta.items():
         tag, df = key
@@ -479,7 +481,7 @@ _AGGREGATE_UAK = frozenset({
 })
 
 
-def collect_types_csv(codeql_dir: Path):
+def collect_types_csv(codeql_dir: Path, api_paths: set[str] | None = None):
     """The type side, straight from CodeQL — ``(meta, field_edges)``.
 
     Replaces reading ``types.json``. The manifest stores a field's type as a
@@ -547,8 +549,9 @@ def collect_types_csv(codeql_dir: Path):
     # through `av_log(avctx)` is a cast like any other, only with a
     # type-erased parameter between its two ends (compose/slot_casts.py).
     # Same in both modes -- the cast-centrality edge below reads these sets
-    # on API and non-API graphs alike.
-    for f, t in slot_casts.load(t2).pairs:
+    # on API and non-API graphs alike -- except that with `api_paths` (API
+    # mode) only casts between public nodes count.
+    for f, t in slot_casts.load(t2, api_paths).pairs:
         casts[f][0].add(t)
         casts[t][1].add(f)
 
@@ -1124,7 +1127,8 @@ def compose(analysis_root, scope_json=None, codeql_dir: Path | None = None,
     types, syms, talias = _collect(analysis_root, port_syms, port_fields,
                                    codeql_dir=codeql_dir,
                                    in_scope_types=in_scope_types,
-                                   layout_paths=layout_paths)
+                                   layout_paths=layout_paths,
+                                   api_paths=layout_paths if api_headers_only else None)
     _populate_nfields(codeql_dir, types)
     # A generator macro is already a symbol node; hang its family off it rather
     # than minting a synthetic type, which would collide with this very node on

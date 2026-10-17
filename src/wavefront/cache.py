@@ -30,7 +30,9 @@ from pathlib import Path
 #:      seeded import walk and `imported.seeds` are gone.
 #: 10 — slot-mediated casts (arg_casts/field_casts) order the dag: cast pairs
 #:      join the cast graph, `void *` params depend on what they are read as.
-_VERSION = 10
+#: 11 — slot casts are direct only (no chains through erased hand-offs), and
+#:      API mode projects them onto the public API.
+_VERSION = 11
 
 
 def fingerprint(layout, target) -> dict:

@@ -37,14 +37,18 @@ def _slot_row(rel: str, src: dict, dst: dict) -> dict:
 
 
 class SlotCastDagTests(unittest.TestCase):
-    """`av_log(avctx)` -> `av_vlog(avcl)` -> `*(Class **) avcl`, two classed
-    contexts calling it, in API and non-API graphs."""
+    """`av_vlog(avcl)` reads `*(Class **) avcl`; two classed contexts call it
+    directly, and `av_log(avcl)` only hands its erased value on. In API and
+    non-API graphs, and projected onto the public API."""
 
     def _codeql(self, td: str) -> Path:
         codeql = Path(td)
         types = [{"name": n, "kind": "struct", "def_file": "include/log.h",
                   "decl_files": "include/log.h", "aliases": "", "unaliased_kind": ""}
                  for n in ("Class", "CtxA", "CtxB")]
+        _write(codeql / "t1" / "functions.csv", ["name", "def_file", "decl_files"], [
+            {"name": "log", "def_file": "src/log.c", "decl_files": "include/log.h"},
+            {"name": "vlog", "def_file": "src/log.c", "decl_files": "src/internal.h"}])
         _write(codeql / "t1" / "types.csv",
                ["name", "kind", "def_file", "decl_files", "aliases", "unaliased_kind"],
                types)
@@ -56,8 +60,8 @@ class SlotCastDagTests(unittest.TestCase):
                ["function_name", "function_def_file", "type_name", "type_kind",
                 "type_def_file", "position"], [])
         _write(codeql / "t2" / "arg_casts.csv", SLOT_COLS, [
-            _slot_row("from", _end("type", "CtxA"), _end("param", "log", "0")),
-            _slot_row("from", _end("type", "CtxB"), _end("param", "log", "0")),
+            _slot_row("from", _end("type", "CtxA"), _end("param", "vlog", "0")),
+            _slot_row("from", _end("type", "CtxB"), _end("param", "vlog", "0")),
             _slot_row("forward", _end("param", "log", "0"), _end("param", "vlog", "0")),
             _slot_row("to", _end("param", "vlog", "0"), _end("type", "Class")),
         ])
@@ -100,13 +104,26 @@ class SlotCastDagTests(unittest.TestCase):
             self.assertEqual(types[cls].dep_types, set(), port_syms)
 
     def test_erased_parameters_depend_on_the_type_they_are_read_as(self) -> None:
-        # vlog reads its void* as Class; log forwards to it. Both signatures
-        # say `void *`, both functions order after Class, in both modes.
+        # vlog reads its void* as Class and orders after it, in both modes;
+        # log only hands its value on, which is not a cast.
         cls = ("Class", "include/log.h")
         for port_syms in (set(), None):
             _, symbols = self._graph(port_syms)
-            for fn in ("log", "vlog"):
-                self.assertIn(cls, symbols[(fn, "src/log.c")].dep_types, (fn, port_syms))
+            self.assertIn(cls, symbols[("vlog", "src/log.c")].dep_types, port_syms)
+            self.assertNotIn(cls, symbols[("log", "src/log.c")].dep_types, port_syms)
+
+    def test_api_projection_drops_internal_functions(self) -> None:
+        # vlog is declared only in src/internal.h: off the public API, its
+        # parameter is no node, so neither its read nor the pairs through it
+        # survive projection onto include/log.h.
+        with tempfile.TemporaryDirectory() as td:
+            codeql = self._codeql(td)
+            api = {"include/log.h"}
+            self.assertEqual(deps_dag.collect_types_csv(codeql, api)[2], {})
+            refs = deps_dag.collect_signature_type_refs_csv(codeql, api)
+            self.assertNotIn(("vlog", "src/log.c"), refs)
+            refs = deps_dag.collect_signature_type_refs_csv(codeql)
+            self.assertEqual(refs[("vlog", "src/log.c")], {"Class"})
 
 
 if __name__ == "__main__":

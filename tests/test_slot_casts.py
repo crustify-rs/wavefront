@@ -67,14 +67,15 @@ class SlotCastComposeTests(unittest.TestCase):
         rows = _rows(FIXTURE / "arg_casts.csv") + _rows(FIXTURE / "field_casts.csv")
         return slot_casts.by_field(slot_casts.compose(rows).variants)
 
-    def test_erased_parameter_chain_reaches_the_class_header(self) -> None:
-        # CtxA/CtxB -> log_.0 -> vlog.0 -> (const Class **): both siblings
-        # are cast to their shared header through two void* parameters.
-        pairs = self._golden_pairs()
-        for ctx, param in (("CtxA", "0"), ("CtxB", "1")):
-            entry, exit_ = pairs[(ctx, "Class")]
-            self.assertEqual(entry[:2] + entry[3:], ("param", "use_log", param))
-            self.assertEqual(exit_[:2] + exit_[3:], ("param", "vlog", "0"))
+    def test_erased_chain_is_not_followed(self) -> None:
+        # CtxA/CtxB -> log_.0 -> vlog.0 -> (const Class **): log_ hands an
+        # erased value on, which is a call chain, not a cast. Only vlog.0,
+        # whose own body reads it, erases Class.
+        composed = slot_casts.compose(
+            _rows(FIXTURE / "arg_casts.csv") + _rows(FIXTURE / "field_casts.csv"))
+        self.assertNotIn(("CtxA", "Class"), composed.pairs)
+        self.assertEqual({k[1]: sorted(v) for k, v in composed.param_reads.items()},
+                         {"vlog": ["Class"]})
 
     def test_typed_slot_downcast_and_erased_return(self) -> None:
         pairs = self._golden_pairs()
@@ -84,29 +85,64 @@ class SlotCastComposeTests(unittest.TestCase):
 
     def test_guarded_shapes_produce_no_pairs(self) -> None:
         # `reassigned`, `via_local`, `identity` and `same_type` emit no rows,
-        # so nothing beyond the three intended pairs exists.
-        self.assertEqual(sorted(self._golden_pairs()),
-                         [("Base", "Derived"), ("CtxA", "Class"), ("CtxB", "Class")])
+        # and the log_ chain is not followed: one pair remains.
+        self.assertEqual(sorted(self._golden_pairs()), [("Base", "Derived")])
 
-    def test_forward_cycle_converges(self) -> None:
-        # a.0 -> b.0 -> c.0 -> a.0, D enters at a.0, c.0 is read as T: every
-        # slot of the cycle reaches T, and the cycle adds no other pairs.
+    def test_pairs_need_both_casts_at_one_slot(self) -> None:
+        # D enters a.0 and a.0 is read as T: a pair. E enters b.0, which hands
+        # a.0's erased value on to c.0, read as U: neither D nor E reaches U.
         rows = [
             _edge("from", ("type", "D", "", "D"), ("param", "a", "0", "")),
-            _edge("forward", ("param", "a", "0", ""), ("param", "b", "0", "")),
-            _edge("forward", ("param", "b", "0", ""), ("param", "c", "0", "")),
-            _edge("forward", ("param", "c", "0", ""), ("param", "a", "0", "")),
-            _edge("to", ("param", "c", "0", ""), ("type", "T", "", "T")),
+            _edge("to", ("param", "a", "0", ""), ("type", "T", "", "T")),
             _edge("from", ("type", "E", "", "E"), ("param", "b", "0", "")),
+            _edge("forward", ("param", "a", "0", ""), ("param", "c", "0", "")),
+            _edge("forward", ("param", "b", "0", ""), ("param", "c", "0", "")),
+            _edge("to", ("param", "c", "0", ""), ("type", "U", "", "U")),
         ]
         pairs = slot_casts.compose(rows).pairs
-        self.assertEqual(sorted(pairs), [("D", "T"), ("E", "T")])
-        self.assertEqual(pairs[("D", "T")],
-                         (("param", "a", "f.c", "0"), ("param", "c", "f.c", "0")))
+        self.assertEqual(pairs, {("D", "T"): (("param", "a", "f.c", "0"),)})
+
+    def test_projection_drops_internal_nodes_before_joining(self) -> None:
+        # The libgit2 shape: git_object_free(git_object *) hands its named
+        # value to the internal decref(void *), read as internal Cached.
+        # Projected onto the public API, neither the slot nor the type exists.
+        rows = [
+            _edge("forward", ("param", "obj_free", "0", "Obj"), ("param", "decref", "0", "")),
+            _edge("to", ("param", "decref", "0", ""), ("type", "Cached", "", "Cached")),
+            _edge("from", ("type", "Obj", "", "Obj"), ("param", "pub", "0", "")),
+            _edge("to", ("param", "pub", "0", ""), ("type", "Odb", "", "Odb")),
+        ]
+        rows[1]["src_ctype"] = rows[3]["src_ctype"] = "void *"
+        self.assertEqual(sorted(slot_casts.compose(rows).pairs),
+                         [("Obj", "Cached"), ("Obj", "Odb")])
+        public = {"type": {"Obj", "Odb"}, "param": {"obj_free", "pub"}}
+        composed = slot_casts.compose(rows, lambda k, n, _f: n in public[
+            "type" if k in ("type", "field") else "param"])
+        self.assertEqual(sorted(composed.pairs), [("Obj", "Odb")])
+        self.assertEqual({k[1]: sorted(v) for k, v in composed.param_reads.items()},
+                         {"pub": ["Odb"]})
+
+    def test_public_keep_reads_the_inventory(self) -> None:
+        # Pub is defined in the API header, Handle only declared there, Priv
+        # internal: Handle is a public TYPE whose fields are not API.
+        with tempfile.TemporaryDirectory() as td:
+            t1 = Path(td)
+            with (t1 / "types.csv").open("w") as f:
+                f.write("name,def_file,decl_files\nPub,api.h,api.h\n"
+                        "Handle,src/h.c,api.h\nPriv,src/p.h,src/p.h\n")
+            with (t1 / "functions.csv").open("w") as f:
+                f.write("name,def_file,decl_files\npub_fn,src/a.c,api.h\n"
+                        "priv_fn,src/a.c,src/a.h\n")
+            keep = slot_casts.public_keep(t1, frozenset({"api.h"}))
+        self.assertEqual([keep("type", n, "") for n in ("Pub", "Handle", "Priv")],
+                         [True, True, False])
+        self.assertEqual([keep("field", n, "") for n in ("Pub", "Handle")], [True, False])
+        self.assertEqual([keep("param", n, "src/a.c") for n in ("pub_fn", "priv_fn")],
+                         [True, False])
 
     def test_declared_struct_seeds_the_slot(self) -> None:
-        # `f(Base *b) { g(b); }` and g reads its void* as T: Base reaches T
-        # with no explicit `from` row -- the slot's decl is the entry.
+        # `f(Base *b) { g(b); }` and g reads its void* as T: the call converts
+        # a NAMED value to `void *`, a direct cast with no `from` row.
         rows = [
             _edge("forward", ("param", "f", "0", "Base"), ("param", "g", "0", "")),
             _edge("to", ("param", "g", "0", ""), ("type", "T", "", "T")),
@@ -174,8 +210,8 @@ class SlotCastComposeTests(unittest.TestCase):
 
     def test_by_type_mirrors_pairs(self) -> None:
         to, from_ = slot_casts.by_type(self._golden_pairs())
-        self.assertEqual([r["type"] for r in to["CtxA"]], ["Class"])
-        self.assertEqual(sorted(r["type"] for r in from_["Class"]), ["CtxA", "CtxB"])
+        self.assertEqual([r["type"] for r in to["Base"]], ["Derived"])
+        self.assertEqual([r["type"] for r in from_["Derived"]], ["Base"])
         self.assertEqual(to["Base"][0]["via"], ["param:derived_extra.0@slots.c"])
 
 

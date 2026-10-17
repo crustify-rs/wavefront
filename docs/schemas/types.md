@@ -47,25 +47,36 @@ SLOT-MEDIATED cast graph (`edges/arg_casts.ql` + `edges/field_casts.ql`,
 joined by `compose/slot_casts.py`). It holds the casts `casted` cannot see
 because a type-erased slot sits between the two types:
 
-    av_log(avctx, ...)          AVCodecContext -> param av_log.0     (from)
-    av_vlog(avcl, ...)          param av_log.0 -> param av_vlog.0    (forward)
+    av_vlog(avctx, ...)         AVCodecContext -> param av_vlog.0    (from)
     *(AVClass **) avcl          param av_vlog.0 -> AVClass           (to)
 
-gives `AVCodecContext.casted_via.to ∋ {type: AVClass, via: [entry, exit]}`.
-`via` names the slot the type enters and the slot read as the other type
-(one element when they coincide), as `kind:name.member@file` with `kind` in
-`param` | `ret` | `field`.
+gives `AVCodecContext.casted_via.to ∋ {type: AVClass, via: [slot]}`. `via`
+names the one slot both casts meet at (two when a named slot is stored into
+another named slot), as `kind:name.member@file` with `kind` in `param` |
+`ret` | `field`.
 
-Only PARAMETERS propagate: a parameter is one value per call. Fields and
-returns are one slot for every instance or call, so they yield a pair only
-when both sides are named -- a `Base *` field read as `Derived *`, or a
-`Derived *` stored into it -- and a type-erased field is recorded on its
-field record as `erased_as` instead (see `fields`).
+ONLY DIRECT CASTS: both casts must sit at the same slot. A NAMED value
+handed on (`av_log(s->avctx)`) is converted at that call, so it counts as
+a `from`. An ERASED value handed on (`av_log(avcl)` -> `av_vlog`) is a call
+chain and is not followed: following it joins every type reaching the
+callee with every type any branch reads (`git_cached_obj_decref` would pair
+`git_blob` with `git_odb_object`). Those chains are false negatives by
+design, left to the orchestrator's review.
 
-Every edge is a conversion or hand-off written at the slot access itself;
-no flow through locals or memory is followed, so casts are missed rather
-than invented. Parameter paths are still path-insensitive: a cast guarded
-by a type check joins every type that reaches its parameter.
+Fields and returns are one slot for every instance or call, so they yield a
+pair only when both sides are named -- a `Base *` field read as `Derived *`,
+or a `Derived *` stored into it -- and a type-erased field is recorded on
+its field record as `erased_as` instead (see `fields`).
+
+Every edge is a conversion written at the slot access itself; no flow
+through locals, memory or calls is followed. A pair is still
+path-insensitive within its slot: a read guarded by a type check joins every
+type stored into that slot.
+
+This manifest field is unprojected. The scheduler's API mode
+(`--api-headers-only`) projects the same graph onto the public API first:
+every internal function's slot and every type not in `api_headers` is
+dropped before pairing.
 
 ## opaque_in
 
