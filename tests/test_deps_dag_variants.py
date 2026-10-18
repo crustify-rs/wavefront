@@ -22,15 +22,17 @@ def _end(kind: str, name: str, member: str = "", ctype: str = "void *") -> dict:
 
 class VariantDagTests(unittest.TestCase):
     """`Side.data` (`uint8_t *`) is read as Stereo and as the pun union
-    Pun; one muxer parks a Packet in `Stream.priv_data`; `vlog` reads its
-    `void *` as Class and as Pun; Ctx is cast to Class. Every one of those is
-    a derived cast edge, and a T3 `drop` row removes it."""
+    Pun; one muxer parks a Packet in `Stream.priv_data`, another the Fmt
+    whose typed `streams` field holds Stream; `vlog` reads its `void *` as
+    Class and as Pun; Ctx is cast to Class. Every one of those is a derived
+    cast edge -- a variant depends on its field's owner, as a derived type
+    on its base -- and a T3 `drop` row removes it."""
 
     def _graph(self, api: bool, rows=(), off_graph=()):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             codeql = root / "codeql"
-            names = ("Class", "Ctx", "Side", "Stereo", "Pun", "Stream", "Packet")
+            names = ("Class", "Ctx", "Side", "Stereo", "Pun", "Stream", "Packet", "Fmt")
             _write(codeql / "t1" / "types.csv", TYPE_COLS, [_type(n, H) for n in names])
             _write(codeql / "t1" / "functions.csv", FN_COLS, [
                 {"name": "vlog", "def_file": "log.c", "decl_files": H}])
@@ -46,18 +48,21 @@ class VariantDagTests(unittest.TestCase):
                  "is_erased": "true"}])
             _write(codeql / "t2" / "casts.csv", ["from_tag", "to_tag"],
                    [{"from_tag": "Ctx", "to_tag": "Class"}])
-            for name, cols in (("field_type_uses.csv",
-                                ["struct_name", "struct_def_file", "field_name",
-                                 "type_name", "type_kind", "type_def_file"]),
-                               ("signature_type_uses.csv",
-                                ["function_name", "function_def_file", "type_name",
-                                 "type_kind", "type_def_file", "position"])):
-                _write(codeql / "t2" / name, cols, [])
+            _write(codeql / "t2" / "field_type_uses.csv",
+                   ["struct_name", "struct_def_file", "field_name", "type_name",
+                    "type_kind", "type_def_file"],
+                   [{"struct_name": "Fmt", "struct_def_file": H, "field_name": "streams",
+                     "type_name": "Stream", "type_kind": "struct", "type_def_file": H}])
+            _write(codeql / "t2" / "signature_type_uses.csv",
+                   ["function_name", "function_def_file", "type_name", "type_kind",
+                    "type_def_file", "position"], [])
             data = _end("field", "Side", "data", "uint8_t *")
             _write(codeql / "t2" / "field_casts.csv", SLOT_COLS, [
                 _slot_row("to", data, _end("type", "Stereo")),
                 _slot_row("to", data, _end("type", "Pun")),
                 _slot_row("from", _end("type", "Packet"),
+                          _end("field", "Stream", "priv_data")),
+                _slot_row("from", _end("type", "Fmt"),
                           _end("field", "Stream", "priv_data")),
             ])
             _write(codeql / "t2" / "arg_casts.csv", SLOT_COLS, [
@@ -88,14 +93,24 @@ class VariantDagTests(unittest.TestCase):
             return ({k[0]: {d[0] for d in n.dep_types} for k, n in types.items()},
                     symbols[("vlog", "log.c")].dep_types, stale)
 
-    def test_variants_are_edges(self) -> None:
+    def test_variants_depend_on_the_owner(self) -> None:
         for api in (False, True):
             types, vlog, stale = self._graph(api)
-            self.assertEqual(types["Side"], {"Stereo", "Pun"}, api)
-            self.assertEqual(types["Stream"], {"Packet"}, api)
+            self.assertEqual(types["Stereo"], {"Side"}, api)
+            self.assertEqual(types["Pun"], {"Side"}, api)
+            self.assertEqual(types["Packet"], {"Stream"}, api)
+            self.assertEqual(types["Side"], set(), api)
             self.assertEqual(types["Ctx"], {"Class"}, api)
             self.assertEqual({d[0] for d in vlog}, {"Class", "Pun"}, api)
             self.assertEqual(stale, [])
+
+    def test_a_variant_holding_its_container_closes_no_cycle(self) -> None:
+        # Fmt holds Stream in a typed field and is parked in Stream's erased
+        # one: both edges run Fmt -> Stream.
+        for api in (False, True):
+            types, _, _ = self._graph(api)
+            self.assertEqual(types["Fmt"], {"Stream"}, api)
+            self.assertEqual(types["Stream"], set(), api)
 
     def test_drop_rows_remove_derived_edges(self) -> None:
         rows = [chased("erased_field", ("Side", H, "data"), ("Pun", H), op="drop"),
@@ -104,16 +119,18 @@ class VariantDagTests(unittest.TestCase):
                 chased("base_derived", base=("Class", H), derived=("Ctx", H), op="drop")]
         for api in (False, True):
             types, vlog, stale = self._graph(api, rows)
-            self.assertEqual(types["Side"], {"Stereo"}, api)
-            self.assertEqual(types["Stream"], set(), api)
+            self.assertEqual(types["Stereo"], {"Side"}, api)
+            self.assertEqual(types["Pun"], set(), api)
+            self.assertEqual(types["Packet"], set(), api)
             self.assertEqual(types["Ctx"], set(), api)
             self.assertEqual({d[0] for d in vlog}, {"Class"}, api)
             self.assertEqual(stale, [])
 
     def test_variants_off_the_graph_are_pruned(self) -> None:
         for api in (False, True):
-            types, _, _ = self._graph(api, off_graph=["Stereo"])
-            self.assertEqual(types["Side"], {"Pun"}, api)
+            types, _, _ = self._graph(api, off_graph=["Side"])
+            self.assertEqual(types["Stereo"], set(), api)
+            self.assertEqual(types["Pun"], set(), api)
 
     def test_rows_that_correct_nothing_are_stale(self) -> None:
         rows = [chased("erased_field", ("Side", H, "data"), ("Ctx", H), op="drop"),

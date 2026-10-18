@@ -133,8 +133,8 @@ class TypeNode:
         # (base, def_file) this type is derived from, per T3 `chased_casts.csv`
         self.chased_bases: set = set()
         # (type_name, type_def_file) a type-erased field holds: its variants
-        # (`slot_casts`) and T3 `erased_field` rows, less T3 `drop` rows. A
-        # field edge, but a cast one
+        # (`slot_casts`) and T3 `erased_field` rows, less T3 `drop` rows.
+        # Each depends on this owner, as a derived type on its base
         self.cast_field_refs: set = set()
 
     def cast_degree(self, amap: dict | None = None, keep: set | None = None) -> int:
@@ -341,8 +341,9 @@ def collect_erased_field_refs_csv(codeql_dir: Path
     closure (:func:`_build_edges`).
 
     A field's variants are the types the code stores into it or reads it as
-    (`slot_casts`): `AVFrameSideData.data` read as `AVStereo3D`. They are
-    edges by default, and the orchestrator corrects them in T3: an `add` row
+    (`slot_casts`): `AVFrameSideData.data` read as `AVStereo3D`. Each is an
+    edge by default, the variant depending on the owner as a derived type on
+    its base, and the orchestrator corrects them in T3: an `add` row
     for what no cast writes, a `drop` row for a pun or a reused slot
     (`AVPacket.data` read as `unaligned_32`, `AVStream.priv_data` holding an
     `AVPacket` in one muxer). A variant is tag-keyed, so its type is
@@ -520,9 +521,9 @@ def _collect(analysis_root: Path,
             if keep is not None and fname not in keep:
                 continue
             n.ctype_refs.add((tname, tdf))   # BOTH ends identified at source
-        # A type-erased field orders like a typed one by what it holds (its
-        # variants, corrected by T3), under the same field narrowing -- but
-        # as a cast edge (`_build_edges`).
+        # What a type-erased field holds (its variants, corrected by T3),
+        # under the same field narrowing as a typed field -- but as a cast
+        # edge, from the variant to the owner (`_build_edges`).
         for fname, tname, tdf in sorted(erased_fields.get(key, ())):
             if keep is not None and fname not in keep:
                 continue
@@ -895,16 +896,17 @@ def _build_edges(types, syms, amap, cast_scope: tuple[set, set] | None = None):
             res_ctype(ref, n.dep_types, n.dep_syms)
             if t in types and t != key:
                 wedge[(key, t)] += 1
-        # A type-erased field's chased type (T3 `erased_field`): a field edge
-        # when both ends are in the cast scope.
+        # What a type-erased field holds depends on its owner, as a derived
+        # type on its base: the owner is the generic container
+        # (`AVFrameSideData`), each variant one instance of it
+        # (`AVStereo3D`), whose wrapper is a view over the owner's. Added
+        # when both ends are in the cast scope; a variant off the graph
+        # (external) has no node to carry the edge.
         for ref in n.cast_field_refs:
             t = _resolve_ctype(ref, amap, types)
-            if keep_t is None:
-                res_ctype(ref, n.dep_types, n.dep_syms)
-            elif cast_t(key, t):
-                n.dep_types.add(t)
             if t in types and t != key and cast_t(key, t):
-                wedge[(key, t)] += 1
+                types[t].dep_types.add(key)
+                wedge[(t, key)] += 1
         # Macro-generator ordering edge. The generator is the MACRO itself --
         # already a symbol node -- so this is a type -> symbol dep, and there is
         # no synthetic type to mint (which would collide with the macro's own

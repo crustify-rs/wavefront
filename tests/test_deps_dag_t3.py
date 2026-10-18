@@ -63,7 +63,7 @@ class T3DagTests(unittest.TestCase):
         for api in (False, True):
             types, symbols = self._graph(api)
             self.assertIn(cls, symbols[("vlog", "log.c")].dep_types, api)     # erased_arg
-            self.assertIn(ctx, types[("Holder", "log.h")].dep_types, api)     # erased_field
+            self.assertIn(("Holder", "log.h"), types[ctx].dep_types, api)     # erased_field
             self.assertIn(cls, types[ctx].dep_types, api)                     # base_derived
             self.assertNotIn(ctx, types[cls].dep_types, api)
             self.assertIn(("PUB_GEN", "log.h"),                               # generator

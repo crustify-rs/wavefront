@@ -33,8 +33,9 @@ The orchestrator writes what it accepts into two CSVs under the config's
     derived_kind  type | macro
     derived_name, derived_def_file
 
-Every `add` row becomes one DAG edge (`deps_dag`): a function or struct
-depends on what its erased slot holds, a derived type on its base, a
+Every `add` row becomes one DAG edge (`deps_dag`): a function depends on
+what its erased parameter holds, what an erased field holds on the field's
+owner (a derived type on its base), a derived type on its base, a
 generated type or macro on its generator. A `drop` row removes a cast edge
 wavefront derives itself from T2 and the orchestrator rejected: a
 parameter or field read as a type it is not polymorphic over (an
