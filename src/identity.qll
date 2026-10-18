@@ -178,25 +178,28 @@ predicate anonEmbeddedField(UserType root, Field f, string path) {
   exists(Field outer |
     outer.getDeclaringType() = root and
     f.getDeclaringType() = anonMemberAggregate(outer) and
-    path = memberPrefix(outer) + f.getName()
+    not isUnnamedMember(f) and
+    path = memberPathPrefix(outer) + f.getName()
   )
   or
   exists(Field outer, string sub |
     outer.getDeclaringType() = root and
     anonEmbeddedField(anonMemberAggregate(outer), f, sub) and
-    path = memberPrefix(outer) + sub
+    path = memberPathPrefix(outer) + sub
   )
 }
 
 /**
- * The path segment `outer` contributes to a member below it: `name.`, or
- * nothing for a C11 UNNAMED member (`struct S { union { void *u; }; }`),
- * whose members C reaches as `s->u` -- the extractor names that field
- * `(unknown field)`, which no C expression can spell.
+ * `f` has no declarator name: a C11 anonymous struct/union member
+ * (`struct { union { int a; float b; }; }`). CodeQL names it
+ * `(unknown field)`. Its own members are members of the enclosing aggregate
+ * (`s.a`), so it names no field and contributes no access-path segment.
  */
-bindingset[outer]
-string memberPrefix(Field outer) {
-  if outer.getName() = ["", "(unknown field)"] then result = "" else result = outer.getName() + "."
+predicate isUnnamedMember(Field f) { f.getName() = "(unknown field)" or f.getName() = "" }
+
+/** The access-path segment `outer` contributes: `name.`, or nothing when unnamed. */
+string memberPathPrefix(Field outer) {
+  if isUnnamedMember(outer) then result = "" else result = outer.getName() + "."
 }
 
 /**

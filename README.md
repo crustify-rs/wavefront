@@ -97,7 +97,7 @@ Type-only views require exactly one `--name`:
 | Flag | Meaning |
 |---|---|
 | `--fields` | Print declared fields and their structural and ownership records. With `--targeted-only`, keep fields reached by target code. |
-| `--lifecycle-ops` | Print the functions known to drop, dispose fields of, or clone the type. |
+| `--lifecycle-ops` | Print the functions known to drop, dispose fields of, clone, or construct the type. |
 | `--users` | Print the complete function footprint of the type. Targeted/imported flags intersect that footprint. |
 | `--field-touchers` | Print each field and all functions that access it. With `--targeted-only`, keep fields reached by target code. |
 
@@ -107,11 +107,12 @@ Symbol-only views:
 |---|---|
 | `--lifetime-for SPEC` | Find submitted droppers, disposers, cloners, and constructors acting on a type, `void`, or `string`. No `--name` is needed. |
 | `--taking SPEC` | Find candidate symbols with an argument matching a type, `void`, or `string`. No `--name` is needed. |
-| `--calling FN[,FN...]` | With `--taking`, keep candidates that reach one of the named functions. |
+| `--returning SPEC` | Find candidate symbols whose pointer return matches a type, `void`, or `string`: allocators and constructors that hand back a new object, which `--taking` cannot see. No `--name` is needed. |
+| `--calling FN[,FN...]` | With `--taking` or `--returning`, keep candidates that reach one of the named functions. |
 | `--callees` | Walk outward from `--name` through the raw call graph. |
 | `--callers` | Walk backward from `--name` through the raw call graph. |
 | `--depth N` | Hop limit for `--calling`, `--callees`, or `--callers`; default `1`. |
-| `--array` | With `--taking` or `--lifetime-for`, keep arguments classified as arrays. |
+| `--array` | With `--taking`, `--returning`, or `--lifetime-for`, keep matches classified as arrays. |
 
 Examples:
 

@@ -114,5 +114,51 @@ class LifecycleIndexTests(unittest.TestCase):
                          ["foo_free", "foo_new", "foo_parse", "foo_init"])
 
 
+class ReturningDiscoveryTests(unittest.TestCase):
+    """`--returning` finds allocators by their return, which `--taking` cannot:
+    `malloc(size_t)` takes no `void *`."""
+
+    SYMS = [
+        {"name": "my_malloc", "defined_in": "mem.c", "ptr_args": [],
+         "ptr_ret": {"type": "void", "depth": 1, "ptr": None}},
+        {"name": "my_free", "defined_in": "mem.c",
+         "ptr_args": [{"position": 0, "name": "p", "type": "void", "depth": 1}],
+         "ptr_ret": None},
+        {"name": "my_strdup", "defined_in": "str.c",
+         "ptr_args": [{"position": 0, "name": "s", "type": "char", "depth": 1}],
+         "ptr_ret": {"type": "char", "depth": 1, "ptr": None}},
+    ]
+
+    def run_query(self, **kw) -> dict:
+        import io
+        import json
+        from contextlib import redirect_stdout
+        from pathlib import Path
+        from unittest.mock import patch
+
+        from wavefront import query
+
+        out = io.StringIO()
+        with patch("wavefront.layout.Layout.discover", return_value=object()), \
+                patch("wavefront.query._entries", return_value=self.SYMS), \
+                redirect_stdout(out):
+            query._taking(Path("."), calling=None, depth=1, array_only=False, **kw)
+        return json.loads(out.getvalue())
+
+    def test_returning_matches_the_return_only(self):
+        d = self.run_query(spec="void", by_return=True)
+        self.assertEqual(d["returning"], "void")
+        self.assertEqual([r["symbol"] for r in d["candidates"]], ["my_malloc"])
+        self.assertEqual(d["candidates"][0]["returns"][0]["name"], "return")
+
+    def test_taking_still_matches_args_only(self):
+        d = self.run_query(spec="void")
+        self.assertEqual([r["symbol"] for r in d["candidates"]], ["my_free"])
+
+    def test_returning_string_uses_the_char_family(self):
+        d = self.run_query(spec="string", by_return=True)
+        self.assertEqual([r["symbol"] for r in d["candidates"]], ["my_strdup"])
+
+
 if __name__ == "__main__":
     unittest.main()

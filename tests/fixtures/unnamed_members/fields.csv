@@ -1,0 +1,22 @@
+struct_name,struct_def_file,field_name,field_type,is_scalar,ptr_depth,is_erased
+Conn,members.c,ext,(unnamed class/struct/union),false,0,false
+Conn,members.c,ext.hostname,int,true,0,false
+Conn,members.c,ext.inner,Inner *,false,1,false
+Conn,members.c,ext.port,int,true,0,false
+Data,members.c,l1,Level1,false,0,false
+Data,members.c,l2,Level2,false,0,false
+Data,members.c,level,int,true,0,false
+Expr,members.c,func0,..(*)(..),true,1,false
+Expr,members.c,func1,..(*)(..),true,1,false
+Expr,members.c,type,int,true,0,false
+Inner,members.c,v,int,true,0,false
+Level1,members.c,min,int,true,0,false
+Level2,members.c,max,int,true,0,false
+Nest,members.c,x,int,true,0,false
+Nest,members.c,y,int,true,0,false
+Nest,members.c,z,int,true,0,false
+Plain,members.c,a,int,true,0,false
+Plain,members.c,in,Inner,false,0,false
+Shape,members.c,k,int,true,0,false
+Shape,members.c,p,void *,true,1,true
+Shape,members.c,q,long,true,0,false
