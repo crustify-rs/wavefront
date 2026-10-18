@@ -25,6 +25,7 @@ The orchestrator writes what it accepts into two CSVs under the config's
     base_def_file
     derived_name  base_derived only
     derived_def_file
+    op            add (default, also when the column is absent) | drop
 
 `type_generators.csv`, one generated entity per row:
 
@@ -32,9 +33,14 @@ The orchestrator writes what it accepts into two CSVs under the config's
     derived_kind  type | macro
     derived_name, derived_def_file
 
-Every row becomes one DAG edge (`deps_dag`): a function or struct depends
-on what its erased slot holds, a derived type on its base, a generated
-type or macro on its generator. This module checks the NODES each row
+Every `add` row becomes one DAG edge (`deps_dag`): a function or struct
+depends on what its erased slot holds, a derived type on its base, a
+generated type or macro on its generator. A `drop` row removes a cast edge
+wavefront derives itself from T2 and the orchestrator rejected: a
+parameter or field read as a type it is not polymorphic over (an
+alignment pun, a slot one file reuses), or a cast between two types that
+are no pair. Only cast edges can be dropped; field and signature edges are
+declarations. This module checks the NODES each row
 names -- that they exist, at those files, with the right shape (an erased
 slot really is `void *` / `void **`). It does not check the relation
 itself: whether the cast happens, or the chain that carries it, is the
@@ -59,11 +65,15 @@ GENERATORS = "type_generators.csv"
 TABLES = (CHASED, GENERATORS)
 
 CHASED_COLS = ("kind", "slot_name", "slot_def_file", "slot_member",
-               "base_name", "base_def_file", "derived_name", "derived_def_file")
+               "base_name", "base_def_file", "derived_name", "derived_def_file",
+               "op")
+#: Columns a header may leave out: `op` defaults to `add`.
+OPTIONAL_COLS = ("op",)
 GENERATOR_COLS = ("generator_macro", "generator_def_file",
                   "derived_kind", "derived_name", "derived_def_file")
 
 KINDS = ("erased_arg", "erased_field", "base_derived")
+OPS = ("add", "drop")
 DERIVED_KINDS = ("type", "macro")
 
 #: The T1 tables a check reads.
@@ -100,6 +110,12 @@ class Tables(NamedTuple):
     bases: dict[Key, frozenset[Key]]
     #: `{(macro, def_file): {(kind, name, def_file)}}`
     generates: dict[Key, frozenset[tuple[str, str, str]]]
+    #: `drop` rows. `{(function, def_file): {(position, base, base_def_file)}}`
+    drop_args: dict[Key, frozenset[tuple[str, str, str]]] = {}
+    #: `{(owner, def_file): {(field path, base, base_def_file)}}`
+    drop_fields: dict[Key, frozenset[tuple[str, str, str]]] = {}
+    #: `{(derived, def_file): {(base, base_def_file)}}`
+    drop_bases: dict[Key, frozenset[Key]] = {}
 
 
 EMPTY = Tables({}, {}, {}, {})
@@ -206,26 +222,39 @@ class _Inventory:
 
 
 def _check_header(path: Path, have: list[str], want: tuple[str, ...]) -> list[str]:
-    missing = [c for c in want if c not in have]
+    missing = [c for c in want if c not in have and c not in OPTIONAL_COLS]
     return [f"{path.name}: missing column(s) {missing}"] if missing else []
 
 
 def _chased(path: Path, inv: _Inventory, api: frozenset[str] | None,
-            errs: list[str]) -> tuple[dict, dict, dict]:
-    args: dict[Key, set[Key]] = defaultdict(set)
-    flds: dict[Key, set[tuple[str, str, str]]] = defaultdict(set)
-    bases: dict[Key, set[Key]] = defaultdict(set)
+            errs: list[str]) -> tuple[dict, ...]:
+    """`(args, fields, bases)` of the `add` rows, then the same three of the
+    `drop` rows; `drop` args keep the parameter position."""
+    adds = (defaultdict(set), defaultdict(set), defaultdict(set))
+    drops = (defaultdict(set), defaultdict(set), defaultdict(set))
     have, rows = _rows(path)
     errs += _check_header(path, have, CHASED_COLS)
     if any(e.startswith(path.name) for e in errs):
-        return args, flds, bases
+        return (*adds, *drops)
+    seen: dict[tuple, tuple[str, str]] = {}         # edge -> (op, where)
     for line, r in enumerate(rows, start=2):
         at = f"{path.name}:{line}"
         v = {c: (r.get(c) or "").strip() for c in CHASED_COLS}
-        kind = v["kind"]
+        kind, op = v["kind"], v["op"] or "add"
         if kind not in KINDS:
             errs.append(f"{at}: kind {kind!r} is not one of {list(KINDS)}")
             continue
+        if op not in OPS:
+            errs.append(f"{at}: op {op!r} is not one of {list(OPS)}")
+            continue
+        edge = (kind, v["slot_name"], v["slot_def_file"], v["slot_member"],
+                v["base_name"], v["base_def_file"], v["derived_name"],
+                v["derived_def_file"])
+        prev = seen.setdefault(edge, (op, at))
+        if prev[0] != op:
+            errs.append(f"{at}: {op} contradicts {prev[0]} of the same edge at {prev[1]}")
+            continue
+        args, flds, bases = adds if op == "add" else drops
         slot_cols = ("slot_name", "slot_def_file", "slot_member")
         need = ["base_name"] + (["derived_name"] if kind == "base_derived" else
                                 ["slot_name", "slot_member"])
@@ -272,6 +301,8 @@ def _chased(path: Path, inv: _Inventory, api: frozenset[str] | None,
                             f"{p.get('param_type')!r}, not void * / void **")
             elif api is not None and not inv.function_public(owner, api):
                 pass                            # not public: no API edge
+            elif op == "drop":
+                args[owner].add((v["slot_member"], *base))
             else:
                 args[owner].add(base)
             continue
@@ -288,14 +319,19 @@ def _chased(path: Path, inv: _Inventory, api: frozenset[str] | None,
             continue
         decl, fpath = got
         f = inv.fields[decl][fpath]
-        if f.get("is_erased") != "true":
+        # The slots wavefront records variants for: a pointer that names no
+        # struct -- `void *`, or a scalar pointer read through a cast
+        # (`uint8_t *data` read as `AVStereo3D`).
+        erased = f.get("is_erased") == "true" or (
+            f.get("is_scalar") == "true" and (f.get("ptr_depth") or "0") != "0")
+        if not erased:
             errs.append(f"{at}: field {decl[0]}.{fpath} is {f.get('field_type')!r}, "
-                        f"not void * / void **")
+                        f"not void * / void ** or a scalar pointer")
         elif api is not None and decl[1] not in api:
             pass                                # not a public layout: no API edge
         else:
             flds[decl].add((fpath, *base))
-    return args, flds, bases
+    return (*adds, *drops)
 
 
 def _generators(path: Path, inv: _Inventory, api: frozenset[str] | None,
@@ -339,8 +375,9 @@ def _generators(path: Path, inv: _Inventory, api: frozenset[str] | None,
 def _load(t3: str, t1: str, api: frozenset[str] | None, _stamp: tuple) -> Tables:
     d, inv, errs = Path(t3), _Inventory(Path(t1)), []
     args, flds, bases, gens = {}, {}, {}, {}
+    dargs, dflds, dbases = {}, {}, {}
     if (d / CHASED).is_file():
-        args, flds, bases = _chased(d / CHASED, inv, api, errs)
+        args, flds, bases, dargs, dflds, dbases = _chased(d / CHASED, inv, api, errs)
     if (d / GENERATORS).is_file():
         gens = _generators(d / GENERATORS, inv, api, errs)
     if errs:
@@ -349,7 +386,8 @@ def _load(t3: str, t1: str, api: frozenset[str] | None, _stamp: tuple) -> Tables
 
     def freeze(m: dict) -> dict:
         return {k: frozenset(v) for k, v in sorted(m.items())}
-    return Tables(freeze(args), freeze(flds), freeze(bases), freeze(gens))
+    return Tables(freeze(args), freeze(flds), freeze(bases), freeze(gens),
+                  freeze(dargs), freeze(dflds), freeze(dbases))
 
 
 def load(t1: Path, api_paths=None) -> Tables:

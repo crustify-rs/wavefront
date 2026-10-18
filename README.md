@@ -186,7 +186,7 @@ Selection and output flags:
 | `--lifetime-for void\|string` | Emit the synthetic raw-pointer or string-lifetime wave. This is exclusive of names, files, and layers. |
 | `--transitive` | Include the selected units' in-scope dependency closure. |
 | `--skip NAME [NAME ...]` | Remove named units after selection. The option may be repeated. |
-| `--api-headers-only` | Seed from published declarations and traverse the public-signature graph rather than implementation bodies. |
+| `--api-headers-only` | Seed from published declarations and traverse the public-signature graph rather than implementation bodies. Imported items are not scheduled: another config's `api_headers` own them. They remain dependencies, and `query dag --imported-only` lists them. |
 
 Batch flags:
 

@@ -71,6 +71,7 @@ from __future__ import annotations
 import collections
 import json
 import re
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -131,8 +132,9 @@ class TypeNode:
         self.generated_by: tuple[str, str] | None = None
         # (base, def_file) this type is derived from, per T3 `chased_casts.csv`
         self.chased_bases: set = set()
-        # (type_name, type_def_file) a type-erased field holds, per T3
-        # `chased_casts.csv` `erased_field`: a field edge, but a cast one
+        # (type_name, type_def_file) a type-erased field holds: its variants
+        # (`slot_casts`) and T3 `erased_field` rows, less T3 `drop` rows. A
+        # field edge, but a cast one
         self.cast_field_refs: set = set()
 
     def cast_degree(self, amap: dict | None = None, keep: set | None = None) -> int:
@@ -314,19 +316,82 @@ def collect_cast_type_refs_csv(codeql_dir: Path) -> dict[SymKey, set[str]]:
     function. Read program-wide in every mode; an API graph keeps a ref only
     between two nodes of its API closure (:func:`_build_edges`)."""
     out: dict[SymKey, set[str]] = collections.defaultdict(set)
+    tables = _t3.load(codeql_dir / "t1")
     # A type-erased parameter's REAL type: what its own body reads it as
     # (`av_vlog(void *avcl)` reads `*(AVClass **)avcl`). The signature says
     # `void *`; the API is `AVClass`-headed objects, and the wrapper needs
-    # AVClass first.
-    for (_kind, name, file, _pos), types in slot_casts.load(
+    # AVClass first. Less what the orchestrator dropped (T3 `drop` rows).
+    for (_kind, name, file, pos), types in slot_casts.load(
             codeql_dir / "t2").param_reads.items():
-        out[(name, file or None)].update(types)
+        dropped = {(p, b) for p, b, _df in tables.drop_args.get((name, file), ())}
+        out[(name, file or None)].update(t for t in types if (pos, t) not in dropped)
     # The same dependency where no cast is written in the function's own body:
     # the orchestrator chased the erased value through the calls it is handed
     # to (T3 `chased_casts.csv`, `erased_arg`).
-    for (name, file), bases in _t3.load(codeql_dir / "t1").erased_args.items():
+    for (name, file), bases in tables.erased_args.items():
         out[(name, file or None)].update(tag for tag, _df in bases)
     return dict(out)
+
+
+def collect_erased_field_refs_csv(codeql_dir: Path
+                                  ) -> dict[TypeKey, set[tuple[str, str, str]]]:
+    """`{(owner, def_file): {(field, type, type_def_file)}}`: what each
+    type-erased field holds. Read program-wide in every mode, like every
+    cast; an API graph keeps an edge only between two nodes of its API
+    closure (:func:`_build_edges`).
+
+    A field's variants are the types the code stores into it or reads it as
+    (`slot_casts`): `AVFrameSideData.data` read as `AVStereo3D`. They are
+    edges by default, and the orchestrator corrects them in T3: an `add` row
+    for what no cast writes, a `drop` row for a pun or a reused slot
+    (`AVPacket.data` read as `unaligned_32`, `AVStream.priv_data` holding an
+    `AVPacket` in one muxer). A variant is tag-keyed, so its type is
+    resolved by tag."""
+    out: dict[TypeKey, set[tuple[str, str, str]]] = collections.defaultdict(set)
+    tables = _t3.load(codeql_dir / "t1")
+    for (_kind, owner, file, member), (stored, read_as) in slot_casts.load(
+            codeql_dir / "t2").variants.items():
+        dropped = {(f, b) for f, b, _df in tables.drop_fields.get((owner, file), ())}
+        out[(owner, file)].update((member, t, "") for t in stored | read_as
+                                  if (member, t) not in dropped)
+    for key, refs in tables.erased_fields.items():
+        out[key] |= refs
+    return dict(out)
+
+
+def t3_stale(codeql_dir: Path) -> list[str]:
+    """T3 rows that no longer correct anything wavefront derives: a `drop`
+    of a cast it does not derive, an `add` of a slot read it already
+    derives. Stale after a re-extraction, or never needed; a warning, not
+    an error."""
+    tables = _t3.load(codeql_dir / "t1")
+    sc = slot_casts.load(codeql_dir / "t2")
+    reads = {(n, f, p): ts for (_k, n, f, p), ts in sc.param_reads.items()}
+    read_any = collections.defaultdict(set)
+    for (n, f, _p), ts in reads.items():
+        read_any[(n, f)] |= ts
+    held = {(o, f, m): st | rd for (_k, o, f, m), (st, rd) in sc.variants.items()}
+    casts = {(r.get("from_tag"), r.get("to_tag"))
+             for r in _scope.load_csv(codeql_dir / "t2" / "casts.csv")}
+    casts |= set(sc.pairs)
+    out = []
+    for (n, f), rows in tables.drop_args.items():
+        out += [f"drop erased_arg {n}.{p} -> {b}: no such read"
+                for p, b, _df in sorted(rows) if b not in reads.get((n, f, p), ())]
+    for (n, f), rows in tables.erased_args.items():
+        out += [f"add erased_arg {n} -> {b}: already read in its body"
+                for b, _df in sorted(rows) if b in read_any.get((n, f), ())]
+    for (o, f), rows in tables.drop_fields.items():
+        out += [f"drop erased_field {o}.{m} -> {b}: no such variant"
+                for m, b, _df in sorted(rows) if b not in held.get((o, f, m), ())]
+    for (o, f), rows in tables.erased_fields.items():
+        out += [f"add erased_field {o}.{m} -> {b}: already a variant"
+                for m, b, _df in sorted(rows) if b in held.get((o, f, m), ())]
+    for (d, _f), rows in tables.drop_bases.items():
+        out += [f"drop base_derived {b} / {d}: no cast between them"
+                for b, _df in sorted(rows)
+                if (d, b) not in casts and (b, d) not in casts]
+    return out
 
 
 # ------------------------------------------------------------------- collect
@@ -402,7 +467,7 @@ def _collect(analysis_root: Path,
                       if codeql_dir is not None else None)
     cast_refs = (collect_cast_type_refs_csv(codeql_dir)
                  if codeql_dir is not None else None)
-    erased_fields = (_t3.load(codeql_dir / "t1").erased_fields
+    erased_fields = (collect_erased_field_refs_csv(codeql_dir)
                      if codeql_dir is not None else {})
     for key, m in tmeta.items():
         tag, df = key
@@ -455,9 +520,9 @@ def _collect(analysis_root: Path,
             if keep is not None and fname not in keep:
                 continue
             n.ctype_refs.add((tname, tdf))   # BOTH ends identified at source
-        # A type-erased field orders like a typed one once the orchestrator has
-        # chased what it holds (T3 `chased_casts.csv`, `erased_field`), under
-        # the same field narrowing -- but as a cast edge (`_build_edges`).
+        # A type-erased field orders like a typed one by what it holds (its
+        # variants, corrected by T3), under the same field narrowing -- but
+        # as a cast edge (`_build_edges`).
         for fname, tname, tdf in sorted(erased_fields.get(key, ())):
             if keep is not None and fname not in keep:
                 continue
@@ -606,11 +671,17 @@ def collect_types_csv(codeql_dir: Path, api_paths: set[str] | None = None):
     # cast to an internal type off the closure (`git_patch ->
     # git_patch_generated`) adds no edge, while one to an imported public type
     # (`AVCodecContext -> AVClass`) does.
-    for r in _scope.load_csv(t2 / "casts.csv"):
-        f, t = r.get("from_tag"), r.get("to_tag")
-        if f and t and f != t:
+    # The pairs the orchestrator rejected (T3 `base_derived` `drop` rows):
+    # no cast edge between them, in either direction.
+    rejected = {frozenset((d, b)) for (d, _df), bases
+                in _t3.load(t1).drop_bases.items() for b, _bdf in bases}
+
+    def cast(f, t):
+        if f and t and f != t and frozenset((f, t)) not in rejected:
             casts[f][0].add(t)          # f is cast TO t
             casts[t][1].add(f)          # t is cast FROM f
+    for r in _scope.load_csv(t2 / "casts.csv"):
+        cast(r.get("from_tag"), r.get("to_tag"))
     # Slot-mediated casts join the same graph: `AVCodecContext -> AVClass`
     # through `av_log(avctx)` is a cast like any other, only with a
     # type-erased parameter between its two ends (compose/slot_casts.py).
@@ -618,8 +689,7 @@ def collect_types_csv(codeql_dir: Path, api_paths: set[str] | None = None):
     # never the slot that witnesses it (`av_opt_copy.0` sits in libavutil, the
     # pair `AVCodecContext -> AVClass` in libavcodec's graph).
     for f, t in slot_casts.load(t2).pairs:
-        casts[f][0].add(t)
-        casts[t][1].add(f)
+        cast(f, t)
 
     edges: dict[TypeKey, list[tuple[str, str, str]]] = collections.defaultdict(list)
     for r in _scope.load_csv(t2 / "field_type_uses.csv"):
@@ -1295,6 +1365,8 @@ def compose(analysis_root, scope_json=None, codeql_dir: Path | None = None,
                 in_scope_types.add((e["name"], df) if df else e["name"])
     if codeql_dir is None:
         codeql_dir = Path(analysis_root).parent / "codeql"
+    for msg in t3_stale(codeql_dir) if (codeql_dir / "t2").is_dir() else ():
+        print(f"warning: T3 {msg}", file=sys.stderr)
     types, syms, talias = _collect(analysis_root, port_syms, port_fields,
                                    codeql_dir=codeql_dir,
                                    in_scope_types=in_scope_types,

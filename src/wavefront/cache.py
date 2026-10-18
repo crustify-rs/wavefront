@@ -44,7 +44,9 @@ from pathlib import Path
 #:      mode builds in two phases: the API closure from signature and field
 #:      edges, then cast edges between its nodes only (never a public witness);
 #:      cast centrality counts closure nodes only.
-_VERSION = 16
+#: 17 — a type-erased field's variants are cast edges; T3 `op` column, whose
+#:      `drop` rows remove derived cast edges.
+_VERSION = 17
 
 
 def fingerprint(layout, target) -> dict:

@@ -91,6 +91,12 @@ Each item has this shape:
 }
 ```
 
+An `api_headers_only` schedule holds only the config's own items. An
+imported item, owned by another config's `api_headers`, is scheduled there,
+after its own fields; here it stays a dependency of the items that reach it
+and is not a unit. `query dag --name X --imported-only` lists an item's
+imported dependencies.
+
 Every reference in `deps`, `fallback`, and `back_fill` is
 `{"name": "...", "defined_in": "...", "scope": "wrap|port|ext"}`. The scope
 lets consumers understand dependency context without a second node table.

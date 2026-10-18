@@ -148,7 +148,9 @@ string cannot show, both of which used to collapse to a bare scalar with no
   are converted to (`AVCodecContext.priv_data`: `stored` one context,
   `read_as` every codec's). These are the field's VARIANTS -- which type a
   given instance holds is a runtime choice -- so they never become
-  `casted_via` pairs.
+  `casted_via` pairs. In the DAG each variant is a cast edge from the owner
+  to the variant, pruned like every cast; T3 `drop` rows remove the ones
+  that are no polymorphism (see `t3.md`). The record lists them all.
 
 Three agent-fillable keys ride on a field record:
 

@@ -320,6 +320,16 @@ def build_wave(layout, target: Path, *, names: list[str] | None,
     def section(node: Node) -> str:
         key = (node.id, node.defined_in or "")
         return "imported" if key in imported_allowed else "targeted"
+    # An API schedule is one config's share of a library whose every public
+    # header some config owns: an imported item is another config's work,
+    # scheduled there, after its own fields. It stays a node -- its edges
+    # order this config's items, and it is still listed among their deps --
+    # but it is not a unit here. Scheduling it here would wrap it before the
+    # types its fields need, which this config's graph does not see.
+    if api_headers_only:
+        nodes = [n for n in nodes if section(n) != "imported"]
+        if not nodes:
+            raise SystemExit("schedule: nothing selected in scope.")
     units = [Unit(n, list(declared.get(n.id, ([], set()))[0]), section(n))
              for n in nodes]
     selected_keys = {node.key for node in nodes}

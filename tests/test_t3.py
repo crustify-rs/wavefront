@@ -60,6 +60,9 @@ def inventory(root: Path) -> Path:
          "field_type": "struct Inner", "ptr_depth": "0", "is_erased": "false"},
         {"struct_name": "Holder", "struct_def_file": "log.h", "field_name": "n",
          "field_type": "int", "ptr_depth": "0", "is_erased": "false"},
+        {"struct_name": "Holder", "struct_def_file": "log.h", "field_name": "buf",
+         "field_type": "uint8_t *", "is_scalar": "true", "ptr_depth": "1",
+         "is_erased": "false"},
         {"struct_name": "Inner", "struct_def_file": "log.h", "field_name": "p",
          "field_type": "void *", "ptr_depth": "1", "is_erased": "true"},
     ])
@@ -70,8 +73,8 @@ def inventory(root: Path) -> Path:
     return t1
 
 
-def chased(kind, slot=("", "", ""), base=("", ""), derived=("", "")) -> dict:
-    return dict(zip(t3.CHASED_COLS, (kind, *slot, *base, *derived)))
+def chased(kind, slot=("", "", ""), base=("", ""), derived=("", ""), op="") -> dict:
+    return dict(zip(t3.CHASED_COLS, (kind, *slot, *base, *derived, op)))
 
 
 def generator(macro, dk, derived) -> dict:
@@ -181,6 +184,49 @@ class T3Tests(unittest.TestCase):
         msg = self.errors([chased("erased_arg", ("helper", "priv.c", "9"), ("Priv", "priv.c"))],
                           api={"log.h"})
         self.assertIn("helper has no parameter '9'", msg)
+
+    def test_op_splits_rows_into_adds_and_drops(self) -> None:
+        tables = self.load([
+            chased("erased_arg", ("vlog", "log.c", "0"), ("Class", "log.h"), op="add"),
+            chased("erased_arg", ("vlog", "log.c", "0"), ("Ctx", "log.h"), op="drop"),
+            chased("erased_field", ("Holder", "log.h", "in.p"), ("Ctx", "log.h"), op="drop"),
+            chased("base_derived", base=("Class", "log.h"), derived=("Ctx", "log.h"),
+                   op="drop"),
+        ])
+        self.assertEqual(tables.erased_args, {("vlog", "log.c"): {("Class", "log.h")}})
+        self.assertEqual(tables.drop_args, {("vlog", "log.c"): {("0", "Ctx", "log.h")}})
+        self.assertEqual(tables.drop_fields, {("Inner", "log.h"): {("p", "Ctx", "log.h")}})
+        self.assertEqual(tables.drop_bases, {("Ctx", "log.h"): {("Class", "log.h")}})
+        self.assertEqual((tables.erased_fields, tables.bases), ({}, {}))
+
+    def test_a_table_without_the_op_column_adds(self) -> None:
+        cols = [c for c in t3.CHASED_COLS if c != "op"]
+        row = chased("erased_arg", ("vlog", "log.c", "0"), ("Class", "log.h"))
+        _write(self.dir / t3.CHASED, cols, [{c: row[c] for c in cols}])
+        tables = t3.load(self.t1)
+        self.assertEqual(tables.erased_args, {("vlog", "log.c"): {("Class", "log.h")}})
+        self.assertEqual(tables.drop_args, {})
+
+    def test_a_scalar_pointer_field_holds_variants(self) -> None:
+        # `uint8_t *buf` names no struct: wavefront records variants for it,
+        # so a row may add or drop one. `int n` is no pointer.
+        tables = self.load([chased("erased_field", ("Holder", "log.h", "buf"),
+                                   ("Ctx", "log.h"), op="drop")])
+        self.assertEqual(tables.drop_fields, {("Holder", "log.h"): {("buf", "Ctx", "log.h")}})
+        msg = self.errors([chased("erased_field", ("Holder", "log.h", "n"), ("Ctx", "log.h"))])
+        self.assertIn("not void * / void ** or a scalar pointer", msg)
+
+    def test_bad_ops_and_contradictions_are_reported(self) -> None:
+        msg = self.errors([
+            chased("erased_arg", ("vlog", "log.c", "0"), ("Class", "log.h"), op="keep"),
+            chased("erased_arg", ("vlog", "log.c", "0"), ("Ctx", "log.h"), op="add"),
+            chased("erased_arg", ("vlog", "log.c", "0"), ("Ctx", "log.h"), op="drop"),
+            chased("erased_arg", ("vlog", "log.c", "0"), ("Ctx", "log.h")),
+        ])
+        self.assertIn(f"{t3.CHASED}:2: op 'keep' is not one of", msg)
+        self.assertIn(f"{t3.CHASED}:4: drop contradicts add of the same edge at "
+                      f"{t3.CHASED}:3", msg)
+        self.assertNotIn(f"{t3.CHASED}:5:", msg)
 
     def test_missing_params_table_asks_for_extraction(self) -> None:
         (self.t1 / "params.csv").unlink()

@@ -281,6 +281,51 @@ class SchedulePackingParityTests(unittest.TestCase):
             {macro.id: "port"},
         )
 
+    def test_api_schedule_leaves_imported_items_to_their_owner(self) -> None:
+        # The public Holder (this config's api_headers) reaches the imported
+        # Option (another config's). An API schedule holds Holder alone, and
+        # Holder still lists Option among its deps; the body-deep schedule
+        # holds both.
+        option = {"id": "Option", "node_kind": "type", "subkind": "struct",
+                  "defined_in": "include/opt.h", "loc": 0,
+                  "deps": {"types": [], "syms": []}}
+        holder = {"id": "Holder", "node_kind": "type", "subkind": "struct",
+                  "defined_in": "include/holder.h", "loc": 0,
+                  "deps": {"types": [{"name": "Option",
+                                      "defined_in": "include/opt.h"}],
+                           "syms": []}}
+        graph = {"layers": [[option], [holder]]}
+        none = {"files": [], "functions": [], "globals": [], "macros": [], "types": []}
+        inventory = {
+            "targeted": {**none, "files": ["include/holder.h"], "types": [
+                {"name": "Holder", "defined_in": "include/holder.h"}]},
+            "imported": {**none, "files": ["include/opt.h"], "types": [
+                {"name": "Option", "defined_in": "include/opt.h"}]},
+            "api": {**none, "files": ["include/holder.h"], "types": [
+                {"name": "Holder", "defined_in": "include/holder.h"}]},
+        }
+
+        class Layout:
+            @staticmethod
+            def config_provenance():
+                return {"path": "scope.json", "sha256": "0" * 64}
+
+        def schedule(api: bool) -> list[dict]:
+            with patch("wavefront.scope.build", return_value=inventory), \
+                    patch("wavefront.dag.build", return_value=graph), \
+                    patch("wavefront.manifests.entries", return_value=[]), \
+                    patch("wavefront.schedule._field_anchors", return_value={}):
+                return _scheduled_items(build_wave(
+                    Layout(), None, names=["Holder"], transitive=True,
+                    api_headers_only=api, max_syms=50, max_loc=1000,
+                    max_types=5, min_fields=10))
+
+        api = schedule(True)
+        self.assertEqual([item["name"] for item in api], ["Holder"])
+        self.assertEqual([dep["name"] for dep in api[0]["deps"]["types"]], ["Option"])
+        self.assertCountEqual([item["name"] for item in schedule(False)],
+                              ["Option", "Holder"])
+
     def test_file_surface_is_the_seed_not_the_dependency_filter(self) -> None:
         dependency = _node("shared_dependency", home="src/shared.c", loc=3)
         selected = _node("selected_function", home="src/selected.c", loc=4)
