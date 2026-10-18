@@ -207,6 +207,16 @@ class T3Tests(unittest.TestCase):
         self.assertEqual(tables.erased_args, {("vlog", "log.c"): {("Class", "log.h")}})
         self.assertEqual(tables.drop_args, {})
 
+    def test_a_table_in_the_earlier_spelling_loads(self) -> None:
+        # `base_name` / `base_def_file` were renamed `type_name` / `type_def_file`.
+        cols = [{"type_name": "base_name", "type_def_file": "base_def_file"}.get(c, c)
+                for c in t3.CHASED_COLS]
+        row = chased("erased_arg", ("vlog", "log.c", "0"), ("Class", "log.h"))
+        _write(self.dir / t3.CHASED, cols,
+               [dict(zip(cols, (row[c] for c in t3.CHASED_COLS)))])
+        tables = t3.load(self.t1)
+        self.assertEqual(tables.erased_args, {("vlog", "log.c"): {("Class", "log.h")}})
+
     def test_a_scalar_pointer_field_holds_variants(self) -> None:
         # `uint8_t *buf` names no struct: wavefront records variants for it,
         # so a row may add or drop one. `int n` is no pointer.

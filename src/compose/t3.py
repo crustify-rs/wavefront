@@ -21,8 +21,8 @@ The orchestrator writes what it accepts into two CSVs under the config's
     slot_name     function (erased_arg) or owner struct (erased_field)
     slot_def_file its definition file
     slot_member   parameter position, or field path as `fields.csv` spells it
-    base_name     the type the slot is read as / the base
-    base_def_file
+    type_name     the type the slot holds, or the base (base_derived)
+    type_def_file
     derived_name  base_derived only
     derived_def_file
     op            add (default, also when the column is absent) | drop
@@ -66,10 +66,12 @@ GENERATORS = "type_generators.csv"
 TABLES = (CHASED, GENERATORS)
 
 CHASED_COLS = ("kind", "slot_name", "slot_def_file", "slot_member",
-               "base_name", "base_def_file", "derived_name", "derived_def_file",
+               "type_name", "type_def_file", "derived_name", "derived_def_file",
                "op")
 #: Columns a header may leave out: `op` defaults to `add`.
 OPTIONAL_COLS = ("op",)
+#: Earlier spellings a header may still use, read as their current names.
+LEGACY_COLS = {"base_name": "type_name", "base_def_file": "type_def_file"}
 GENERATOR_COLS = ("generator_macro", "generator_def_file",
                   "derived_kind", "derived_name", "derived_def_file")
 
@@ -102,20 +104,20 @@ def files() -> list[Path]:
 
 
 class Tables(NamedTuple):
-    #: `{(function, def_file): {(base, base_def_file)}}`
+    #: `{(function, def_file): {(type, type_def_file)}}`
     erased_args: dict[Key, frozenset[Key]]
-    #: `{(owner, def_file): {(field path, base, base_def_file)}}`, the path
+    #: `{(owner, def_file): {(field path, type, type_def_file)}}`, the path
     #: canonical to its declaring struct
     erased_fields: dict[Key, frozenset[tuple[str, str, str]]]
-    #: `{(derived, def_file): {(base, base_def_file)}}`
+    #: `{(derived, def_file): {(type, type_def_file)}}`
     bases: dict[Key, frozenset[Key]]
     #: `{(macro, def_file): {(kind, name, def_file)}}`
     generates: dict[Key, frozenset[tuple[str, str, str]]]
-    #: `drop` rows. `{(function, def_file): {(position, base, base_def_file)}}`
+    #: `drop` rows. `{(function, def_file): {(position, type, type_def_file)}}`
     drop_args: dict[Key, frozenset[tuple[str, str, str]]] = {}
-    #: `{(owner, def_file): {(field path, base, base_def_file)}}`
+    #: `{(owner, def_file): {(field path, type, type_def_file)}}`
     drop_fields: dict[Key, frozenset[tuple[str, str, str]]] = {}
-    #: `{(derived, def_file): {(base, base_def_file)}}`
+    #: `{(derived, def_file): {(type, type_def_file)}}`
     drop_bases: dict[Key, frozenset[Key]] = {}
 
 
@@ -222,6 +224,14 @@ class _Inventory:
         return k[1] in api or bool(self.functions.get(k, set()) & api)
 
 
+def _legacy(have: list[str], rows: list[dict]) -> tuple[list[str], list[dict]]:
+    """A header in an earlier spelling (`base_name`), read as the current one."""
+    if not any(c in LEGACY_COLS for c in have):
+        return have, rows
+    rename = lambda d: {LEGACY_COLS.get(k, k): v for k, v in d.items()}
+    return [LEGACY_COLS.get(c, c) for c in have], [rename(r) for r in rows]
+
+
 def _check_header(path: Path, have: list[str], want: tuple[str, ...]) -> list[str]:
     missing = [c for c in want if c not in have and c not in OPTIONAL_COLS]
     return [f"{path.name}: missing column(s) {missing}"] if missing else []
@@ -233,7 +243,7 @@ def _chased(path: Path, inv: _Inventory, api: frozenset[str] | None,
     `drop` rows; `drop` args keep the parameter position."""
     adds = (defaultdict(set), defaultdict(set), defaultdict(set))
     drops = (defaultdict(set), defaultdict(set), defaultdict(set))
-    have, rows = _rows(path)
+    have, rows = _legacy(*_rows(path))
     errs += _check_header(path, have, CHASED_COLS)
     if any(e.startswith(path.name) for e in errs):
         return (*adds, *drops)
@@ -249,7 +259,7 @@ def _chased(path: Path, inv: _Inventory, api: frozenset[str] | None,
             errs.append(f"{at}: op {op!r} is not one of {list(OPS)}")
             continue
         edge = (kind, v["slot_name"], v["slot_def_file"], v["slot_member"],
-                v["base_name"], v["base_def_file"], v["derived_name"],
+                v["type_name"], v["type_def_file"], v["derived_name"],
                 v["derived_def_file"])
         prev = seen.setdefault(edge, (op, at))
         if prev[0] != op:
@@ -257,7 +267,7 @@ def _chased(path: Path, inv: _Inventory, api: frozenset[str] | None,
             continue
         args, flds, bases = adds if op == "add" else drops
         slot_cols = ("slot_name", "slot_def_file", "slot_member")
-        need = ["base_name"] + (["derived_name"] if kind == "base_derived" else
+        need = ["type_name"] + (["derived_name"] if kind == "base_derived" else
                                 ["slot_name", "slot_member"])
         empty = [c for c in need if not v[c]]
         stray = ([c for c in slot_cols if v[c]] if kind == "base_derived" else
@@ -267,10 +277,10 @@ def _chased(path: Path, inv: _Inventory, api: frozenset[str] | None,
                         + (f", missing {empty}" if empty else "")
                         + (f", must leave {stray} empty" if stray else ""))
             continue
-        base = (v["base_name"], v["base_def_file"])
+        base = (v["type_name"], v["type_def_file"])
         bad = inv.type_error(*base)
         if bad:
-            errs.append(f"{at}: base: {bad}")
+            errs.append(f"{at}: type: {bad}")
             continue
         if kind == "base_derived":
             derived = (v["derived_name"], v["derived_def_file"])
