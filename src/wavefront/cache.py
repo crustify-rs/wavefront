@@ -40,7 +40,11 @@ from pathlib import Path
 #:      cycles; T3 `base_derived` replaces a pair's cast edge.
 #: 15 — API mode projects raw casts and T3 rows onto public nodes (T3 rows
 #:      off the API are left out, no longer an error).
-_VERSION = 15
+#: 16 — casts (raw, slot, T3) are collected program-wide in every mode. API
+#:      mode builds in two phases: the API closure from signature and field
+#:      edges, then cast edges between its nodes only (never a public witness);
+#:      cast centrality counts closure nodes only.
+_VERSION = 16
 
 
 def fingerprint(layout, target) -> dict:

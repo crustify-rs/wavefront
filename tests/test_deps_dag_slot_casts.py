@@ -67,7 +67,7 @@ class SlotCastDagTests(unittest.TestCase):
         ])
         return codeql
 
-    def _graph(self, port_syms):
+    def _graph(self, port_syms, off_graph=()):
         with tempfile.TemporaryDirectory() as td:
             codeql = self._codeql(td)
             meta = deps_dag.collect_types_csv(codeql)[0]
@@ -82,7 +82,8 @@ class SlotCastDagTests(unittest.TestCase):
             with patch.object(deps_dag, "_entries_of", side_effect=entries):
                 types, symbols, aliases = deps_dag._collect(
                     object(), port_syms=port_syms, port_fields={},
-                    codeql_dir=codeql, in_scope_types=set(meta), layout_paths=set())
+                    codeql_dir=codeql, in_scope_types=set(meta) - set(off_graph),
+                    layout_paths=set())
                 amap = deps_dag._alias_map(object(), types, aliases)
                 deps_dag._build_edges(types, symbols, amap)
             return types, symbols
@@ -112,18 +113,28 @@ class SlotCastDagTests(unittest.TestCase):
             self.assertIn(cls, symbols[("vlog", "src/log.c")].dep_types, port_syms)
             self.assertNotIn(cls, symbols[("log", "src/log.c")].dep_types, port_syms)
 
-    def test_api_projection_drops_internal_functions(self) -> None:
-        # vlog is declared only in src/internal.h: off the public API, its
-        # parameter is no node, so neither its read nor the pairs through it
-        # survive projection onto include/log.h.
+    def test_pairs_need_graph_nodes_not_a_public_witness(self) -> None:
+        # vlog is declared only in src/internal.h, off the API. It witnesses
+        # the pairs, but a witness is evidence, not a node: the pairs and its
+        # read are collected the same with or without the API paths.
         with tempfile.TemporaryDirectory() as td:
             codeql = self._codeql(td)
             api = {"include/log.h"}
-            self.assertEqual(deps_dag.collect_types_csv(codeql, api)[2], {})
-            refs = deps_dag.collect_signature_type_refs_csv(codeql, api)
-            self.assertNotIn(("vlog", "src/log.c"), refs)
-            refs = deps_dag.collect_signature_type_refs_csv(codeql)
-            self.assertEqual(refs[("vlog", "src/log.c")], {"Class"})
+            self.assertEqual(deps_dag.collect_types_csv(codeql, api)[2],
+                             deps_dag.collect_types_csv(codeql)[2])
+            self.assertEqual(deps_dag.collect_signature_type_refs_csv(codeql, api),
+                             deps_dag.collect_signature_type_refs_csv(codeql))
+
+    def test_pairs_off_the_graph_are_pruned(self) -> None:
+        # With Class off the target's closure, neither the context -> Class
+        # pairs nor vlog's read of Class are edges.
+        cls = ("Class", "include/log.h")
+        for port_syms in (set(), None):
+            types, symbols = self._graph(port_syms, off_graph=[cls])
+            self.assertNotIn(cls, types)
+            for ctx in ("CtxA", "CtxB"):
+                self.assertEqual(types[(ctx, "include/log.h")].dep_types, set(), port_syms)
+            self.assertNotIn(cls, symbols[("vlog", "src/log.c")].dep_types, port_syms)
 
 
 if __name__ == "__main__":

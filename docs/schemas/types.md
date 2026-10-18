@@ -73,10 +73,15 @@ through locals, memory or calls is followed. A pair is still
 path-insensitive within its slot: a read guarded by a type check joins every
 type stored into that slot.
 
-This manifest field is unprojected. The scheduler's API mode
-(`--api-headers-only`) projects the same graph onto the public API first:
-every internal function's slot and every type not in `api_headers` is
-dropped before pairing.
+This manifest field is unprojected, and so are the scheduler's cast facts:
+pairs are formed program-wide, bodies included. The scheduler's API mode
+(`--api-headers-only`) prunes them against its API closure -- what the public
+signatures and fields reach from the API items, walked before any cast edge
+exists -- and keeps a pair as an edge only when both of its types are in it.
+The slot that witnesses a pair is evidence, not a node, so it need not be
+public: `AVCodecContext -> AVClass`, witnessed by `av_opt_copy` in another
+library's headers, is an edge of libavcodec's API graph, while `AVCodec ->
+FFCodec` neither pulls `FFCodec` in nor moves `AVCodec`.
 
 ## opaque_in
 

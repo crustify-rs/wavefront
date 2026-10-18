@@ -112,7 +112,8 @@ def _sym_filekey(defined_in: Any, declared_in: Any) -> str | None:
 class TypeNode:
     __slots__ = ("tag", "def_file", "kind", "defined_in", "declared_in",
                  "ctype_refs", "dep_types", "dep_syms",
-                 "cast_to", "cast_from", "nfields", "generated_by", "chased_bases")
+                 "cast_to", "cast_from", "nfields", "generated_by", "chased_bases",
+                 "cast_field_refs")
 
     def __init__(self, tag: str, def_file: str = "") -> None:
         self.tag = tag
@@ -130,12 +131,21 @@ class TypeNode:
         self.generated_by: tuple[str, str] | None = None
         # (base, def_file) this type is derived from, per T3 `chased_casts.csv`
         self.chased_bases: set = set()
+        # (type_name, type_def_file) a type-erased field holds, per T3
+        # `chased_casts.csv` `erased_field`: a field edge, but a cast one
+        self.cast_field_refs: set = set()
 
-    def cast_degree(self) -> int:
+    def cast_degree(self, amap: dict | None = None, keep: set | None = None) -> int:
         """Cast-graph centrality: how many distinct types this one is cast
         to/from. A generic engine / polymorphic base is a high-degree hub;
-        an instance / derived is low-degree. Breaks cast cycles only."""
-        return len(self.cast_to | self.cast_from)
+        an instance / derived is low-degree. Breaks cast cycles only. With
+        `keep` (the API closure), only casts to types in it count: the
+        degree is read off the pruned graph, so types off the closure never
+        tip a cycle."""
+        tags = self.cast_to | self.cast_from
+        if keep is None:
+            return len(tags)
+        return len({amap.get(t) for t in tags} & keep)
 
     @property
     def key(self) -> "TypeKey":
@@ -149,7 +159,7 @@ class SymNode:
     __slots__ = ("name", "file", "kind", "defined_in", "declared_in",
                  "has_dep", "dep_on_types", "dep_on_syms",
                  "sig_type_refs", "subkind", "dep_types", "dep_syms", "loc",
-                 "generates")
+                 "generates", "cast_sig_refs")
 
     def __init__(self, name: str, file: str | None) -> None:
         self.name = name
@@ -167,6 +177,9 @@ class SymNode:
         self.dep_on_types: set[str] = set()       # raw canonical tags (depends_on)
         self.dep_on_syms: set[SymKey] = set()     # (name, file) dep keys
         self.sig_type_refs: set[str] = set()      # raw C type strings (ptr_args/ret)
+        # Types a `void *` parameter is read as (slot reads, T3 `erased_arg`):
+        # signature edges, but cast ones
+        self.cast_sig_refs: set[str] = set()
         self.subkind: str = "symbol"              # symbol|external|builtin
         self.generates: list[str] = []            # types this macro mints, if any
         self.dep_types: set[str] = set()
@@ -262,6 +275,15 @@ def _sig_type_refs(entry: dict) -> set[str]:
 
 def collect_signature_type_refs_csv(codeql_dir: Path, api_paths: set[str] | None = None
                                     ) -> dict[SymKey, set[str]]:
+    """Signature refs (:func:`_signature_refs_csv`) and the cast refs of
+    type-erased parameters (:func:`collect_cast_type_refs_csv`), merged."""
+    out = collections.defaultdict(set, _signature_refs_csv(codeql_dir))
+    for key, refs in collect_cast_type_refs_csv(codeql_dir).items():
+        out[key] |= refs
+    return dict(out)
+
+
+def _signature_refs_csv(codeql_dir: Path) -> dict[SymKey, set[str]]:
     """Exact user-type refs keyed by their function/callback definition.
 
     ``depends_on.types`` deliberately unions signature and body-local type
@@ -269,6 +291,7 @@ def collect_signature_type_refs_csv(codeql_dir: Path, api_paths: set[str] | None
     aggregate named without a field access has the same shape as an opaque
     signature use.  API graphs therefore read the dedicated T2 signature
     relations instead of trying to reverse that lossy union.
+
     """
     out: dict[SymKey, set[str]] = collections.defaultdict(set)
     specs = (
@@ -283,17 +306,25 @@ def collect_signature_type_refs_csv(codeql_dir: Path, api_paths: set[str] | None
             name, type_name = row.get(name_col), row.get("type_name")
             if name and type_name:
                 out[(name, row.get(file_col) or None)].add(type_name)
+    return dict(out)
+
+
+def collect_cast_type_refs_csv(codeql_dir: Path) -> dict[SymKey, set[str]]:
+    """The types each type-erased parameter is read as, keyed by its
+    function. Read program-wide in every mode; an API graph keeps a ref only
+    between two nodes of its API closure (:func:`_build_edges`)."""
+    out: dict[SymKey, set[str]] = collections.defaultdict(set)
     # A type-erased parameter's REAL type: what its own body reads it as
     # (`av_vlog(void *avcl)` reads `*(AVClass **)avcl`). The signature says
     # `void *`; the API is `AVClass`-headed objects, and the wrapper needs
-    # AVClass first. With `api_paths`, public functions and types only.
+    # AVClass first.
     for (_kind, name, file, _pos), types in slot_casts.load(
-            codeql_dir / "t2", api_paths).param_reads.items():
+            codeql_dir / "t2").param_reads.items():
         out[(name, file or None)].update(types)
     # The same dependency where no cast is written in the function's own body:
     # the orchestrator chased the erased value through the calls it is handed
     # to (T3 `chased_casts.csv`, `erased_arg`).
-    for (name, file), bases in _t3.load(codeql_dir / "t1", api_paths).erased_args.items():
+    for (name, file), bases in _t3.load(codeql_dir / "t1").erased_args.items():
         out[(name, file or None)].update(tag for tag, _df in bases)
     return dict(out)
 
@@ -367,8 +398,12 @@ def _collect(analysis_root: Path,
 
     tmeta, tedges, tcasts, talias, tgen = (collect_types_csv(codeql_dir, api_paths)
                                            if codeql_dir else ({}, {}, {}, {}, {}))
-    signature_refs = (collect_signature_type_refs_csv(codeql_dir, api_paths)
+    signature_refs = (_signature_refs_csv(codeql_dir)
                       if codeql_dir is not None else None)
+    cast_refs = (collect_cast_type_refs_csv(codeql_dir)
+                 if codeql_dir is not None else None)
+    erased_fields = (_t3.load(codeql_dir / "t1").erased_fields
+                     if codeql_dir is not None else {})
     for key, m in tmeta.items():
         tag, df = key
         if tag.startswith("(unnamed"):
@@ -420,6 +455,13 @@ def _collect(analysis_root: Path,
             if keep is not None and fname not in keep:
                 continue
             n.ctype_refs.add((tname, tdf))   # BOTH ends identified at source
+        # A type-erased field orders like a typed one once the orchestrator has
+        # chased what it holds (T3 `chased_casts.csv`, `erased_field`), under
+        # the same field narrowing -- but as a cast edge (`_build_edges`).
+        for fname, tname, tdf in sorted(erased_fields.get(key, ())):
+            if keep is not None and fname not in keep:
+                continue
+            n.cast_field_refs.add((tname, tdf))
         # `casts.csv` is tag-keyed (a cast names no file), so a colliding tag
         # shares its cast set across entities — over-including an ordering edge,
         # never dropping one.
@@ -472,10 +514,12 @@ def _collect(analysis_root: Path,
             n.sig_type_refs |= _sig_type_refs(e)
             if signature_refs is not None:
                 n.sig_type_refs |= signature_refs.get(key, set())
+            if cast_refs is not None:
+                n.cast_sig_refs |= cast_refs.get(key, set())
     # Polymorphic pairs the orchestrator chased through type-erased slots
     # (T3 `chased_casts.csv`, `base_derived`): directed, derived -> base.
     if codeql_dir is not None:
-        for key, bases in _t3.load(codeql_dir / "t1", api_paths).bases.items():
+        for key, bases in _t3.load(codeql_dir / "t1").bases.items():
             if key in types:
                 types[key].chased_bases |= bases
     return types, syms, talias
@@ -556,25 +600,24 @@ def collect_types_csv(codeql_dir: Path, api_paths: set[str] | None = None):
 
     casts: dict[str, tuple[set, set]] = collections.defaultdict(
         lambda: (set(), set()))
-    # API mode orders by public types only: a cast to or from an internal
-    # type (`git_patch -> git_patch_generated`) stays in the type records
-    # (`casted`) but adds no edge, as for slot casts and T3 rows.
-    public = (slot_casts.public_keep(t1, frozenset(api_paths))
-              if api_paths is not None else None)
+    # Casts are collected program-wide in every mode, bodies included. The
+    # graph is pruned afterwards: a cast edge exists only between two types
+    # that are nodes of the target's graph (`_build_edges`), so in API mode a
+    # cast to an internal type off the closure (`git_patch ->
+    # git_patch_generated`) adds no edge, while one to an imported public type
+    # (`AVCodecContext -> AVClass`) does.
     for r in _scope.load_csv(t2 / "casts.csv"):
         f, t = r.get("from_tag"), r.get("to_tag")
-        if public is not None and not (public("type", f, "") and public("type", t, "")):
-            continue
         if f and t and f != t:
             casts[f][0].add(t)          # f is cast TO t
             casts[t][1].add(f)          # t is cast FROM f
     # Slot-mediated casts join the same graph: `AVCodecContext -> AVClass`
     # through `av_log(avctx)` is a cast like any other, only with a
     # type-erased parameter between its two ends (compose/slot_casts.py).
-    # Same in both modes -- the cast-centrality edge below reads these sets
-    # on API and non-API graphs alike -- except that with `api_paths` (API
-    # mode) only casts between public nodes count.
-    for f, t in slot_casts.load(t2, api_paths).pairs:
+    # Same in both modes: the pair's two types decide whether it is an edge,
+    # never the slot that witnesses it (`av_opt_copy.0` sits in libavutil, the
+    # pair `AVCodecContext -> AVClass` in libavcodec's graph).
+    for f, t in slot_casts.load(t2).pairs:
         casts[f][0].add(t)
         casts[t][1].add(f)
 
@@ -585,10 +628,6 @@ def collect_types_csv(codeql_dir: Path, api_paths: set[str] | None = None):
             continue
         edges[(sn, r.get("struct_def_file") or "")].append(
             (r.get("field_name") or "", tn, r.get("type_def_file") or ""))
-    # A type-erased field orders like a typed one once the orchestrator has
-    # chased what it holds (T3 `chased_casts.csv`, `erased_field`).
-    for owner, held in _t3.load(t1, api_paths).erased_fields.items():
-        edges[owner].extend(sorted(held))
     return meta, dict(edges), dict(casts), alias, _gen_of
 
 
@@ -652,9 +691,16 @@ def _resolve_ctype(ref, amap: dict, types: dict):
     return amap.get(name)
 
 
-def _build_edges(types, syms, amap):
+def _build_edges(types, syms, amap, cast_scope: tuple[set, set] | None = None):
     """Fill dep_types / dep_syms on every node; return external sym/type names
     discovered (so we can mint nodes for them).
+
+    Cast edges -- raw and slot casts, type-erased parameter reads, and the T3
+    rows -- are kept apart from signature and field edges. With
+    ``cast_scope`` ``(type keys, symbol keys)``, a cast edge is added only
+    when both of its ends are in it: an API graph passes its API closure, so
+    a cast never pulls in or reorders around a type the public signatures and
+    fields do not reach (`AVCodec -> FFCodec`). ``None`` keeps every cast edge.
 
     Ops are **not folded** into their types: every symbol (functions / macros
     / globals — including a type's lifecycle methods) is its own node. A type
@@ -757,11 +803,17 @@ def _build_edges(types, syms, amap):
     # (parent↔child backrefs) can be flattened by weighted feedback-arc-set, not
     # collapsed into a co-scheduled blob.
     wedge: dict[tuple[str, str], int] = collections.defaultdict(int)
+    keep_t = None if cast_scope is None else cast_scope[0]
+    keep_s = None if cast_scope is None else cast_scope[1]
+
+    def cast_t(*keys) -> bool:
+        return keep_t is None or all(k in keep_t for k in keys)
+
     # `(base, derived)` pairs the orchestrator stated (T3 `base_derived`). They
     # OVERRIDE the cast edges below: a stated pair never gets the written
     # `base -> derived` cast edge, only the stated `derived -> base`.
-    chased_pairs = {(_resolve_ctype(ref, amap, types), key)
-                    for key, n in types.items() for ref in n.chased_bases}
+    chased_pairs = {(b, key) for key, n in types.items() for ref in n.chased_bases
+                    if cast_t(key, b := _resolve_ctype(ref, amap, types))}
     for key, n in types.items():
         for ref in n.ctype_refs:                     # field refs (hard layout)
             t = _resolve_ctype(ref, amap, types)
@@ -772,6 +824,16 @@ def _build_edges(types, syms, amap):
             # ordering runs struct -> callback, and it depends on the struct.
             res_ctype(ref, n.dep_types, n.dep_syms)
             if t in types and t != key:
+                wedge[(key, t)] += 1
+        # A type-erased field's chased type (T3 `erased_field`): a field edge
+        # when both ends are in the cast scope.
+        for ref in n.cast_field_refs:
+            t = _resolve_ctype(ref, amap, types)
+            if keep_t is None:
+                res_ctype(ref, n.dep_types, n.dep_syms)
+            elif cast_t(key, t):
+                n.dep_types.add(t)
+            if t in types and t != key and cast_t(key, t):
                 wedge[(key, t)] += 1
         # Macro-generator ordering edge. The generator is the MACRO itself --
         # already a symbol node -- so this is a type -> symbol dep, and there is
@@ -791,7 +853,7 @@ def _build_edges(types, syms, amap):
         # it is broken like any other.
         for ref in n.chased_bases:
             t = _resolve_ctype(ref, amap, types)
-            if t in types and t != key:
+            if t in types and t != key and cast_t(key, t):
                 n.dep_types.add(t)
                 wedge[(key, t)] += 1
 
@@ -812,7 +874,8 @@ def _build_edges(types, syms, amap):
     cast_adj: dict[TypeKey, set[TypeKey]] = {key: set() for key in types}
     for key, n in types.items():
         for t in (amap.get(x) for x in n.cast_to):
-            if t in types and t != key and (key, t) not in chased_pairs:
+            if (t in types and t != key and (key, t) not in chased_pairs
+                    and cast_t(key, t)):
                 cast_adj[key].add(t)
     stated_adj = {key: set(adj) for key, adj in cast_adj.items()}
     for base, derived in chased_pairs:
@@ -826,7 +889,7 @@ def _build_edges(types, syms, amap):
         n = types[key]
         for t in sorted(targets):
             if (key in cyclic and cyclic.get(t) == cyclic[key]
-                    and types[t].cast_degree() <= n.cast_degree()):
+                    and types[t].cast_degree(amap, keep_t) <= n.cast_degree(amap, keep_t)):
                 continue
             n.dep_types.add(t)
             wedge[(key, t)] += 1
@@ -858,9 +921,61 @@ def _build_edges(types, syms, amap):
             res_sym(dk, n.dep_types, n.dep_syms)
         for ref in n.sig_type_refs:
             res_ctype(ref, n.dep_types, n.dep_syms)
+        # What a type-erased parameter is read as: a signature edge when the
+        # function and the type are both in the cast scope.
+        for ref in n.cast_sig_refs:
+            if keep_t is None:
+                res_ctype(ref, n.dep_types, n.dep_syms)
+            elif key in keep_s:
+                t = _resolve_ctype(ref, amap, types)
+                if t in keep_t:
+                    n.dep_types.add(t)
         n.dep_syms.discard(key)          # no self-edge
 
     return ext_syms, ext_types, dict(wedge)
+
+
+def _build_api_edges(types, syms, amap, scope_json):
+    """`_build_edges` for an API graph, in two phases. The API closure is what
+    the public signatures and fields reach from the API items; casts come
+    from bodies, which can reach anything, so they must not widen it. Build
+    without cast edges, walk the closure, then rebuild with the casts
+    between its nodes only."""
+    _build_edges(types, syms, amap, cast_scope=(set(), set()))
+    closure = _api_closure(types, syms, scope_json)
+    for n in (*types.values(), *syms.values()):
+        n.dep_types, n.dep_syms = set(), set()
+    return _build_edges(types, syms, amap, cast_scope=closure)
+
+
+def _api_closure(types, syms, scope_json) -> tuple[set, set]:
+    """``(type keys, symbol keys)`` reachable from the scope's API items over
+    the edges already built (signatures and fields: the cast-free phase of an
+    API graph). Seeds match on ``(name, origin)`` like the scheduler's, or
+    on the bare name for an origin-less scope entry."""
+    from . import scope as _scope
+    api = set()
+    for kind in ("functions", "globals", "macros", "types"):
+        api |= _scope.load_entities(scope_json, _scope.API, kind)
+
+    def seed(name, origin) -> bool:
+        return (name, origin or "") in api or (name, "") in api
+
+    seen_t = {k for k, n in types.items() if seed(n.tag, n.origin())}
+    seen_s = {k for k, n in syms.items() if seed(n.name, n.origin())}
+    todo = [("t", k) for k in seen_t] + [("s", k) for k in seen_s]
+    while todo:
+        side, k = todo.pop()
+        n = types[k] if side == "t" else syms[k]
+        for t in n.dep_types:
+            if t in types and t not in seen_t:
+                seen_t.add(t)
+                todo.append(("t", t))
+        for d in n.dep_syms:
+            if d in syms and d not in seen_s:
+                seen_s.add(d)
+                todo.append(("s", d))
+    return seen_t, seen_s
 
 
 # ------------------------------------------------------- node id + adjacency
@@ -1198,7 +1313,10 @@ def compose(analysis_root, scope_json=None, codeql_dir: Path | None = None,
                 {tag for tag, _df in _f["members"]})
 
     amap = _alias_map(analysis_root, types, talias)
-    ext_syms, ext_types, wedge = _build_edges(types, syms, amap)
+    if api_headers_only and scope_json is not None:
+        ext_syms, ext_types, wedge = _build_api_edges(types, syms, amap, scope_json)
+    else:
+        ext_syms, ext_types, wedge = _build_edges(types, syms, amap)
     # A macro a generator expands into a family of its own depends on it.
     for _m, _f in _fams.items():
         for _d in _f["macros"]:

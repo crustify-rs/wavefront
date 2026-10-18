@@ -12,7 +12,7 @@ from test_t3 import _write, chased, generator, inventory
 class T3DagTests(unittest.TestCase):
     """Each T3 row is one edge, in the body-deep and the API graph."""
 
-    def _graph(self, api: bool, casts=(), pairs=True):
+    def _graph(self, api: bool, casts=(), pairs=True, off_graph=()):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             codeql = inventory(root).parent
@@ -51,7 +51,8 @@ class T3DagTests(unittest.TestCase):
                 types, symbols, aliases = deps_dag._collect(
                     object(), port_syms=set() if api else None,
                     port_fields={} if api else None, codeql_dir=codeql,
-                    in_scope_types=set(meta), layout_paths={"log.h"} if api else set(),
+                    in_scope_types=set(meta) - set(off_graph),
+                    layout_paths={"log.h"} if api else set(),
                     api_paths=api_paths)
                 amap = deps_dag._alias_map(object(), types, aliases)
                 deps_dag._build_edges(types, symbols, amap)
@@ -94,14 +95,19 @@ class T3DagTests(unittest.TestCase):
         self.assertIn(ctx, types[inner].dep_types)
         self.assertIn(inner, types[cls].dep_types)
 
-    def test_api_mode_drops_casts_with_an_internal_side(self) -> None:
-        # Ctx is downcast to the internal Priv: the edge exists in the whole
-        # program, not in the API graph.
+    def test_api_mode_prunes_casts_off_the_graph(self) -> None:
+        # Ctx is downcast to the internal Priv. Casts are collected
+        # program-wide in both modes; the graph decides: while Priv is one of
+        # its nodes (an imported type) the edge stays, and once Priv is off
+        # the closure the edge goes with it.
         ctx, priv = ("Ctx", "log.h"), ("Priv", "priv.c")
-        whole, _ = self._graph(False, [("Ctx", "Priv")], pairs=False)
-        self.assertIn(priv, whole[ctx].dep_types)
-        api, _ = self._graph(True, [("Ctx", "Priv")], pairs=False)
-        self.assertNotIn(priv, api[ctx].dep_types)
+        for api in (False, True):
+            kept, _ = self._graph(api, [("Ctx", "Priv")], pairs=False)
+            self.assertIn(priv, kept[ctx].dep_types, api)
+            pruned, _ = self._graph(api, [("Ctx", "Priv")], pairs=False,
+                                    off_graph=[priv])
+            self.assertNotIn(priv, pruned[ctx].dep_types, api)
+            self.assertNotIn(priv, pruned)
 
 if __name__ == "__main__":
     unittest.main()
