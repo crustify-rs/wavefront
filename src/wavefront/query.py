@@ -904,7 +904,7 @@ def _field_touchers(layout, target, tag: str, defined_in: str | None, *,
 # `lifetime`), and read back by reverse lookup -- `query symbols --lifetime-for
 # <TAG>`, or `scope.build_lifecycle_index` composer-side. So the type findings
 # surface is the field layout only.
-_FINDINGS_TOP = {"fields", "_comment_agent"}
+_FINDINGS_TOP = {"fields", "_comment_user"}
 # `refcount` marks the ONE field that stores the type's reference count (the
 # datum an up_ref bumps and a down-ref decrements). It is what makes the type
 # decides which ROUTINE backs the type's `CDropped`/`CCloned` impl (down-ref and
@@ -1009,7 +1009,7 @@ def _findings_schema(kind: str) -> dict:
                                   "unlock_op: [<fn>]}"),
                 }
             },
-            "_comment_agent": "<optional>",
+            "_comment_user": "<optional>",
             "_valid_top_keys": sorted(_FINDINGS_TOP),
         }
     return {
@@ -1205,7 +1205,7 @@ def _update_type(layout, target, tag: str, defined_in: str | None,
 
     `src` is a path, or ``"-"`` for stdin. The findings doc is the flat,
     name-keyed agent shape (`fields: {name: {ptr, refcount, locked_by}}` +
-    optional `_comment_agent`). We HARD-REJECT (and apply nothing) on structural
+    optional `_comment_user`). We HARD-REJECT (and apply nothing) on structural
     contradictions, unknown field names and ptr-invariant violations; otherwise
     partial-merge (only the fields mentioned) under a lock + atomic rename.
 
@@ -1278,8 +1278,8 @@ def _update_type(layout, target, tag: str, defined_in: str | None,
         # land on the same record the overlay will look for.
         rec = _store.upsert_type(doc, entry.get("name") or entry.get("type"),
                                  entry.get("defined_in"))
-        if "_comment_agent" in f:
-            rec["_comment_agent"] = f["_comment_agent"]
+        if "_comment_user" in f:
+            rec["_comment_user"] = f["_comment_user"]
         by_name = {x.get("name"): x for x in rec.setdefault("fields", [])}
         for fname, fa in (f.get("fields") or {}).items():
             dst = by_name.get(fname)
@@ -1906,8 +1906,8 @@ def _harvest_sym_agent(rec: dict, full: dict) -> None:
     ret = full.get("ptr_ret")
     if isinstance(ret, dict) and ret.get("ptr"):
         rec["ptr_ret"] = {"ptr": ret["ptr"]}
-    if full.get("_comment_agent"):
-        rec["_comment_agent"] = full["_comment_agent"]
+    if full.get("_comment_user"):
+        rec["_comment_user"] = full["_comment_user"]
 
 
 def _records(target, kind, names, files, *, imported_only=False,

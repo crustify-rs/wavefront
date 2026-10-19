@@ -41,10 +41,10 @@ def type_key(entry: Entry) -> Key:
 
 # Field-level keys the agent owns and the composer never emits, mirroring
 # `query.py`'s `_FIELD_AGENT_KEYS` minus `ptr` (which IS composer-seeded, so it
-# is carried conditionally above) plus its free-text `_comment_agent`. Without
+# is carried conditionally above) plus its free-text `_comment_user`. Without
 # them here a re-compose silently destroys the judgement — there is no skeleton
 # to re-seed it from.
-_FIELD_AGENT_KEYS = ("locked_by", "refcount", "_comment_agent")
+_FIELD_AGENT_KEYS = ("locked_by", "refcount", "_comment_user")
 
 
 def _overlay_field(existing: dict, incoming: dict) -> dict:
@@ -63,7 +63,7 @@ def _overlay_field(existing: dict, incoming: dict) -> dict:
       - ``ptr``: keep the agent-filled block from ``existing`` when the field is
         *still* a pointer; seed ``incoming``'s null skeleton when it *became*
         one (agent fills later); drop it when it *stopped* being a pointer;
-      - ``refcount`` / ``locked_by`` / ``_comment_agent``: carry over verbatim.
+      - ``refcount`` / ``locked_by`` / ``_comment_user``: carry over verbatim.
     """
     out = dict(incoming)                       # composer structure authoritative
     if "ptr" in incoming and "ptr" in existing:

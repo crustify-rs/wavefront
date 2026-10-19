@@ -1,19 +1,19 @@
 """store.py — `ownership-store.json`, the authored half of the analysis.
 
 Holds only what no composer can infer: ownership (`ptr`), lifecycle
-(`lifetime`), refcount and locking bindings, the agent's notes, and enough to
+(`lifetime`), refcount and locking bindings, the user's notes, and enough to
 key each record. A field's `type` / `ref` / `array`, an argument's `position` /
 `const` / `depth`, `kind`, `declared_in`, footprints and `casted` are composed
 on demand and merged in at read time by :mod:`wavefront.manifests`, so a
 consumer sees a whole record.
 
     types[]    name, defined_in                    <- key
-               _comment_agent?
+               _comment_user?
                fields[]  name                      <- key
-                         ptr? refcount? locked_by? _comment_agent?
+                         ptr? refcount? locked_by? _comment_user?
 
     symbols[]  name, defined_in, variant?          <- key
-               lifetime? forks? callsites? _comment_agent?
+               lifetime? forks? callsites? _comment_user?
                ptr_args[]  name                    <- key
                            ptr
                ptr_ret?    ptr
@@ -43,11 +43,11 @@ _COMMENT = (
     "field, wrong kind, ptr-invariant violation) and this file does not."
 )
 
-#: Agent-owned keys on a type's field, mirroring `query._FIELD_AGENT_KEYS`
+#: User-owned keys on a type's field, mirroring `query._FIELD_AGENT_KEYS`
 #: plus the free-text note.
-FIELD_KEYS = ("ptr", "refcount", "locked_by", "_comment_agent")
-#: Agent-owned keys at a symbol entry's top level.
-SYM_KEYS = ("lifetime", "forks", "ptr", "locked_by", "_comment_agent")
+FIELD_KEYS = ("ptr", "refcount", "locked_by", "_comment_user")
+#: User-owned keys at a symbol entry's top level.
+SYM_KEYS = ("lifetime", "forks", "ptr", "locked_by", "_comment_user")
 #: A callback FORK additionally records `callsites`: the invokers that realize
 #: THAT variant's contract. The composer sees one C declaration and puts every
 #: invoker on the primary, so this is authored; it is replayed into the
@@ -86,7 +86,27 @@ def load(layout) -> dict:
         raise SystemExit(f"ownership-store: {p} is not valid JSON: {ex}")
     doc.setdefault("types", [])
     doc.setdefault("symbols", [])
+    _rename_legacy(doc["types"])
+    _rename_legacy(doc["symbols"])
     return doc
+
+
+#: Keys an older store spells differently, and their current names. A store
+#: is read through them and written back under the current ones.
+LEGACY_KEYS = {"_comment_agent": "_comment_user"}
+
+
+def _rename_legacy(node: Any) -> None:
+    """Rename :data:`LEGACY_KEYS` in place, at any depth of a record."""
+    if isinstance(node, list):
+        for item in node:
+            _rename_legacy(item)
+    elif isinstance(node, dict):
+        for old, new in LEGACY_KEYS.items():
+            if old in node:
+                node.setdefault(new, node.pop(old))
+        for value in node.values():
+            _rename_legacy(value)
 
 
 def normalize(doc: dict) -> dict:
@@ -119,8 +139,8 @@ def overlay_type(entry: dict, rec: dict | None) -> dict:
     """
     if not rec:
         return entry
-    if rec.get("_comment_agent"):
-        entry["_comment_agent"] = rec["_comment_agent"]
+    if rec.get("_comment_user"):
+        entry["_comment_user"] = rec["_comment_user"]
     by_name = {f.get("name"): f for f in (entry.get("fields") or [])
                if isinstance(f, dict)}
     for sf in rec.get("fields") or []:

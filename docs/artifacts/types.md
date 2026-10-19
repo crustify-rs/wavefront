@@ -89,7 +89,7 @@ Derived at read time, never stored and never submitted.
 
 `submitted: true` with a non-empty `pending` is a partial analysis.
 
-## _comment_agent
+## _comment_user
 
 Free-text note from the user who analyzed the entity: the reasoning behind a
 judgement, the evidence for it, and anything the structured slots cannot carry.
