@@ -152,10 +152,10 @@ submitted through the primary's `forks`, which replaces every earlier fork.
   `_comment_user` is replaced when present;
 - a symbol's parameters merge one by one, and a `ptr` block replaces the
   previous one entirely, so it must be complete;
-- for a symbol, a `null` slot (`lifetime`, a parameter's or the return's
-  `ptr`, a global's `ptr`) leaves the recorded value as it is;
-- `locked_by` is replaced when present, and `null` clears it;
+- a `null` slot clears what was recorded: a field's or a parameter's `ptr`,
+  the return's `ptr`, a global's `ptr`, `lifetime`, and `locked_by`;
+- a slot the submission omits is left as it is;
 - `forks` replaces every earlier fork of the callback.
 
 Submitting a record's own `findings` unchanged therefore leaves every
-recorded value as it is.
+recorded value as it is, and `null` is how a wrong finding is withdrawn.

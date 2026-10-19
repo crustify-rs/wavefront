@@ -1754,12 +1754,18 @@ def _update_sym(layout, target, name: str, defined_in: str | None,
         scratch = json.loads(json.dumps(entry))
         _apply_ptr_agent(scratch, f.get("ptr_args"), pr, f, "lifetime" in f)
         _harvest_sym_agent(rec, scratch)
+        # An explicit `null` clears what was recorded. The harvest keeps only
+        # the filled slots of the merged record, so it cannot see a null.
+        _clear_nulls(rec, f.get("ptr_args"), pr, f)
         # Globals: the singular `ptr` IS the ownership block (no composer keys
         # mixed in -- name/type/const live at the entry level), so it is
         # replaced wholesale. `locked_by` is one cohesive block, likewise
-        # (null clears it).
-        if gptr is not None:
-            rec["ptr"] = gptr
+        # (null clears both).
+        if is_global and "ptr" in f:
+            if gptr is None:
+                rec.pop("ptr", None)
+            else:
+                rec["ptr"] = gptr
         if "locked_by" in f:
             rec["locked_by"] = f["locked_by"]
 
@@ -1789,6 +1795,22 @@ def _update_sym(layout, target, name: str, defined_in: str | None,
     n = holder["n"]
     tail = f" (+{n} fork{'s' if n != 1 else ''})" if n else ""
     print(f"updated {name} in {_store.path(layout)}{tail}")
+
+
+def _clear_nulls(rec: dict, ptr_args_f: dict | None, ptr_ret_f,
+                 f: dict) -> None:
+    """Drop the store slots a submission sets to ``null``: an argument's or the
+    return's ``ptr``, and ``lifetime``. An omitted slot is left as it is."""
+    nulled = {n for n, a in (ptr_args_f or {}).items()
+              if isinstance(a, dict) and "ptr" in a and a["ptr"] is None}
+    if nulled and rec.get("ptr_args"):
+        rec["ptr_args"] = [a for a in rec["ptr_args"] if a.get("name") not in nulled]
+        if not rec["ptr_args"]:
+            rec.pop("ptr_args")
+    if isinstance(ptr_ret_f, dict) and "ptr" in ptr_ret_f and ptr_ret_f["ptr"] is None:
+        rec.pop("ptr_ret", None)
+    if "lifetime" in f and f["lifetime"] is None:
+        rec.pop("lifetime", None)
 
 
 def _harvest_sym_agent(rec: dict, full: dict) -> None:
