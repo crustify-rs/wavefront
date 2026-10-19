@@ -81,8 +81,8 @@ wavefront REPO_ROOT --config PATH query {types,symbols,files,dag} [FLAGS]
 
 | Subject | Output |
 |---|---|
-| `types` | Type records: fields, casts, users, lifecycle routines. |
-| `symbols` | Symbol records: signatures, pointer ownership, callers and callees. |
+| `types` | Type records: fields, casts, users, and findings. |
+| `symbols` | Symbol records: signatures, callers and callees, and findings. |
 | `files` | The targeted, imported, and API file sets. |
 | `dag` | Dependency closures, graph layers, and cycle twins. |
 
@@ -94,9 +94,7 @@ Common flags:
 | `--file FILE ...` | Select or disambiguate entities by defining file. |
 | `--targeted-only`, `--imported-only` | Keep entities the config owns, or the external ones it reaches. |
 | `--api-only` | Keep entities the `api_headers` publish. |
-| `--schema` | Print the meaning of each record field. |
-| `--update FINDINGS` | Submit ownership findings for one named entity (`-` reads stdin). |
-| `--update-help` | Print the JSON shape `--update` accepts. |
+| `--update FINDINGS` | Submit findings for one named entity (`-` reads stdin). |
 | `--in-tree`, `--out-of-tree` | Listing only: keep entities defined inside, or outside, the repository. |
 
 Type views (one `--name`):
@@ -152,6 +150,12 @@ wavefront /src/widget --config wavefront-config.json \
 
 Each subject's `--help` lists its complete flags.
 
+A type or symbol record has two parts: `composed`, which Wavefront derives
+from the code, and `findings`, which users fill. `findings` lists every slot
+the entity accepts, in the shape `--update` takes, so a user can fill it in
+and submit it. See [`docs/artifacts/findings.md`](docs/artifacts/findings.md)
+and [`examples/findings.json`](examples/findings.json).
+
 ### 3. Schedule
 
 ```sh
@@ -192,7 +196,7 @@ See [`examples/waves.json`](examples/waves.json) for the output.
 | [`docs/batching.md`](docs/batching.md) | Selection, waves, and batch limits. |
 | [`docs/pointer-properties.md`](docs/pointer-properties.md) | The pointer properties recorded in the ownership store. |
 | [`docs/type-lifecycle.md`](docs/type-lifecycle.md) | Lifecycle roles, and how to find the routines that play them. |
-| [`docs/artifacts/`](docs/artifacts/) | Field reference for type and symbol records, the ownership store, schedules, and T3 tables. |
+| [`docs/artifacts/`](docs/artifacts/) | Field reference for type and symbol records, findings, the ownership store, schedules, and T3 tables. |
 
 ## Maintainers
 

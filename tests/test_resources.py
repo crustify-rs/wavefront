@@ -5,13 +5,11 @@ import unittest
 from contextlib import redirect_stderr
 
 from wavefront.cli import build_parser
-from wavefront.resources import data_root, schema_dir
+from wavefront.resources import data_root
 
 
 class ResourceOwnershipTests(unittest.TestCase):
-    def test_source_install_owns_schemas_and_codeql_pack(self) -> None:
-        self.assertTrue((schema_dir() / "types.md").is_file())
-        self.assertTrue((schema_dir() / "syms.md").is_file())
+    def test_source_install_owns_codeql_pack(self) -> None:
         self.assertTrue((data_root() / "qlpack.yml").is_file())
         self.assertTrue(any((data_root() / "entities").glob("*.ql")))
         self.assertTrue(any((data_root() / "edges").glob("*.ql")))

@@ -1,4 +1,4 @@
-"""Locate source-owned artifact schemas and CodeQL queries in a checkout or wheel."""
+"""Locate the CodeQL queries in a checkout or wheel."""
 from __future__ import annotations
 
 import sysconfig
@@ -17,11 +17,3 @@ def data_root() -> Path:
     if source is not None:
         return source / "src"
     return Path(sysconfig.get_path("data")) / "share" / "wavefront"
-
-
-def schema_dir() -> Path:
-    """Directory containing the type and symbol record schemas."""
-    source = source_root()
-    if source is not None:
-        return source / "docs" / "artifacts"
-    return data_root() / "artifacts"

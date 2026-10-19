@@ -12,6 +12,8 @@ casts) is composed from the CodeQL tables on demand. `query types` and
 `query symbols` merge the store into it, so a reader sees one whole record,
 and a re-extraction rewrites nothing in the store.
 
+Records show each entity's findings in the shape users submit them
+([`findings.md`](findings.md)); the store keeps them in the shape below.
 `query types --update` and `query symbols --update` write the store. They
 validate each submission against the composed record and replace the
 judgements they name; the file itself carries no validation, so it should

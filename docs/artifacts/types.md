@@ -1,10 +1,8 @@
 # Type record schema
 
-Field **meaning** for a type record — the properties the deterministic types
-composer infers, and the ownership judgements a user submits. The exact JSON
-shape of a submission, and its validation rules, are the *contract*, served
-separately by `wavefront <repo> <target> query types --update-help`, so
-meaning and shape never duplicate.
+Field meaning for the `composed` part of a type record: what wavefront
+derives from the CodeQL tables. The `findings` part, which users fill, is
+described in [`findings.md`](findings.md).
 
 Each `## <field>` section documents one record field; the heading name is the
 field key.
@@ -89,19 +87,13 @@ Derived at read time, never stored and never submitted.
 
 `submitted: true` with a non-empty `pending` is a partial analysis.
 
-## _comment_user
-
-Free-text note from the user who analyzed the entity: the reasoning behind a
-judgement, the evidence for it, and anything the structured slots cannot carry.
-User-filled, absent until one is submitted.
-
 ## fields
 
 Per-field records:
 
 - Scalar single -> `{name}` (layout-agnostic; the FFI binding carries it).
 - Scalar array / by-value aggregate / aggregate array -> `{name, type, ref:"value", array?}`.
-- Pointer (single or array) -> `{name, type, ref:"pointer", ptr:{...}, array?}`.
+- Pointer (single or array) -> `{name, type, ref:"pointer", array?}`.
 
 `type` is the element type (full, including `*`), omitted for scalar singles.
 `ref` is value/pointer (the element's reference kind), omitted for scalar
@@ -111,7 +103,7 @@ member), omitted when not an array.
 `ref` is decided by the field's true pointer depth (CodeQL `ptr_depth`), not by
 looking for a `*` in `type`. C hides the star behind a name in two shapes the
 string cannot show, both of which used to collapse to a bare scalar with no
-`ptr` block -- an **object-pointer typedef** (`typedef struct _filesec
+`findings` slot -- an **object-pointer typedef** (`typedef struct _filesec
 *filesec_t;`) and a **bare function pointer** (`int (*ctrl)(Stream *, int)`).
 
 - **`sig_types`** -- composer-filled, present ONLY when `type` is a string that
@@ -129,67 +121,3 @@ string cannot show, both of which used to collapse to a bare scalar with no
   instance holds is a runtime choice, so they are never `casted_via`
   pairs. Every one is listed, including those a T3 `drop` row removes from
   the graph ([`graph.md`](../graph.md#type-erasure)).
-
-Three user-filled keys ride on a field record:
-
-- **`ptr`** -- the ownership block (see [`## ptr`](#ptr)); pointer fields only.
-- **`refcount`** -- `true` on the ONE field storing this type's reference count
-  (the datum an up_ref bumps and a down-ref decrements), `false`/absent
-  otherwise. Any field kind: a refcount is a by-value member, not a pointer. It
-  decides which routines release and copy the type: a down-ref and an up_ref,
-  or `*_free` and `*_dup`.
-- **`locked_by`** -- the concurrency binding on ANY field (pointer or not) that
-  is accessed under a lock: `null`, or `{lock, lock_op, unlock_op}`. `lock` names
-  the type's field or global variable storing the lock object that guards this field; `lock_op` is
-  the LIST of acquire routines (which ops appear captures the read-vs-write
-  discipline); `unlock_op` the LIST of release routines.
-
-## ptr
-
-Per pointer field; the properties are described in
-[`pointer-properties.md`](../pointer-properties.md). The composer emits `ptr: null`, so **`null` means
-unanalyzed** — whether a field has been through a wrapper is a null check on
-one key. A submitted block replaces the prior WHOLESALE and must be complete,
-so there is nothing to patch into a skeleton. Once filled:
-
-- **`scalar`** -- Is there any execution path where this pointer references a
-  SINGLE pointee? If not, `null`; otherwise `{by_val: true}` (points at one inline
-  value -- the ordinary `T*`) | `{by_ref: {owned, borrowed}}` (points at one
-  POINTER -- a `T**`). Under `by_ref`, `owned`/`borrowed` is the INNER pointee's
-  ownership (the top-level `owned`/`borrowed` then describes the OUTER slot);
-  each is the same block as the top-level below. May co-exist with `array` and `string`.
-- **`array`** -- Is there any execution path where this pointer references an array
-  of elements? If not, `null`; otherwise `{by_val: true}` (buffer of inline
-  values) | `{by_ref: {owned, borrowed}}` (buffer of element pointers -- a
-  container). Under `by_ref`, `owned`/`borrowed` is the ELEMENT ownership, and
-  EACH is the same block as the top-level `owned`/`borrowed` below -- so a
-  container of owned elements carries the element's release/clone bindings.
-  May co-exist with `scalar` and `string`.
-  `scalar.by_ref` vs `array.by_ref` differ only in cardinality (one pointer vs a buffer of them).
-- **`string`** -- Is there any execution path where this pointer is a NUL-terminated string?
-  If yes, `true`; otherwise `false`.
-- **`owned`** -- `true` if the field is owned by the type, `false` otherwise.
-  The FIELD-TYPE's `refcount` decides whether releasing it is a down-ref or a
-  plain free, not this flag.
-- **`borrowed`** -- `null`, or `{lifetime}`: the pointer is borrowed, bound to
-  another entity's lifetime. Sources are `self` (the enclosing struct),
-  `field:<name>` (a sibling field's storage), `static`, or `other` -- the
-  field-oriented vocabulary.
-- **`nullable`** -- may be NULL -> Rust `Option<...>`.
-- **`mutable`** -- null/true/false: (i) `const=true` forces `false`; (ii)
-  otherwise the user decides by body inspection -- is the field written through
-  the pointer?; (iii) `null` ONLY when undeterminable.
-- **`note`** -- free-form; justify the above, highlight gaps and corner cases if any.
-
-`owned` and `borrowed` MAY both be set -- runtime-conditional dual
-ownership (owned on one path, borrowed on another); likewise
-`array.by_ref.owned`+`.borrowed`.
-
-**Invariants** (enforced on `--update`): `scalar` and `array` are each null |
-exactly one of `{by_val, by_ref}`; a pointer
-sets at least one of `{scalar, array, string}` (the floor); `string` and `owned`
-are explicit booleans (never null -- a fact left `null` where `false` was meant
-is rejected);
-a pointer is owned and/or borrowed, never neither -- as is each `by_ref`
-element; a borrowed pointer needs a lifetime; `const`-in-type implies `mutable
-!= true`.

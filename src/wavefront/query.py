@@ -13,6 +13,8 @@ import re
 import sys
 from pathlib import Path
 
+from wavefront import findings as _findings
+
 
 def query(
     target: Path,
@@ -30,8 +32,6 @@ def query(
     users: bool = False,
     field_touchers: bool = False,
     update: str | None = None,
-    update_help: bool = False,
-    schema: bool = False,
     lifetime_for: str | None = None,
     taking: str | None = None,
     returning: str | None = None,
@@ -52,17 +52,6 @@ def query(
       * ``--name A B …`` → several records at once (no facet).
     """
     kind = "type" if subject == "types" else "symbol"
-    # --update-help: print the findings schema the agent submits via --update,
-    # then return. No --name (it describes the schema, not an entry) — sibling of
-    # --update for schema discovery at runtime.
-    if update_help:
-        print(json.dumps(_findings_schema(kind), indent=2))
-        return
-    # --schema: the record's field/slot MEANING (docs/artifacts/<types|syms>.md);
-    # no --name. Distinct from --update-help, which gives the submission shape.
-    if schema:
-        print(_schema(kind))
-        return
     # --lifetime-for: REVERSE lifecycle lookup, parameterized by a TYPE (no
     # --name). Symbols-only; scans each symbol's entry-level `lifetime` block,
     # resolved to the arg it names in `for`.
@@ -730,8 +719,13 @@ def _introspect(
                                    targeted_only=targeted_only)
             if keep is not None:
                 objs = [o for o in objs if o.get("name") in keep]
-            win = objs
-            print(json.dumps(win, indent=2))
+            # Split like a whole record: the structure, then the slots a user
+            # fills, in the shape `--update` accepts.
+            print(json.dumps({
+                "composed": _findings.composed_fields(objs),
+                "findings": {"fields": _findings.type_findings(
+                    {"fields": objs})["fields"]},
+            }, indent=2))
             return
         # --lifecycle-ops: names only, lifecycle-first, scope-filterable via in-memory inventory
         # membership (same oracle as enumeration / wrap / port).
@@ -918,7 +912,7 @@ _FIELD_AGENT_KEYS = ("ptr", "refcount", "locked_by")
 # Symbol findings (functions / callbacks / macros) — the agent-fillable surface.
 _SYM_FINDINGS_TOP = {"ptr_args", "ptr_ret", "lifetime", "forks", "ptr",
                      "locked_by"}
-# Same structured ownership block as a struct field's `ptr` (see types.md#ptr):
+# Same structured ownership block as a struct field's `ptr` (docs/pointer-properties.md):
 # `owned` is a bool, `borrowed` nests {lifetime}, `array` is
 # null|{by_val}|{by_ref:{owned,borrowed}}. A pointer at a call boundary and a
 # pointer in a struct extract identical properties, so args, returns, globals and
@@ -951,100 +945,6 @@ _FORK_KEYS = {"ptr_args", "ptr_ret", "lifetime", "callsites"}
 # entry level (sibling of `ptr`), not inside `ptr`, because the guarded datum is
 # often a non-pointer (a refcount int, a flag).
 _LOCKED_BY_KEYS = {"lock", "lock_op", "unlock_op"}
-
-
-def _schema(kind: str) -> str:
-    """Field/slot MEANING for ``--schema`` — display-only markdown, read from
-    ``docs/artifacts/<types|syms>.md`` and split on ``## <field>`` headings.
-    Distinct from ``--update-help`` (:func:`_findings_schema`), which gives the
-    submission *shape* + rules; meaning and shape are never duplicated. Empty
-    string if the doc is unreadable."""
-    from wavefront.resources import schema_dir
-
-    doc = schema_dir() / ("types.md" if kind == "type" else "syms.md")
-    try:
-        text = doc.read_text()
-    except OSError:
-        return ""
-    parts = re.split(r"(?m)^## (\S+)\s*$", text)
-    preamble, sections = parts[0], list(zip(parts[1::2], parts[2::2]))
-    keep = [preamble.rstrip()]
-    for field, body in sections:
-        keep.append(f"## {field}\n{body.rstrip()}")
-    return "\n\n".join(s for s in keep if s).rstrip() + "\n"
-
-
-def _findings_schema(kind: str) -> dict:
-    """The findings JSON a wrapper agent submits through ``--update`` — the
-    schema boundary, returned by ``--update-help`` so the agent discovers it at
-    runtime instead of hard-coding it. The top-level key sets are the validator's
-    own (``_FINDINGS_TOP`` / ``_SYM_FINDINGS_TOP``), so this never drifts from
-    what ``--update`` actually accepts."""
-    # Raw submission SHAPE only -- field MEANING + enforced invariants live in the
-    # schema doc (`query <kind> --schema` = docs/artifacts/{types,syms}.md), which is
-    # fed to the agent. `_valid_top_keys` is the drift guard (validator constants).
-    if kind == "type":
-        return {
-            "_subject": "type",
-            "_see": "query types --schema for field meaning + enforced invariants",
-            "_lifecycle": ("NOT submitted here — which routines drop / dispose / "
-                           "clone this type is recorded on the acting SYMBOL "
-                           "(the symbol record's `lifetime`), and read back with "
-                           "`query symbols --lifetime-for <TAG>`."),
-            "fields": {
-                "<field_name>": {
-                    "refcount": "bool   (this field stores the type's refcount)",
-                    "ptr": {
-                        "scalar": ("null | {by_val: true} | {by_ref: {owned: "
-                                   "<owned>|null, borrowed: {lifetime}|null}}"),
-                        "array": ("null | {by_val: true} | "
-                                  "{by_ref: {owned: <owned>|null, "
-                                  "borrowed: {lifetime}|null}}"),
-                        "string": "bool",
-                        "owned": "bool",
-                        "borrowed": "null | {lifetime: <source>}",
-                        "nullable": "bool", "mutable": "bool | null", "note": "<str>",
-                    },
-                    "locked_by": ("null | {lock: <name>, lock_op: [<fn>], "
-                                  "unlock_op: [<fn>]}"),
-                }
-            },
-            "_comment_user": "<optional>",
-            "_valid_top_keys": sorted(_FINDINGS_TOP),
-        }
-    return {
-        "_subject": "symbol",
-        "_see": "query symbols --schema for facet meaning + enforced invariants",
-        "ptr_args": {
-            "<arg name>": {
-                "ptr": {
-                    "scalar": ("null | {by_val: true} | {by_ref: {owned: <owned>|"
-                               "null, borrowed: {lifetime}|null}}"),
-                    "array": ("null | {by_val: true} | {by_ref: {owned: <owned>|"
-                              "null, borrowed: {lifetime}|null}}"),
-                    "string": "bool",
-                    "owned": "bool",
-                    "borrowed": "null | {lifetime: <source>}",
-                    "nullable": "bool", "mutable": "bool | null", "note": "<str>",
-                }
-            }
-        },
-        "ptr_ret": "{ptr: <same block as ptr_args[pos].ptr>} | null",
-        "lifetime": ("null | {for: <arg name> | \"return\", is_dropper: bool, "
-                     "is_disposer: bool, is_cloner: {deep: bool, upref: bool}|null, "
-                     "is_constructor: {alloc: bool, init: bool}|null}   "
-                     "(functions/callbacks: THIS symbol's lifecycle role, on the "
-                     "arg named by `for`, or on the return (`for: \"return\"`) "
-                     "for an alloc that returns its object; null = no role)"),
-        "ptr": "<same block as ptr_args[pos].ptr> | null   (globals only)",
-        "locked_by": ("null | {lock: <name>, lock_op: [<fn>], unlock_op: [<fn>]}"
-                      "   (globals only)"),
-        "forks": [{
-            "ptr_args": "<as ptr_args>", "ptr_ret": "<as ptr_ret>",
-            "lifetime": "<as lifetime>", "callsites": ["<callsite id>"],
-        }],
-        "_valid_top_keys": sorted(_SYM_FINDINGS_TOP),
-    }
 
 
 def _apply_ptr_agent(entry: dict, ptr_args_f: dict | None,
@@ -1932,6 +1832,7 @@ def _records(target, kind, names, files, *, imported_only=False,
         # `_analysis.pending` is stamped scope-agnostically; under a scope
         # filter it must count the same fields `--fields` shows, or it reports
         # work the caller's scope never touches.
+        keep = None
         if kind == "type" and (imported_only or targeted_only):
             keep = _field_keep_set(layout, target, node.id, node.defined_in,
                                    targeted_only=targeted_only)
@@ -1939,7 +1840,11 @@ def _records(target, kind, names, files, *, imported_only=False,
             entry["_analysis"] = _m.analysis_state(
                 entry, "types", entry.get("_analysis", {}).get("submitted", False),
                 keep)
-        recs.append(entry)
+        if kind == "type":
+            recs.append(_findings.split_type(entry))
+        else:
+            recs.append(_findings.split_symbol(
+                entry, _sym_forks(layout, target, entry)))
     print(json.dumps(recs[0] if len(recs) == 1 else recs, indent=2))
 
 
@@ -2048,6 +1953,19 @@ def _syms_index(layout, target) -> dict:
     for e in _entries(layout, target, "symbols"):
         idx.setdefault(e.get("name"), e)
     return idx
+
+
+def _sym_forks(layout, target, entry: dict) -> list[dict]:
+    """A callback primary's fork entries, by variant; none for anything else."""
+    if entry.get("kind") != "callback" or entry.get("variant"):
+        return []
+    key = (entry.get("name"), entry.get("defined_in"))
+    pool = _entries(layout, target, "symbols")
+    if not any((e.get("name"), e.get("defined_in")) == key for e in pool):
+        pool = _universe_entries(layout, target, "symbols")
+    return sorted((e for e in pool
+                   if (e.get("name"), e.get("defined_in")) == key
+                   and e.get("variant")), key=lambda e: e["variant"])
 
 
 def _load_sym_entry(layout, target, name: str, defined_in: str | None) -> dict | None:

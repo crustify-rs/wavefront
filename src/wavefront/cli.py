@@ -162,30 +162,17 @@ def _add_query_flags(p: argparse.ArgumentParser, *, facets: bool) -> None:
                    dest="files",
                    help="Restrict/disambiguate by defining file.")
     facet = p.add_mutually_exclusive_group()
-    # `--update` is available for BOTH subjects (types AND syms): the schema
-    # boundary through which a wrapper agent merges its findings.
     facet.add_argument("--update", default=None, metavar="FINDINGS",
-                       help="Ingest an agent findings JSON (path or '-' for stdin) "
-                            "into the named entry: validate (hard-reject only), then "
-                            "partial-merge under a lock. types: lifecycle + per-field "
-                            "ptr. syms: macro kind, per-arg/return ownership "
-                            "(ptr_args/ptr_ret), and the symbol's lifecycle role "
-                            "(lifetime). The agent never edits the ownership store directly.")
-    facet.add_argument("--update-help", action="store_true", dest="update_help",
-                       help="Print the findings JSON schema that --update expects "
-                            "for this subject (types vs syms), then exit. No --name "
-                            "needed — schema discovery for the wrapper agent.")
-    facet.add_argument("--schema", action="store_true", dest="schema",
-                       help="Print the record's field/slot DEFINITIONS (the "
-                            "_comment_* blocks, the schema authority), then exit. "
-                            "No --name needed.")
+                       help="Submit findings for the named entry (a path, or '-' "
+                            "for stdin), in the shape of its record's `findings`: "
+                            "validated as a whole, then merged into the ownership "
+                            "store under a lock. See docs/artifacts/findings.md.")
     if facets:
         facet.add_argument("--fields", action="store_true",
-                           help="Introspect a type: ALL declared fields with their "
-                                "per-field structural + ptr detail; --targeted-only "
-                                "narrows to the fields THIS CAMPAIGN's targeted code reaches "
-                                "(--imported-only does not apply here); "
-                                "'[]' if none.")
+                           help="Introspect a type: all declared fields, split into "
+                                "their composed records and their findings; "
+                                "--targeted-only narrows to the fields the config's "
+                                "own code reaches (--imported-only does not apply).")
         facet.add_argument("--lifecycle-ops", action="store_true",
                            dest="lifecycle_ops",
                            help="Introspect a type: its LIFECYCLE surface only — "
@@ -486,8 +473,6 @@ def _dispatch_query(args: argparse.Namespace, target: Path) -> None:
         users=bool(getattr(args, "users", False)),
         field_touchers=bool(getattr(args, "field_touchers", False)),
         update=getattr(args, "update", None),
-        update_help=bool(getattr(args, "update_help", False)),
-        schema=bool(getattr(args, "schema", False)),
         lifetime_for=getattr(args, "lifetime_for", None),
         taking=getattr(args, "taking", None),
         returning=getattr(args, "returning", None),

@@ -1,0 +1,135 @@
+{
+  "_comment": [
+    "Example findings, one document per entity: each value is exactly what",
+    "`query types|symbols --name NAME --update -` accepts for that entity, and",
+    "what its record shows under `findings`. Field meaning: docs/artifacts/findings.md."
+  ],
+  "types": {
+    "widget_st": {
+      "_comment_user": "Reference-counted; widget_free drops the last reference.",
+      "fields": {
+        "buf": {
+          "ptr": {
+            "scalar": null,
+            "array": {"by_val": true},
+            "string": false,
+            "owned": true,
+            "borrowed": null,
+            "nullable": true,
+            "mutable": true,
+            "note": "len bytes, allocated by widget_new and freed by widget_free."
+          },
+          "refcount": false,
+          "locked_by": null
+        },
+        "refs": {
+          "refcount": true,
+          "locked_by": null
+        },
+        "users": {
+          "refcount": false,
+          "locked_by": {"lock": "lock", "lock_op": ["mutex_lock"], "unlock_op": ["mutex_unlock"]}
+        }
+      }
+    }
+  },
+  "symbols": {
+    "widget_new": {
+      "ptr_args": {
+        "opts": {
+          "ptr": {
+            "scalar": {"by_val": true},
+            "array": null,
+            "string": false,
+            "owned": false,
+            "borrowed": {"lifetime": "arg:opts"},
+            "nullable": true,
+            "mutable": false,
+            "note": "Read during the call only; NULL selects the defaults."
+          }
+        }
+      },
+      "ptr_ret": {
+        "ptr": {
+          "scalar": {"by_val": true},
+          "array": null,
+          "string": false,
+          "owned": true,
+          "borrowed": null,
+          "nullable": true,
+          "mutable": true,
+          "note": "NULL when the allocation fails."
+        }
+      },
+      "lifetime": {
+        "for": "return",
+        "is_dropper": false,
+        "is_disposer": false,
+        "is_cloner": null,
+        "is_constructor": {"alloc": true, "init": false}
+      }
+    },
+    "widget_default_opts": {
+      "ptr": {
+        "scalar": {"by_val": true},
+        "array": null,
+        "string": false,
+        "owned": false,
+        "borrowed": {"lifetime": "static"},
+        "nullable": false,
+        "mutable": false,
+        "note": "Points at a static, read-only options table."
+      },
+      "locked_by": null
+    },
+    "widget_release_fn": {
+      "ptr_args": {
+        "w": {
+          "ptr": {
+            "scalar": {"by_val": true},
+            "array": null,
+            "string": false,
+            "owned": true,
+            "borrowed": null,
+            "nullable": false,
+            "mutable": true,
+            "note": "The callee frees the widget."
+          }
+        }
+      },
+      "lifetime": {
+        "for": "w",
+        "is_dropper": true,
+        "is_disposer": false,
+        "is_cloner": null,
+        "is_constructor": null
+      },
+      "forks": [
+        {
+          "ptr_args": {
+            "w": {
+              "ptr": {
+                "scalar": {"by_val": true},
+                "array": null,
+                "string": false,
+                "owned": false,
+                "borrowed": {"lifetime": "arg:w"},
+                "nullable": false,
+                "mutable": true,
+                "note": "widget_reset clears the fields and keeps the widget."
+              }
+            }
+          },
+          "lifetime": {
+            "for": "w",
+            "is_dropper": false,
+            "is_disposer": true,
+            "is_cloner": null,
+            "is_constructor": null
+          },
+          "callsites": ["widget_reset"]
+        }
+      ]
+    }
+  }
+}

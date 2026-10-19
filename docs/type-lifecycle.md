@@ -11,7 +11,7 @@ translation can implement construction, `Clone` and `Drop` with them.
 A lifecycle is recorded on the routines, not on the type. Each routine's
 symbol record carries a `lifetime` block: the role it plays and the
 parameter it acts on (`for`), or `"return"` for a constructor that returns
-the new object. Field schema: [`artifacts/syms.md`](artifacts/syms.md#lifetime).
+the new object. Field schema: [`artifacts/findings.md`](artifacts/findings.md#lifetime).
 
 | role | the routine |
 |---|---|
