@@ -1,0 +1,22 @@
+{
+  "_comment": [
+    "Example wavefront-config.json, passed with --config.",
+    "Paths are relative to the repository root. A trailing slash selects a directory recursively.",
+    "state_dir holds the CodeQL tables, ownership findings, and caches.",
+    "impl_files names the sources and private headers that implement the library.",
+    "api_headers names the headers that publish its API.",
+    "t3_dir, relative to state_dir, holds the authored T3 tables."
+  ],
+  "state_dir": ".wavefront",
+  "impl_files": [
+    "src/",
+    "include/internal/widget_local.h"
+  ],
+  "api_headers": [
+    "include/widget.h"
+  ],
+  "out_of_scope": {
+    "paths": ["src/tests/"]
+  },
+  "t3_dir": "t3"
+}

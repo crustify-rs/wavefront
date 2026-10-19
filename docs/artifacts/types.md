@@ -1,7 +1,7 @@
 # Type record schema
 
 Field **meaning** for a type record — the properties the deterministic types
-composer infers, and the ownership judgements an agent submits. The exact JSON
+composer infers, and the ownership judgements a user submits. The exact JSON
 shape of a submission, and its validation rules, are the *contract*, served
 separately by `wavefront <repo> <target> query types --update-help`, so
 meaning and shape never duplicate.
@@ -47,10 +47,10 @@ SLOT-MEDIATED cast graph (`edges/arg_casts.ql` + `edges/field_casts.ql`,
 joined by `compose/slot_casts.py`). It holds the casts `casted` cannot see
 because a type-erased slot sits between the two types:
 
-    av_vlog(avctx, ...)         AVCodecContext -> param av_vlog.0    (from)
-    *(AVClass **) avcl          param av_vlog.0 -> AVClass           (to)
+    log_vmsg(dec, ...)          Decoder -> param log_vmsg.0          (from)
+    *(const ObjClass **) ctx    param log_vmsg.0 -> ObjClass         (to)
 
-gives `AVCodecContext.casted_via.to ∋ {type: AVClass, via: [slot]}`. `via`
+gives `Decoder.casted_via.to ∋ {type: ObjClass, via: [slot]}`. `via`
 names the one slot both casts meet at (two when a named slot is stored into
 another named slot), as `kind:name.member@file` with `kind` in `param` |
 `ret` | `field`.
@@ -65,7 +65,7 @@ order the graph, and which of them are false positives, is in
 ## opaque_in
 
 Composer-filled `{file: [symbols]}` footprint: functions that touch this type
-but only as an OPAQUE HANDLE, never accessing a field. The agent reads it for
+but only as an OPAQUE HANDLE, never accessing a field. A user reads it for
 lifecycle/forwarder op candidates. COMPLETE: every consumer
 tree-wide is listed.
 
@@ -82,7 +82,7 @@ Derived at read time, never stored and never submitted.
 
 - **`submitted`** -- whether the ownership store holds a record for this entity.
   A null slot cannot say this on its own: `lifetime: null` reads the same
-  whether nobody has looked or an agent looked and found no lifecycle role.
+  whether nobody has looked or a user looked and found no lifecycle role.
 - **`pending`** -- the pointer slots carrying no ownership block, as dotted
   paths. Under `--targeted-only` / `--imported-only` it counts only the fields that
   scope's code touches, so it agrees with what `--fields` shows.
@@ -91,9 +91,9 @@ Derived at read time, never stored and never submitted.
 
 ## _comment_agent
 
-Free-text note from the agent that analyzed the entity: the reasoning behind a
+Free-text note from the user who analyzed the entity: the reasoning behind a
 judgement, the evidence for it, and anything the structured slots cannot carry.
-Agent-filled, absent until one is submitted.
+User-filled, absent until one is submitted.
 
 ## fields
 
@@ -112,32 +112,32 @@ member), omitted when not an array.
 looking for a `*` in `type`. C hides the star behind a name in two shapes the
 string cannot show, both of which used to collapse to a bare scalar with no
 `ptr` block -- an **object-pointer typedef** (`typedef struct _filesec
-*filesec_t;`) and a **bare function pointer** (`int (*ctrl)(BIO *, int)`).
+*filesec_t;`) and a **bare function pointer** (`int (*ctrl)(Stream *, int)`).
 
 - **`sig_types`** -- composer-filled, present ONLY when `type` is a string that
   names nothing: a bare function pointer (`..(*)(..)`) or an anonymous
   aggregate. It lists the user types named inside that type -- for a function
-  pointer, its signature (`int (*ctrl)(BIO *, …)` -> `["BIO"]`). Without it a
+  pointer, its signature (`int (*ctrl)(Stream *, …)` -> `["Stream"]`). Without it a
   vtable struct is a dependency LEAF: every slot renders `..(*)(..)`, so the
   DAG sees no edge and would schedule the struct before the types its function
   pointers traffic in. An ordinary `T *` field needs no help and carries none.
 - **`erased_as`** -- composer-filled, present ONLY on a type-erased pointer
   field (`void *`, `uint8_t *`, ...) that some code casts: `{stored: [tags],
   read_as: [tags]}`, the named types written into it and the ones its reads
-  are converted to (`AVCodecContext.priv_data`: `stored` one context,
-  `read_as` every codec's). These are the field's variants: which type an
+  are converted to (`Decoder.priv`: `stored` one private context,
+  `read_as` every decoder's). These are the field's variants: which type an
   instance holds is a runtime choice, so they are never `casted_via`
   pairs. Every one is listed, including those a T3 `drop` row removes from
   the graph ([`graph.md`](../graph.md#type-erasure)).
 
-Three agent-fillable keys ride on a field record:
+Three user-filled keys ride on a field record:
 
 - **`ptr`** -- the ownership block (see [`## ptr`](#ptr)); pointer fields only.
 - **`refcount`** -- `true` on the ONE field storing this type's reference count
   (the datum an up_ref bumps and a down-ref decrements), `false`/absent
   otherwise. Any field kind: a refcount is a by-value member, not a pointer. It
-  decides which ROUTINE backs the type's `CDropped` / `CCloned` impl (down-ref
-  and up_ref vs `*_free` and `*_dup`); the wrapper is `CBox` either way.
+  decides which routines release and copy the type: a down-ref and an up_ref,
+  or `*_free` and `*_dup`.
 - **`locked_by`** -- the concurrency binding on ANY field (pointer or not) that
   is accessed under a lock: `null`, or `{lock, lock_op, unlock_op}`. `lock` names
   the type's field or global variable storing the lock object that guards this field; `lock_op` is
@@ -169,15 +169,15 @@ so there is nothing to patch into a skeleton. Once filled:
 - **`string`** -- Is there any execution path where this pointer is a NUL-terminated string?
   If yes, `true`; otherwise `false`.
 - **`owned`** -- `true` if the field is owned by the type, `false` otherwise.
-  Ownership is a `CBox` either way; the FIELD-TYPE's `refcount` decides whether
-  that `CBox`'s teardown is a down-ref or a plain free, not this flag.
+  The FIELD-TYPE's `refcount` decides whether releasing it is a down-ref or a
+  plain free, not this flag.
 - **`borrowed`** -- `null`, or `{lifetime}`: the pointer is borrowed, bound to
   another entity's lifetime. Sources are `self` (the enclosing struct),
   `field:<name>` (a sibling field's storage), `static`, or `other` -- the
   field-oriented vocabulary.
 - **`nullable`** -- may be NULL -> Rust `Option<...>`.
 - **`mutable`** -- null/true/false: (i) `const=true` forces `false`; (ii)
-  otherwise the agent decides by body inspection -- is the field written through
+  otherwise the user decides by body inspection -- is the field written through
   the pointer?; (iii) `null` ONLY when undeterminable.
 - **`note`** -- free-form; justify the above, highlight gaps and corner cases if any.
 

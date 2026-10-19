@@ -1,4 +1,4 @@
-# Sub-campaign schedule schema
+# Schedule schema
 
 Field meaning for the document `wavefront <repo> --config PATH schedule
 --output PATH` writes. Complete example:
@@ -20,7 +20,7 @@ prefers. Wavefront never creates that directory.
 {
   "schema_version": 3,
   "oracle_config": {
-    "path": "crustify/campaigns/src/widget/wavefront-config.json",
+    "path": "examples/wavefront-config.json",
     "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
   },
   "api_headers_only": false,
@@ -70,7 +70,7 @@ wave's `unit_count` is the number of items in its batches.
 
 `kind` records the objective-neutral route (`type`, `symbol`, or the special
 `raw-lifetime` route), `source_file` records the batch's source grouping, and
-`items` is the exact worklist for one agent.
+`items` is the exact worklist for one batch.
 
 Each item has this shape:
 

@@ -1,7 +1,7 @@
 # Symbol record schema
 
 Field **meaning** for a symbol record — the properties the deterministic
-symbols composer infers, and the ownership judgements an agent submits. The
+symbols composer infers, and the ownership judgements a user submits. The
 exact JSON shape of a submission, and its validation rules, are the *contract*,
 served separately by `wavefront <repo> <target> query symbols
 --update-help`, so meaning and shape never duplicate.
@@ -16,11 +16,11 @@ field key.
 ## name
 
 The C identifier exactly as written at the definition site. Composer-filled;
-agents never edit it.
+users never edit it.
 
 ## kind
 
-The symbol's category. Composer-filled -- the agent never edits
+The symbol's category. Composer-filled -- users never edit
 it. The enum is `function_{exported,static,inline_header,inline_tu}`, `macro`,
 `global_{static,extern}`, `callback`.
 
@@ -30,13 +30,13 @@ A callback is a function-pointer typedef (CodeQL identifies it
 deterministically: a typedef whose unwrap chain reaches a RoutineType).
 Composer-filled kind; signature-shaped (carries `ptr_args` / `ptr_ret` /
 `used_by.{call,ref}` / a signature `depends_on`, NO body). `defined_in` is null (a
-header typedef). The agent fills ONLY its per-arg/return ownership and its
+header typedef). The user fills ONLY its per-arg/return ownership and its
 `lifetime` role (same rules as functions -- an invoked `free_func` typedef IS a
 dropper), inferring both from `used_by.call` (the invokers). When invokers
-realize DIFFERENT contracts, the agent FORKS the callback: `--update` splits it
+realize DIFFERENT contracts, the user FORKS the callback: `--update` splits it
 into multiple `kind:callback` entries, same name/type but distinct
 `ptr_args`/`ptr_ret`/`lifetime`, disambiguated by a `variant` index (0 = primary,
-composer-emitted; >=1 = agent-created fork) and a partitioned `used_by.call`. One
+composer-emitted; >=1 = user-created fork) and a partitioned `used_by.call`. One
 entry = one Rust wrapper. The `variant` field is absent/0 for the common
 single-contract case.
 
@@ -47,7 +47,7 @@ realize different ownership contracts is split into several records sharing a
 `name`: the primary is variant 0 (implicit), each fork 1..N. A fork carries its
 own `ptr_args` / `ptr_ret` / `lifetime`, and its `used_by.call` is the subset of
 invokers realizing that contract -- the variants partition the invoker set.
-Agent-created, through `forks` in a submission.
+User-created, through `forks` in a submission.
 
 ## _analysis
 
@@ -55,7 +55,7 @@ Derived at read time, never stored and never submitted.
 
 - **`submitted`** -- whether the ownership store holds a record for this entity.
   A null slot cannot say this on its own: `lifetime: null` reads the same
-  whether nobody has looked or an agent looked and found no lifecycle role.
+  whether nobody has looked or a user looked and found no lifecycle role.
 - **`pending`** -- the pointer slots carrying no ownership block, as dotted
   paths. Under `--targeted-only` / `--imported-only` it counts only the fields that
   scope's code touches, so it agrees with what `--fields` shows.
@@ -64,9 +64,9 @@ Derived at read time, never stored and never submitted.
 
 ## _comment_agent
 
-Free-text note from the agent that analyzed the entity: the reasoning behind a
+Free-text note from the user who analyzed the entity: the reasoning behind a
 judgement, the evidence for it, and anything the structured slots cannot carry.
-Agent-filled, absent until one is submitted.
+User-filled, absent until one is submitted.
 
 ## declared_in
 
@@ -107,11 +107,11 @@ isn't a pointer. Both carry the SAME fields, `position` / `name` for `ptr_args`.
 COMPOSER fields (skeleton, always set), at the record's TOP level: on each
 `ptr_args` record `position` and `name` (param name as written, falling back to
 `arg<N>`); on both `ptr_args` and `ptr_ret` `type` (verbatim innermost pointee
-type -- a user tag like `EVP_PKEY`, a primitive like `char`/`void`, or the
+type -- a user tag like `Widget`, a primitive like `char`/`void`, or the
 synthetic markers `(routine)`/`(array)`), `const` (is the innermost pointee
 const-qualified?), and `depth` (1 for `T*`, 2 for `T**`, ...).
 
-AGENT field -- each record carries a single `ptr` sub-object holding the
+USER field -- each record carries a single `ptr` sub-object holding the
 ownership block. It nests under `ptr` -- isolated from the
 composer's top-level structural keys -- so `--update` replaces `ptr_args[i].ptr`
 / `ptr_ret.ptr` WHOLESALE, and a submitted block must be complete.
@@ -147,7 +147,7 @@ filled block:
   borrows from its OWN arg -- `arg:<its own name>`.
 - **`nullable`** -- can this pointer be `NULL`? -> Rust `Option<...>`.
 - **`mutable`** -- null/true/false: (i) `const=true` forces `false`; (ii)
-  otherwise the agent decides by body inspection -- does the callee write through
+  otherwise the user decides by body inspection -- does the callee write through
   the pointer?; (iii) `null` ONLY when undeterminable (no definition available,
   e.g. an external symbol).
 - **`note`** -- free-form; justify the above, highlight gaps and corner cases if any.
@@ -169,7 +169,7 @@ field, see [`lifetime`](#lifetime).
 ## lifetime
 
 Which lifecycle-primitive role THIS symbol plays, and on which of its args (or,
-for an `alloc` constructor that returns its object, on its return). Agent-filled; `null` in the
+for an `alloc` constructor that returns its object, on its return). User-filled; `null` in the
 composer skeleton. Present on functions and callbacks (the kinds with a call
 boundary); absent on globals and macros -- a global's ownership has no acting
 method, and a macro has no args. The subject is named in `for`.
@@ -293,7 +293,7 @@ If your target type is:
 ## ptr / locked_by (globals)
 
 A `global_*` entry has no call boundary, so it carries no `ptr_args`/`ptr_ret`.
-Two agent-filled slots take their place (both `null` in the composer skeleton):
+Two user-filled slots take their place (both `null` in the composer skeleton):
 
 - **`ptr`** -- `null`, or the SAME ownership block a `ptr_args`/`ptr_ret` record
   nests under its `ptr` (`scalar`, `array`, `string`, `owned`, `borrowed`,
@@ -306,9 +306,9 @@ Two agent-filled slots take their place (both `null` in the composer skeleton):
   binding on ANY global (pointer or not) accessed under a lock.
   - **`lock`** -- name of the lock object (a global or field) that guards the slot.
   - **`lock_op`** -- the LIST of acquire routines (e.g.
-    `["CRYPTO_THREAD_read_lock", "CRYPTO_THREAD_write_lock"]`); which ops appear
+    `["rwlock_rdlock", "rwlock_wrlock"]`); which ops appear
     captures the read-vs-write discipline.
-  - **`unlock_op`** -- the LIST of release routines (e.g. `["CRYPTO_THREAD_unlock"]`).
+  - **`unlock_op`** -- the LIST of release routines (e.g. `["rwlock_unlock"]`).
 
   `locked_by` sits at the entry level (a sibling of `ptr`), NOT inside `ptr`,
   because the guarded datum is often a non-pointer (a refcount `int`, a flag).
@@ -317,17 +317,17 @@ Two agent-filled slots take their place (both `null` in the composer skeleton):
 
 ## used_by
 
-Composer-filled (agents must not modify). `call` and `ref`
+Composer-filled (users must not modify). `call` and `ref`
 name the enclosing functions (or file paths for file-scope macro expansions) that
 reach this entry. By kind: `function_*` -> `{call:[callers], ref:[addr-of users]}`,
 where a site that both calls and takes the address is listed only under `call`;
 `global_*` -> `{call:null, ref:[accessors]}`; `macro_*` -> `{call:[expansion
-sites], ref:[]}`. The composer's default bucketing is fine for most kinds; the
-a wrapper may re-bucket `call`<->`ref` when a macro kind justifies it.
+sites], ref:[]}`. The composer's default bucketing is fine for most kinds; a
+user may re-bucket `call`<->`ref` when a macro kind justifies it.
 
 ## depends_on
 
-Composer ground-truth (agents must not modify).
+Composer ground-truth (users must not modify).
 `depends_on.syms` is the forward callee/reference set: each record is `{name,
 defined_in, declared_in}`, with `defined_in` nullable for externals (e.g. libc
 functions not in the DB) -- resolve via `defined_in` first, else

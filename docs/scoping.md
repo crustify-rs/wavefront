@@ -1,6 +1,6 @@
 # Scoping
 
-A config names the files a campaign owns. Wavefront composes from them, in
+A config names the files a project owns. Wavefront composes from them, in
 memory, an inventory with two sections and one view; nothing is written to
 disk. Field meaning of the config itself is in the
 [README](../README.md#inputs).
@@ -85,7 +85,7 @@ The default graph and schedule are body-deep:
 A library split into several configs is therefore scheduled once per
 config, each schedule holding its own items. The relations between configs,
 including cast edges whose two ends two configs own, show in the graph of a
-campaign-wide config whose `api_headers` are their union.
+project-wide config whose `api_headers` are their union.
 
 ## Queries
 

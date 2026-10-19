@@ -1,255 +1,196 @@
 # Wavefront
 
-Deterministic semantic analysis and scheduling for C-to-Rust work. It does not
-run translation agents and does not know whether a campaign wraps or ports.
+Wavefront analyzes a C codebase and schedules its translation to Rust. It
+extracts entities and dependencies with CodeQL, builds a cycle-free
+dependency graph of the codebase's types and symbols, and packs that graph
+into ordered waves of batches. Each batch can be translated once the waves
+before it are complete. Wavefront also records the ownership findings that
+users submit for each type and symbol.
 
-Python 3.13 or newer is required. Install with:
+Wavefront is objective-neutral: a schedule orders the work but does not
+specify whether each item is wrapped or ported.
+
+## Requirements
+
+- Python 3.13 or newer
+- The [CodeQL CLI](https://github.com/github/codeql-cli-binaries), on `PATH`
+
+## Installation
 
 ```sh
+git clone https://github.com/crustify-rs/wavefront.git
+cd wavefront
 python -m pip install -e .
+codeql pack install src/
 ```
 
-## Inputs
-
-Every command starts with the explicit repository root. Queries and schedules
-also take the exact authored inventory config:
+## Usage
 
 ```text
-wavefront REPO_ROOT [--config PATH] COMMAND ...
+wavefront REPO_ROOT --config PATH COMMAND ...
 ```
 
-| Argument | Meaning |
-|---|---|
-| `REPO_ROOT` | Explicit repository root. The oracle never searches parent directories for it. |
-| `--config PATH` | Required by every command. The `wavefront-config.json` to compose; relative paths resolve from `REPO_ROOT`. |
+`REPO_ROOT` is the root of the C repository. `--config` names its
+`wavefront-config.json`; a relative path is resolved from `REPO_ROOT`.
 
-An authored `wavefront-config.json` may live anywhere. Campaign-wide and
-narrowed scheduling configs may use any repository layout:
+### Configuration
 
 ```json
 {
   "state_dir": ".wavefront",
   "impl_files": ["src/"],
-  "api_headers": ["include/public.h"],
-  "out_of_scope": {"paths": []},
+  "api_headers": ["include/widget.h"],
+  "out_of_scope": {"paths": ["src/tests/"]},
   "t3_dir": "t3"
 }
 ```
 
-`state_dir` is the explicit repository-relative or absolute home for CodeQL
-tables, ownership findings, and disposable caches. Inventory paths are
-repository-relative. A trailing slash selects a directory
-recursively. `impl_files` names implementation sources and private headers;
-`api_headers` names the headers that publish the target API. Both sets are
-always inventory inputs.
-
-`t3_dir` is optional and relative to `state_dir`. It holds the third table
-tier: dependencies the extracted T1/T2 facts cannot show, such as a `void *`
-handed on through calls, and the macros accepted as type generators. They
-are authored outside wavefront, checked against T1 when loaded, and become
-DAG edges. See [`docs/artifacts/t3.md`](docs/artifacts/t3.md).
-
-## Documentation
-
-| doc | covers |
+| Key | Meaning |
 |---|---|
-| [`docs/graph.md`](docs/graph.md) | the dependency graph: nodes, edges, type erasure, cycles, polymorphism, limitations |
-| [`docs/scoping.md`](docs/scoping.md) | targeted and imported sections, the API view, default and API mode |
-| [`docs/batching.md`](docs/batching.md) | selection, waves, and the batch budgets |
-| [`docs/artifacts/`](docs/artifacts/) | field meaning of type and symbol records, schedules, and T3 tables |
+| `state_dir` | Directory for the CodeQL database and tables, ownership findings, and caches. |
+| `impl_files` | Sources and private headers that implement the library. |
+| `api_headers` | Headers that publish the library's API. |
+| `out_of_scope.paths` | Files excluded from `impl_files` and `api_headers`. |
+| `t3_dir` | Optional. Directory, relative to `state_dir`, holding the T3 tables. |
 
-## Commands
+Paths are relative to `REPO_ROOT`. A trailing slash selects a directory
+recursively. See [`examples/wavefront-config.json`](examples/wavefront-config.json).
 
-### `extract-ql`
+### 1. Extract
+
+Build the project under CodeQL, then extract the T1 (entity) and T2 (edge)
+tables into `<state_dir>/codeql/`:
 
 ```sh
-wavefront REPO_ROOT --config PATH extract-ql
+codeql database create REPO_ROOT/.wavefront/codeql/db \
+  --language=cpp --source-root=REPO_ROOT --command="make -j"
+wavefront REPO_ROOT --config wavefront-config.json extract-ql
 ```
 
-Runs the bundled T1 entity and T2 edge queries against
-`<state_dir>/codeql/db/`, writing CSVs under `<state_dir>/codeql/{t1,t2}/`. It
-does not create the CodeQL database: build the project under
-`codeql database create` first. Run extraction again only when the database or
-query pack changes.
+Run `extract-ql` again only when the database changes.
 
-### `query`
+### 2. Query
 
 ```sh
-wavefront REPO_ROOT --config PATH query SUBJECT [FLAGS]
+wavefront REPO_ROOT --config PATH query {types,symbols,files,dag} [FLAGS]
 ```
 
-`SUBJECT` is `types`, `symbols`, `files`, or `dag`. Queries are read-only
-except for `query types --update` and `query symbols --update`.
-
-#### Type and symbol records
-
-With no `--name`, `query types` and `query symbols` enumerate names. One name
-returns its complete record; several names return several complete records.
-
-Flags shared by `types` and `symbols`:
-
-| Flag | Meaning |
+| Subject | Output |
 |---|---|
-| `--name NAME [NAME ...]` | Introspect one or more entities instead of enumerating. The option may be repeated. |
-| `--file FILE [FILE ...]` | Restrict enumeration or disambiguate entities with the same name by defining file. |
-| `--targeted-only` | Keep entities owned by the configured target. Mutually exclusive with `--imported-only`. |
-| `--imported-only` | Keep external dependencies reached by the target. Mutually exclusive with `--targeted-only`. |
-| `--api-only` | Keep declarations published by `api_headers`. This axis composes with targeted/imported selection. |
-| `--in-tree` | Enumeration only: keep entities defined inside the repository. Mutually exclusive with `--out-of-tree`. |
-| `--out-of-tree` | Enumeration only: keep entities defined outside the repository. Mutually exclusive with `--in-tree`. |
-| `--schema` | Print the record field definitions and invariants. No name is required. |
-| `--update-help` | Print the JSON shape accepted by `--update`. No name is required. |
-| `--update FINDINGS` | Validate and merge findings for exactly one named entity. Use a path or `-` for stdin. |
+| `types` | Type records: fields, casts, users, lifecycle routines. |
+| `symbols` | Symbol records: signatures, pointer ownership, callers and callees. |
+| `files` | The targeted, imported, and API file sets. |
+| `dag` | Dependency closures, graph layers, and cycle twins. |
 
-Type-only views require exactly one `--name`:
+Common flags:
 
-| Flag | Meaning |
+| Flag | Effect |
 |---|---|
-| `--fields` | Print declared fields and their structural and ownership records. With `--targeted-only`, keep fields reached by target code. |
-| `--lifecycle-ops` | Print the functions known to drop, dispose fields of, clone, or construct the type. |
-| `--users` | Print the complete function footprint of the type. Targeted/imported flags intersect that footprint. |
-| `--field-touchers` | Print each field and all functions that access it. With `--targeted-only`, keep fields reached by target code. |
+| `--name NAME ...` | Select entities by name. Without it, `types` and `symbols` list names. |
+| `--file FILE ...` | Select or disambiguate entities by defining file. |
+| `--targeted-only`, `--imported-only` | Keep entities the config owns, or the external ones it reaches. |
+| `--api-only` | Keep entities the `api_headers` publish. |
+| `--schema` | Print the meaning of each record field. |
+| `--update FINDINGS` | Submit ownership findings for one named entity (`-` reads stdin). |
+| `--update-help` | Print the JSON shape `--update` accepts. |
+| `--in-tree`, `--out-of-tree` | Listing only: keep entities defined inside, or outside, the repository. |
 
-Symbol-only views:
+Type views (one `--name`):
 
-| Flag | Meaning |
+| Flag | Effect |
 |---|---|
-| `--lifetime-for SPEC` | Find submitted droppers, disposers, cloners, and constructors acting on a type, `void`, or `string`. No `--name` is needed. |
-| `--taking SPEC` | Find candidate symbols with an argument matching a type, `void`, or `string`. No `--name` is needed. |
-| `--returning SPEC` | Find candidate symbols whose pointer return matches a type, `void`, or `string`: allocators and constructors that hand back a new object, which `--taking` cannot see. No `--name` is needed. |
-| `--calling FN[,FN...]` | With `--taking` or `--returning`, keep candidates that reach one of the named functions. |
-| `--callees` | Walk outward from `--name` through the raw call graph. |
-| `--callers` | Walk backward from `--name` through the raw call graph. |
-| `--depth N` | Hop limit for `--calling`, `--callees`, or `--callers`; default `1`. |
-| `--array` | With `--taking`, `--returning`, or `--lifetime-for`, keep matches classified as arrays. |
+| `--fields` | Print the declared fields and their records. |
+| `--lifecycle-ops` | Print the routines that drop, dispose, clone, or construct the type. |
+| `--users` | Print every function that uses the type. |
+| `--field-touchers` | Print each field and the functions that access it. |
+
+Symbol searches:
+
+| Flag | Effect |
+|---|---|
+| `--taking SPEC` | Find functions with an argument of type `SPEC` (a type, `void`, or `string`). |
+| `--returning SPEC` | Find functions that return a pointer of type `SPEC`. |
+| `--lifetime-for SPEC` | Find the submitted lifecycle routines acting on `SPEC`. |
+| `--calling FN,...` | With `--taking` or `--returning`, keep functions that reach one of `FN`. |
+| `--callees`, `--callers` | Walk the call graph forward or backward from `--name`. |
+| `--depth N` | Hop limit for the walks above; default `1`. |
+| `--array` | Keep matches classified as arrays. |
+
+Graph views (`query dag`):
+
+| Flag | Effect |
+|---|---|
+| `--name NAME ...` | Print the dependency closure of the named nodes. |
+| `--depth N` | Limit the closure to `N` hops. |
+| `--layer N` | Print every node in layer `N`. |
+| `--scc hi-deps\|lo-deps` | With `--name`, print the cycle twins recorded in `fallback` or `back_fill`. |
+| `--loc` | Report estimated lines of code. |
+| `--api-headers-only` | Use the public-signature graph. |
 
 Examples:
 
 ```sh
-# Enumerate the target's published types.
-wavefront /work/project --config crustify/wavefront/wavefront-config.json \
-  query types --api-only
+# List the published types.
+wavefront /src/widget --config wavefront-config.json query types --api-only
 
-# Inspect one type, then discover the findings schema.
-wavefront /work/project --config crustify/wavefront/wavefront-config.json \
+# Show one type's fields.
+wavefront /src/widget --config wavefront-config.json \
   query types --name widget_st --fields
-wavefront /work/project --config crustify/wavefront/wavefront-config.json \
-  query types --update-help
 
-# Find functions that take widget_st and eventually call widget_release.
-wavefront /work/project --config crustify/wavefront/wavefront-config.json \
-  query symbols \
-  --taking widget_st --calling widget_release --depth 3
+# Find functions that take widget_st and reach widget_release within 3 calls.
+wavefront /src/widget --config wavefront-config.json \
+  query symbols --taking widget_st --calling widget_release --depth 3
+
+# Show the dependencies of widget_new.
+wavefront /src/widget --config wavefront-config.json \
+  query dag --name widget_new --depth 1
 ```
 
-#### File inventory
+Each subject's `--help` lists its complete flags.
 
-`query files` prints one path per line. With no selector it prints labeled API,
-targeted, and imported sections.
-
-| Flag | Meaning |
-|---|---|
-| `--api-only` | Print headers named by the API inventory. |
-| `--targeted-only` | Print files owned by the target. |
-| `--imported-only` | Print files in the derived external dependency closure. |
-
-#### Dependency graph
-
-`query dag` has three modes: `--name` prints a dependency closure, `--layer`
-prints a complete topological layer, and `--name ... --scc` prints flattened
-cycle neighbors. Output is JSON grouped into types, callbacks, functions,
-globals, and macros.
-
-| Flag | Meaning |
-|---|---|
-| `--name NAME [NAME ...]` | Seed a dependency closure, or select entities for `--scc`. |
-| `--layer N` | Print every node at layer `N`; mutually exclusive with `--name`. |
-| `--scc hi-deps\|lo-deps` | With `--name`, print higher-layer fallback twins or lower-layer back-fill twins from a flattened cycle. |
-| `--file FILE [FILE ...]` | Disambiguate a named node by defining file. |
-| `--depth N` | Limit closure traversal to `N` dependency hops; the default is the full closure. |
-| `--loc` | Report translated LoC estimates for named entities or a layer. |
-| `--api-headers-only` | Use the public-signature graph: omit function bodies, retain fields of public definitions, and keep forward declarations opaque. |
-| `--api-only` | Restrict layer/LoC output to the published API view. |
-| `--targeted-only` | Restrict layer/LoC output to target-owned entities. |
-| `--imported-only` | Restrict layer/LoC output to imported entities. |
-
-### `schedule`
+### 3. Schedule
 
 ```sh
 wavefront REPO_ROOT --config PATH schedule --output PATH SELECTION [FLAGS]
 ```
 
-Scheduling selects semantic units, optionally closes over their dependencies,
-orders them into barrier-separated topological waves, and packs each wave into
-batches. It writes an objective-neutral sub-campaign schedule; the translation runner
-adds the wrap/port objective and execution concurrency later.
-
-Selection and output flags:
-
-| Flag | Meaning |
-|---|---|
-| `--output PATH` | Required. Write to this exact path; its parent directory must already exist. |
-| `--name NAME [NAME ...]` | Select named types or symbols. The option may be repeated. |
-| `--file FILE [FILE ...]` | Select every unit defined in these files, or narrow a named selection to them. |
-| `--dag-layer N` | Select every eligible node at topological layer `N`; it may be combined with names. |
-| `--lifetime-for void\|string` | Emit the synthetic raw-pointer or string-lifetime wave. This is exclusive of names, files, and layers. |
-| `--transitive` | Include the selected units' in-scope dependency closure. |
-| `--skip NAME [NAME ...]` | Remove named units after selection. The option may be repeated. |
-| `--api-headers-only` | Seed from published declarations and traverse the public-signature graph rather than implementation bodies. Imported items are not scheduled: another config's `api_headers` own them. They remain dependencies, and `query dag --imported-only` lists them. |
-
-Batch flags:
-
-| Flag | Default | Meaning |
+| Flag | Default | Effect |
 |---|---:|---|
-| `--max-syms N` | `25` | Maximum symbols or callbacks in one symbol batch. |
-| `--max-loc N` | `500` | Maximum summed symbol body LoC in one batch; `0` disables this cap. |
-| `--max-types N` | `2` | Maximum types in one type batch. |
-| `--min-fields N` | `20` | Close a type batch before adding another type once this declared-field threshold is reached; wide types are isolated. |
+| `--output PATH` | | Required. Output file; its directory must exist. |
+| `--name NAME ...` | | Select named types or symbols. |
+| `--file FILE ...` | | Select every unit defined in these files. |
+| `--dag-layer N` | | Select every unit in graph layer `N`. |
+| `--lifetime-for void\|string` | | Emit the single raw-lifetime wave. |
+| `--transitive` | | Add the selection's dependency closure. |
+| `--skip NAME ...` | | Remove named units. |
+| `--api-headers-only` | | Schedule the public API from the public-signature graph. |
+| `--max-types N` | `2` | Types per type batch. |
+| `--min-fields N` | `20` | Declared fields that close a type batch. |
+| `--max-syms N` | `25` | Symbols per symbol batch. |
+| `--max-loc N` | `500` | Body lines per symbol batch; `0` disables the limit. |
 
-For example:
+Example:
 
 ```sh
-mkdir -p /work/project/crustify/campaigns/widget/logs
-
-wavefront /work/project \
-  --config crustify/campaigns/src/widget/wavefront-config.json schedule \
-  --name widget_new widget_free \
-  --transitive \
-  --max-types 2 \
-  --output /work/project/crustify/campaigns/widget/waves.json
+wavefront /src/widget --config wavefront-config.json schedule \
+  --file include/widget.h --transitive --api-headers-only \
+  --output /src/widget/waves.json
 ```
 
-How units are selected and packed is in [`docs/batching.md`](docs/batching.md).
-Field meaning is in [`docs/artifacts/schedule.md`](docs/artifacts/schedule.md); the
-complete schema-v3 output example is
-[`examples/waves.json`](examples/waves.json). Its major sections are:
+See [`examples/waves.json`](examples/waves.json) for the output.
 
-- `budgets` and `summary`: the applied packing settings and aggregate counts;
-- `waves`: sequential, barrier-separated groups containing concurrently executable batches;
-- `waves[*].batches[*].items`: every selected unit exactly once; dependency
-  references carry `scope: wrap|port|ext`, so no duplicate plan or dependency
-  table or wave-level layer copy is needed;
-- `field_anchors`: fields a type wrapper should expose for this target.
+## Documentation
 
-Waves execute in order. Batches within a wave may execute concurrently.
+| Document | Contents |
+|---|---|
+| [`docs/graph.md`](docs/graph.md) | The dependency graph: nodes, edges, type erasure, cycles, polymorphism, and limitations. |
+| [`docs/scoping.md`](docs/scoping.md) | Targeted and imported entities, the API view, and default and API modes. |
+| [`docs/batching.md`](docs/batching.md) | Selection, waves, and batch limits. |
+| [`docs/artifacts/`](docs/artifacts/) | Field reference for type and symbol records, schedules, and T3 tables. |
 
-## Artifacts
+## Maintainers
 
-All semantic artifacts live under the config's explicit `state_dir`:
-
-- `codeql/{db,t1,t2}` — database and extracted facts;
-- `<t3_dir>/` — authored relations (`chased_casts.csv`, `type_generators.csv`), when configured;
-- `ownership-store.json` — submitted ownership findings;
-- `.cache/` — disposable deterministic caches.
-
-Dependency-graph caches are content-addressed by the config hash, so identical
-configs share a cache regardless of filename and editing a config cannot reuse
-a stale graph.
-
-The inventory is composed in memory. There is no persisted `scope.json` or
-`oracle.json`. Before using a query subject for the first time, also read its
-live `--help`; it is the authority for validation rules and edge cases. Submit
-findings only with `--update`; never edit `ownership-store.json` directly.
+- Marius Momeu, marius.momeu@berkeley.edu
 
 ## Acknowledgements
 

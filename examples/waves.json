@@ -1,7 +1,7 @@
 {
   "schema_version": 3,
   "oracle_config": {
-    "path": "crustify/campaigns/src/example/wavefront-config.json",
+    "path": "examples/wavefront-config.json",
     "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
   },
   "api_headers_only": false,
@@ -59,7 +59,7 @@
               "name": "widget_new",
               "defined_in": "src/widget.c",
               "kind": "symbol",
-              "source_kind": "function_def",
+              "source_kind": "function_exported",
               "layer": 1,
               "loc": 36,
               "deps": {

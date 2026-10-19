@@ -2,7 +2,7 @@
 
 `wavefront schedule` turns a selection of graph nodes into a schedule:
 sequential waves, each a set of batches that may run concurrently, each
-batch one agent's worklist. It reads the layers of the dependency graph
+batch one unit of work for one user. It reads the layers of the dependency graph
 ([`graph.md`](graph.md)); field meaning of the output is in
 [`artifacts/schedule.md`](artifacts/schedule.md).
 
@@ -29,7 +29,7 @@ synthetic `raw-lifetime` unit and selects nothing from the graph.
 
 The selected units are grouped by their graph layer. Each layer is a wave,
 except that adjacent layers fold into one wave while their merged units
-still pack into a single batch. One agent then receives them, in layer
+still pack into a single batch. One user then receives them, in layer
 order, so a producer still comes before its consumer; a fold never creates
 two batches, which would run in parallel. Folding applies whether or not
 `--transitive` chose the units.

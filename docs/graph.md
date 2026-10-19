@@ -9,7 +9,7 @@ signatures name it, a callee below its callers. Layer 0 holds the leaves;
 a node in layer N depends only on nodes in layers below N.
 
 The graph is a pure function of the extracted CodeQL facts (T1, T2), the
-authored T3 tables and the config's inventory. Ownership findings an agent
+authored T3 tables and the config's inventory. Ownership findings a user
 submits never move a node, so the same inputs always give the same layers.
 [`scoping.md`](scoping.md) describes which entities a config owns and
 imports, and [`batching.md`](batching.md) how a schedule cuts the layers into
@@ -47,7 +47,7 @@ defines locally, recur across translation units.
 A type's lifecycle routines are not folded into it: each is a symbol node
 that depends on the type through its own signature. Folding would project
 the call graph onto the types, and make the graph depend on which routines
-agents judge droppers or cloners.
+users judge droppers or cloners.
 
 ## Edges
 
@@ -84,16 +84,16 @@ edges for it:
 
 - **parameter reads**: a function whose own body reads its `void *`
   parameter as `T` depends on `T`, as on a typed parameter
-  (`av_vlog(void *avcl)` reads `*(AVClass **)avcl`);
+  (`log_vmsg(void *ctx)` reads `*(const ObjClass **)ctx`);
 - **field variants**: the types stored into a type-erased field or read out
   of it are its variants (`erased_as` in the type records). Each variant
   depends on the field's owner, as a derived type on its base: the owner is
   the generic container, and each variant one instance of it
-  (`AVFrameSideData.data` read as `AVStereo3D`). In Rust the owner can be
+  (`SideData.data` read as `HdrMetadata`). In Rust the owner can be
   generic over its variants, bound by a marker trait;
 - **slot-mediated casts**: two named types joined by a cast into and out of
-  one slot (`av_log(avctx)` stores an `AVCodecContext` where `av_vlog`
-  reads an `AVClass`) are a cast pair like a direct cast (`casted_via`), and
+  one slot (`log_msg(dec)` stores a `Decoder` where `log_vmsg` reads an
+  `ObjClass`) are a cast pair like a direct cast (`casted_via`), and
   are ordered as [Polymorphism](#polymorphism) describes.
 
 What wavefront cannot see, and what it sees wrongly, is corrected in T3
@@ -107,9 +107,9 @@ Cast edges come from function bodies, which can reach any type. In the API
 graph they are therefore added in a second phase: the API closure is built
 first, over field and signature edges only, from the items the
 `api_headers` publish, and a cast edge is then added only when both of its
-ends are in that closure. A cast to an internal type (`AVCodec -> FFCodec`)
+ends are in that closure. A cast to an internal type (`Codec -> CodecInternal`)
 thus neither pulls the type in nor reorders around it, while one to a public
-type another library owns (`AVCodecContext -> AVClass`) is kept. The slot
+type another library owns (`Decoder -> ObjClass`) is kept. The slot
 that witnesses a cast is evidence, not a node, and need not be public.
 
 ## Cycles
@@ -151,10 +151,10 @@ to types in the API closure.
 
 Field variants need no centrality: they are directed by construction, from
 the variant to its owner. They can still close a cycle with field edges. A
-context whose `priv_data` is read as `AVClass` by the first-member
-convention (the private struct's first member is an `AVClass *`) makes
-`AVClass` a variant of the context, while the context's `av_class` field
-makes the context depend on `AVClass`. That variant is no instance of the
+context whose `priv` is read as `ObjClass` by a first-member convention
+(the private struct's first member is an `ObjClass *`) makes `ObjClass` a
+variant of the context, while the context's own `cls` field makes the
+context depend on `ObjClass`. That variant is no instance of the
 owner, and a T3 `drop` row removes it. A cycle that a field edge closes with
 a cast edge is otherwise flattened like any other.
 
@@ -171,8 +171,8 @@ by a type check joins every type stored into that slot.
 
 False negatives (missing edges):
 
-- a type-erased value handed on through calls (`av_log(void *avcl)` only
-  passes `avcl` to `av_vlog`): only the function whose body reads it
+- a type-erased value handed on through calls (`log_msg(void *ctx)` only
+  passes `ctx` to `log_vmsg`): only the function whose body reads it
   depends on the type. Following the chain would join every type reaching
   the callee with every type any branch reads, so it is left to T3 `add`
   rows;
@@ -183,10 +183,10 @@ False negatives (missing edges):
 
 False positives (spurious edges):
 
-- an alignment pun: a buffer read through `union unaligned_32` by the
-  `AV_RN*` macros is no variant of its owner;
-- a reused slot: `AVStream.priv_data` holding an `AVPacket` in one muxer;
-- the `AVClass` first-member convention (see [Polymorphism](#polymorphism));
+- an alignment pun: a buffer read through `union unaligned32` by an
+  unaligned-load macro is no variant of its owner;
+- a reused slot: `Stream.priv` holding a `Packet` in one file;
+- a first-member convention (see [Polymorphism](#polymorphism));
 - casts are keyed by tag alone (`casts.csv` names no file), so two
   unrelated types sharing a tag share their cast edges;
 - a callee named without a file that matches several same-named symbols
