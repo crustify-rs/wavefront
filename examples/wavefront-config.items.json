@@ -1,0 +1,25 @@
+{
+  "_comment": [
+    "Example wavefront-config.json of a config narrowed to entities, passed with --config.",
+    "It shares src/mem.c and include/widget.h with the config that owns the rest of them,",
+    "which names the same two entities in out_of_scope.items. See docs/scoping.md#items."
+  ],
+  "state_dir": ".wavefront",
+  "impl_files": [
+    "src/mem.c"
+  ],
+  "api_headers": [
+    "include/widget.h"
+  ],
+  "items": [
+    {
+      "name": "widget_alloc",
+      "defined_in": "src/mem.c"
+    },
+    {
+      "name": "widget_free",
+      "defined_in": "src/mem.c"
+    }
+  ],
+  "t3_dir": "t3"
+}

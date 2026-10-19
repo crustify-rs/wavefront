@@ -14,10 +14,37 @@ matching `out_of_scope.paths` is removed. The resulting candidates are then
 anchored on the T1 tables: a file the traced build never compiled, or whose
 body an `#ifdef` elides, contributes no entities.
 
+## Items
+
+A config owns its files whole by default. Two optional lists narrow it to entities, so
+that two configs can share a file and split what it defines:
+
+- `items` names the only entities the config owns: its targeted section holds those of
+  its files' entities that the list names, and nothing else;
+- `out_of_scope.items` names entities the config never owns, although its files define
+  or publish them.
+
+Each entry is `{"name": ..., "defined_in": ...}`: the entity's name and the
+repo-relative file of its definition, or of its declarations when the database holds no
+definition. A typedef follows the type it names, so naming a struct or its typedef
+selects both. A header macro is imported in every config, as the Targeted section
+describes, so an entry cannot select one.
+
+An entity a list names but the config's files do not define or publish is an error, as
+is one both lists name. An entity left out of a config's targeted section by either list
+is not dropped: whatever reaches it imports it, as the Imported section describes.
+
+The lists are the counterparts of one another across configs. A config narrowed by
+`items` shares its files with the config that owns the rest of them, which names the same
+entities in `out_of_scope.items`, so that each entity is targeted by exactly one config
+and scheduled once. A project-wide config, whose files are the union of every config's,
+sets neither list and owns everything.
+
 ## Targeted
 
 The **targeted** section is what the config owns: every entity whose
-definition sits in `impl_files` or `api_headers`. An entity with no
+definition sits in `impl_files` or `api_headers`, narrowed by its
+[items](#items). An entity with no
 definition in the database is targeted when all of its declarations sit in
 those files. A typedef takes the section of the type it finally names, so a
 typedef and its struct never fall on opposite sides. A macro defined in a
@@ -77,7 +104,7 @@ The default graph and schedule are body-deep:
   only between its nodes ([`graph.md`](graph.md#type-erasure)), so a cast
   never pulls a type into the closure;
 - a schedule seeds only from the api view, and holds only items the config
-  owns. An imported item is a node of the graph and a dependency of the
+  owns, after its [items](#items) narrow it. An imported item is a node of the graph and a dependency of the
   items that reach it, but not a unit: the config whose `api_headers` own it
   schedules it, after its own fields. `query dag --name X --imported-only`
   lists X's imported dependencies.

@@ -54,7 +54,9 @@ wavefront REPO_ROOT --config PATH COMMAND ...
 | `state_dir` | Directory for the CodeQL database and tables, ownership findings, and caches. |
 | `impl_files` | Sources and private headers that implement the library. |
 | `api_headers` | Headers that publish the library's API. |
+| `items` | Optional. The entities the config owns, which narrow it to them; see [Items](docs/scoping.md#items). |
 | `out_of_scope.paths` | Files excluded from `impl_files` and `api_headers`. |
+| `out_of_scope.items` | Optional. Entities the config never owns, although its files define or publish them. |
 | `t3_dir` | Optional. Directory, relative to `state_dir`, holding the T3 tables ([`examples/t3/`](examples/t3/)). |
 
 Paths are relative to `REPO_ROOT`. A trailing slash selects a directory
