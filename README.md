@@ -1,14 +1,18 @@
 # Wavefront
 
-Wavefront analyzes a C codebase and schedules its translation to Rust. It
-extracts entities and dependencies with CodeQL, builds a cycle-free
-dependency graph of the codebase's types and symbols, and packs that graph
-into ordered waves of batches. Each batch can be translated once the waves
-before it are complete. Wavefront also records the ownership findings that
-users submit for each type and symbol.
+Wavefront analyzes a C codebase and schedules its units in dependency order
+for translation to Rust. It extracts entities and dependencies with CodeQL,
+builds a cycle-free dependency graph of the codebase's types and symbols, and
+packs that graph into ordered waves of batches. Each batch can be translated
+once the waves before it are complete.
 
-Wavefront is objective-neutral: a schedule orders the work but does not
-specify whether each item is wrapped or ported.
+Wavefront keeps its analysis simple: it infers facts from the codebase without
+data-flow or points-to analysis. It is built for neuro-symbolic workflows, in
+which human or LLM reasoning complements its static facts. You can state the
+polymorphic and type-erased edges it cannot infer; Wavefront loads them into
+the dependency graph, and its schedules order units by them. You can also
+record pointer-level ownership and lifecycle properties for each type and
+symbol, which Wavefront returns with their records.
 
 ## Requirements
 

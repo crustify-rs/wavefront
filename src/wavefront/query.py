@@ -1014,9 +1014,9 @@ def _findings_schema(kind: str) -> dict:
         }
     return {
         "_subject": "symbol",
-        "_see": "query syms --schema for facet meaning + enforced invariants",
+        "_see": "query symbols --schema for facet meaning + enforced invariants",
         "ptr_args": {
-            "<position:int>": {
+            "<arg name>": {
                 "ptr": {
                     "scalar": ("null | {by_val: true} | {by_ref: {owned: <owned>|"
                                "null, borrowed: {lifetime}|null}}"),
@@ -1051,7 +1051,7 @@ def _apply_ptr_agent(entry: dict, ptr_args_f: dict | None,
                      ptr_ret_f: dict | None, contract: dict | None = None,
                      has_lifetime: bool = False) -> None:
     """Apply one agent ownership contract onto an entry's structural records, in
-    place: `ptr_args` (keyed by position), `ptr_ret`, and the entry-level
+    place: `ptr_args` (keyed by arg name), `ptr_ret`, and the entry-level
     `lifetime`. The agent-owned ownership block nests under each record's `ptr`
     key (isolated from the composer's position/name/type/const/depth), so it is
     replaced WHOLESALE -- like a struct field's ptr.
@@ -1061,9 +1061,9 @@ def _apply_ptr_agent(entry: dict, ptr_args_f: dict | None,
     explicit `null` clears it. Taking the whole `contract` dict is what lets a
     callback FORK carry its own role — a fork deep-copies the primary, so
     without this it would silently inherit the primary's."""
-    by_pos = {str(a.get("position")): a for a in entry.get("ptr_args") or []}
-    for pos, rec in (ptr_args_f or {}).items():
-        arg = by_pos.get(str(pos))
+    by_name = {a.get("name"): a for a in entry.get("ptr_args") or []}
+    for arg_name, rec in (ptr_args_f or {}).items():
+        arg = by_name.get(arg_name)
         if arg is not None and isinstance(rec, dict) and "ptr" in rec:
             arg["ptr"] = rec["ptr"]
     if (ptr_ret_f is not None and isinstance(ptr_ret_f, dict)
@@ -1580,7 +1580,7 @@ def _update_sym(layout, target, name: str, defined_in: str | None,
     """Ingest findings for one symbol and merge them into the ownership store.
 
     `src` is a path, or ``"-"`` for stdin. Findings shape:
-    ``{macro?, ptr_args?: {<position>: <ptr block>}, ptr_ret?: <ptr block>,
+    ``{macro?, ptr_args?: {<arg name>: <ptr block>}, ptr_ret?: <ptr block>,
     forks?: [{ptr_args, ptr_ret, callsites}]}``, where a ptr block is the
     structured ownership record ``{array, string, owned, borrowed, nullable,
     mutable, note}`` shared with a struct field's `ptr`. `macro` is the
@@ -1588,7 +1588,7 @@ def _update_sym(layout, target, name: str, defined_in: str | None,
     submitted). `forks` (callbacks only) splits a typedef whose invokers realize
     different ownership contracts into extra ``kind:"callback"`` entries
     (variant>=1), partitioning ``used_by.call`` — one Rust wrapper per entry. We
-    HARD-REJECT on unknown keys, a bad macro block, an unknown arg position, a
+    HARD-REJECT on unknown keys, a bad macro block, an unknown arg name, a
     `ptr_ret` on a non-pointer-return, a fork on a non-callback / with an unknown
     or double-claimed callsite, or ptr-invariant violations; else partial-merge
     (primary) + idempotent fork replace, under a lock + atomic rename."""
@@ -1665,13 +1665,19 @@ def _update_sym(layout, target, name: str, defined_in: str | None,
             else:
                 errors.extend(_locked_by_errors("locked_by", f["locked_by"]))
 
-        arg_by_pos = {str(a.get("position")): a
-                      for a in entry.get("ptr_args") or []}
+        # `ptr_args` is keyed by arg NAME, like a borrowed `arg:<name>`
+        # lifetime and `lifetime.for`: names are the one canonical spelling,
+        # and the store keys on them too. Every arg has one (the composer
+        # names an unnamed arg `arg<pos>`).
+        arg_by_name = {a["name"]: a for a in entry.get("ptr_args") or []
+                       if a.get("name")}
+        name_at = {str(a.get("position")): a["name"]
+                   for a in arg_by_name.values()}
         # Valid `arg:<ref>` lifetime targets: each pointer arg's NAME (names are
         # the one canonical spelling; the positional `arg:<idx>` form is rejected).
         # A borrowed lifetime that names an arg (on an arg OR the return) must
         # land on one of these.
-        valid_args = {a.get("name") for a in arg_by_pos.values() if a.get("name")}
+        valid_args = set(arg_by_name)
         pr = f.get("ptr_ret")
         has_args = bool(entry.get("ptr_args"))
 
@@ -1683,15 +1689,12 @@ def _update_sym(layout, target, name: str, defined_in: str | None,
             reads the SUBMITTED block where there is one and the on-disk block
             otherwise, rather than the pre-update state alone."""
             out = {}
-            for a in arg_by_pos.values():
-                if not a.get("name"):
-                    continue
+            for a in arg_by_name.values():
                 out[a["name"]] = a.get("ptr")
-            for pos, rec in (args_f or {}).items():
-                a = arg_by_pos.get(str(pos))
-                if a is not None and a.get("name") and isinstance(rec, dict) \
+            for arg_name, rec in (args_f or {}).items():
+                if arg_name in arg_by_name and isinstance(rec, dict) \
                         and "ptr" in rec:
-                    out[a["name"]] = rec["ptr"]
+                    out[arg_name] = rec["ptr"]
             return out
 
         def _post_merge_ret_ptr(ret_f):
@@ -1711,10 +1714,13 @@ def _update_sym(layout, target, name: str, defined_in: str | None,
                 if not isinstance(rec, dict):
                     errors.append(f"{where}ptr_args[{pos}]: must be an object")
                     continue
-                if str(pos) not in arg_by_pos:
+                if pos not in arg_by_name:
+                    hint = (f"; ptr_args is keyed by arg name, and position "
+                            f"{pos} is {name_at[pos]!r}" if pos in name_at
+                            else f"; expected one of {sorted(arg_by_name)}")
                     errors.append(
-                        f"{where}ptr_args: no pointer arg at position {pos} "
-                        f"in {name!r}")
+                        f"{where}ptr_args: no pointer arg named {pos!r} "
+                        f"in {name!r}{hint}")
                     continue
                 bad = set(rec) - {"ptr"}
                 if bad:
@@ -1733,7 +1739,7 @@ def _update_sym(layout, target, name: str, defined_in: str | None,
                         f"{where}ptr_args[{pos}].ptr: unknown key(s) {sorted(bad2)}")
                 errors.extend(_sym_ptr_invariant_errors(
                     f"{where}ptr_args[{pos}].ptr", blk,
-                    bool(arg_by_pos[str(pos)].get("const")), is_ret=False,
+                    bool(arg_by_name[pos].get("const")), is_ret=False,
                     arg_names=valid_args))
             if ret_f is not None:
                 if not isinstance(ret_f, dict):
@@ -1782,7 +1788,7 @@ def _update_sym(layout, target, name: str, defined_in: str | None,
                         has_ret=entry.get("ptr_ret") is not None,
                         arg_depth_by_name={
                             a["name"]: a.get("depth")
-                            for a in arg_by_pos.values() if a.get("name")}))
+                            for a in arg_by_name.values()}))
 
         _check_ptr(f.get("ptr_args"), pr, "",
                    f.get("lifetime"), "lifetime" in f)
@@ -1890,7 +1896,7 @@ def _harvest_sym_agent(rec: dict, full: dict) -> None:
     store record, dropping every composer key on the way.
 
     `_apply_ptr_agent` is written against the full record (it needs
-    `ptr_args[i].name` / `position` to place a submission), so a submission is
+    `ptr_args[i].name` to place a submission), so a submission is
     applied to a scratch copy of the composed entry and harvested here. Keeps
     one implementation of the merge rules rather than a second one that knows
     only the store shape."""

@@ -59,8 +59,10 @@ A borrowed lifetime names its source in the vocabulary of the site:
 | field | `self` (the enclosing struct), `field:<name>` (a sibling field's storage), `static`, `other` |
 | global | `static`, `other` |
 
-A parameter is named by its name, never by its position. A pointer that is
-read only during the call borrows from itself: `arg:<its own name>`.
+A parameter is always named by its name, never by its position: in an
+`arg:<name>` lifetime, and as the key of `ptr_args` in a submission. A
+pointer that is read only during the call borrows from itself:
+`arg:<its own name>`.
 
 ## Access
 

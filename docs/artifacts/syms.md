@@ -113,7 +113,8 @@ const-qualified?), and `depth` (1 for `T*`, 2 for `T**`, ...).
 USER field -- each record carries a single `ptr` sub-object holding the
 ownership block. It nests under `ptr` -- isolated from the
 composer's top-level structural keys -- so `--update` replaces `ptr_args[i].ptr`
-/ `ptr_ret.ptr` WHOLESALE, and a submitted block must be complete.
+/ `ptr_ret.ptr` WHOLESALE, and a submitted block must be complete. A submission
+keys `ptr_args` by the parameter's `name`, never by its `position`.
 
 The properties are described in
 [`pointer-properties.md`](../pointer-properties.md). The composer emits
