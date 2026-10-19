@@ -186,7 +186,9 @@ See [`examples/waves.json`](examples/waves.json) for the output.
 | [`docs/graph.md`](docs/graph.md) | The dependency graph: nodes, edges, type erasure, cycles, polymorphism, and limitations. |
 | [`docs/scoping.md`](docs/scoping.md) | Targeted and imported entities, the API view, and default and API modes. |
 | [`docs/batching.md`](docs/batching.md) | Selection, waves, and batch limits. |
-| [`docs/artifacts/`](docs/artifacts/) | Field reference for type and symbol records, schedules, and T3 tables. |
+| [`docs/pointer-properties.md`](docs/pointer-properties.md) | The pointer properties recorded in the ownership store. |
+| [`docs/type-lifecycle.md`](docs/type-lifecycle.md) | Lifecycle roles, and how to find the routines that play them. |
+| [`docs/artifacts/`](docs/artifacts/) | Field reference for type and symbol records, the ownership store, schedules, and T3 tables. |
 
 ## Maintainers
 

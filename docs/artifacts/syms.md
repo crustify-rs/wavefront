@@ -64,9 +64,8 @@ Derived at read time, never stored and never submitted.
 
 ## _comment_user
 
-Free-text note from the user who analyzed the entity: the reasoning behind a
-judgement, the evidence for it, and anything the structured slots cannot carry.
-User-filled, absent until one is submitted.
+Free-text note on the entity. `query symbols --update` does not accept it:
+the reasoning behind a symbol's judgements goes in each pointer's `ptr.note`.
 
 ## declared_in
 
@@ -116,7 +115,9 @@ ownership block. It nests under `ptr` -- isolated from the
 composer's top-level structural keys -- so `--update` replaces `ptr_args[i].ptr`
 / `ptr_ret.ptr` WHOLESALE, and a submitted block must be complete.
 
-The composer emits `ptr: null`, so `null` means unanalyzed: whether a pointer
+The properties are described in
+[`pointer-properties.md`](../pointer-properties.md). The composer emits
+`ptr: null`, so `null` means unanalyzed: whether a pointer
 has been through a wrapper is a null check on one key. The keys of a
 filled block:
 
@@ -225,70 +226,8 @@ constructor's arg is not immutable -- all checked against the subject's `ptr` as
 AFTER the update, and skipped while that `ptr` is still `null` (there is no
 ownership fact yet to contradict).
 
-### How to discover lifetime primitives
-
-Unless otherwise stated, we are only interested in storage (i.e. heap allocation)
-droppers/freers, field disposers (for user-defined types taken by-value, i.e.
-embedded or on stack), their cloners/duplicators, and their constructors (an
-`alloc` returning a new object, or an `init` filling caller storage).
-
-Generally, we record a function as a lifetime primitive only if it has more than
-one caller / referencer / consumer, or if it is publicly exposed; if it only lives to
-serve as an internal routine with only callers that themselves are lifetime primitives,
-then we can skip recording it. Query `wavefront` to obtain callers / referencers.
-
-If your target type is:
-
-  - The special keyword `void`, then look for lifetime primitives for raw,
-  byte-level, untyped objects (`void *`). Look first for primitives from the
-  standard library (`free`, `munmap`, `mmap`, `calloc`, `malloc`, `realloc`,
-  `memcpy`, `memmove`, `strdup`, `strndup`, etc.). Then fetch the list of
-  project-defined lifetime primitives by querying `wavefront` for methods
-  calling the standard ones identified in the previous step. Continue looking up
-  a few more hops up the callgraph to identify lifetime primitives that are
-  specialized.  Filter releasers and cloners to those taking `void` as
-  argument (`--taking void`). Allocators hand their object back instead of
-  taking one -- `malloc(size_t)` takes no `void *` -- so find them by return
-  (`--returning void --calling malloc,calloc --depth N`) and submit each as an
-  `alloc` constructor. Record whether an allocator zeroes its memory (in the
-  record's `note`): a zeroing allocator returns initialized memory, a plain one
-  does not. A `realloc`-style routine releases and allocates the same slot, so
-  it is not a constructor (a constructor plays no other role). Look for
-  lifetime primitives that process both scalars and arrays.
-
-  - The special keyword `string`, then look for lifetime primitives for
-  NUL-terminated strings. You can fetch the list of lifetime candidates by
-  querying `wavefront` for methods taking a `char *`/ `unsigned char *` /
-  `u8 *`/`uint8_t *`/ etc. as an argument AND filtering for those calling one of
-  the raw/void lifetime primitives identified by a previous run. Continue
-  looking up a few more hops up the callgraph to identify more specialized
-  primitives. Note that some of the void-tier primitives may also release
-  / clone NUL-terminated strings, so they ought to be submitted too. String
-  constructors return a new NUL-terminated string (`asprintf`-like formatters,
-  tokenizers, path joiners): find them with `--returning string` and submit
-  them as `alloc` constructors. A routine that copies a string argument is a
-  cloner, not a constructor; and a raw byte allocator stays in the `void` tier
-  even when its memory later holds a string, because it does not return a
-  NUL-terminated one.
-
-  - A `<type-tag>`, then look for lifetime primitives that for the given type
-  tag.  You can fetch the list of lifetime candidates by querying
-  `wavefront` for methods taking `<type-tag> *` as an argument AND filter
-  for those that invoke one of the raw/void lifetime primitives identified in a
-  previous run. Explore a few additional hops up the call graph to identify the
-  real, top-level dropper(s)/field disposer(s) and cloner(s) of the type, which
-  might call helpers that in turn call the raw/void lifetime primitives. Find
-  its constructors too: `alloc` ones return `<type-tag> *`
-  (`--returning <type-tag>`) or store it through an out-parameter
-  `<type-tag> **` (`--taking <type-tag>`, depth 2), and `init` ones fill a
-  caller's `<type-tag> *` in place. If a
-  type is a POD disposed through a field disposer of an embedding parent,
-  process the parent disposer. Look for lifetime primitives that process both
-  scalars and arrays. Submit your findings for the symbols schema, not for the
-  types schema.
-
-  After identifying your target set, proceed with and analyze them as described
-  in the next sections.
+How to find the routines that play these roles is in
+[`type-lifecycle.md`](../type-lifecycle.md).
 
 ## ptr / locked_by (globals)
 

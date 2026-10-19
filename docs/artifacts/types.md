@@ -146,7 +146,8 @@ Three user-filled keys ride on a field record:
 
 ## ptr
 
-Per pointer field. The composer emits `ptr: null`, so **`null` means
+Per pointer field; the properties are described in
+[`pointer-properties.md`](../pointer-properties.md). The composer emits `ptr: null`, so **`null` means
 unanalyzed** — whether a field has been through a wrapper is a null check on
 one key. A submitted block replaces the prior WHOLESALE and must be complete,
 so there is nothing to patch into a skeleton. Once filled:
@@ -156,15 +157,14 @@ so there is nothing to patch into a skeleton. Once filled:
   value -- the ordinary `T*`) | `{by_ref: {owned, borrowed}}` (points at one
   POINTER -- a `T**`). Under `by_ref`, `owned`/`borrowed` is the INNER pointee's
   ownership (the top-level `owned`/`borrowed` then describes the OUTER slot);
-  each is the same block as the top-level below. May co-exist with `array`; may
-  co-exist with `string` when type is `void`.
+  each is the same block as the top-level below. May co-exist with `array` and `string`.
 - **`array`** -- Is there any execution path where this pointer references an array
   of elements? If not, `null`; otherwise `{by_val: true}` (buffer of inline
   values) | `{by_ref: {owned, borrowed}}` (buffer of element pointers -- a
   container). Under `by_ref`, `owned`/`borrowed` is the ELEMENT ownership, and
   EACH is the same block as the top-level `owned`/`borrowed` below -- so a
   container of owned elements carries the element's release/clone bindings.
-  May co-exist with `scalar`; may co-exist with `string` when subject is `void`.
+  May co-exist with `scalar` and `string`.
   `scalar.by_ref` vs `array.by_ref` differ only in cardinality (one pointer vs a buffer of them).
 - **`string`** -- Is there any execution path where this pointer is a NUL-terminated string?
   If yes, `true`; otherwise `false`.
@@ -186,8 +186,7 @@ ownership (owned on one path, borrowed on another); likewise
 `array.by_ref.owned`+`.borrowed`.
 
 **Invariants** (enforced on `--update`): `scalar` and `array` are each null |
-exactly one of `{by_val, by_ref}`; `string` XOR (`array` | `scalar`) unless the pointee
-type is `void`; a pointer
+exactly one of `{by_val, by_ref}`; a pointer
 sets at least one of `{scalar, array, string}` (the floor); `string` and `owned`
 are explicit booleans (never null -- a fact left `null` where `false` was meant
 is rejected);
