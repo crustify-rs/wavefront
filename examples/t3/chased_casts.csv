@@ -1,0 +1,8 @@
+kind,slot_name,slot_def_file,slot_member,type_name,type_def_file,derived_name,derived_def_file,op
+erased_arg,log_msg,src/log.c,0,ObjClass,include/log.h,,,add
+erased_field,SideData,include/frame.h,data,HdrMetadata,include/hdr.h,,,add
+base_derived,,,,ObjClass,include/log.h,Decoder,include/decoder.h,add
+erased_field,Packet,include/packet.h,data,unaligned32,src/intread.h,,,drop
+erased_field,Stream,include/stream.h,priv,Packet,include/packet.h,,,drop
+erased_field,Decoder,include/decoder.h,priv,ObjClass,include/log.h,,,drop
+base_derived,,,,Buffer,include/buffer.h,Frame,include/frame.h,drop

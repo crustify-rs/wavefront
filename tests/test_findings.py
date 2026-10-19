@@ -116,3 +116,37 @@ class SplitTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class StoreExampleTests(unittest.TestCase):
+    """`examples/ownership-store.json` records exactly `examples/findings.json`."""
+
+    def test_store_example_holds_the_findings_example(self) -> None:
+        from types import SimpleNamespace
+        from wavefront import store
+
+        doc = store.load(SimpleNamespace(root=EXAMPLE.parent))
+        self.assertEqual(store.normalize(json.loads(json.dumps(doc))), doc)
+
+        def sym(rec: dict) -> dict:
+            out = {k: rec[k] for k in ("lifetime", "ptr", "locked_by", "callsites")
+                   if k in rec}
+            if "ptr_args" in rec:
+                out["ptr_args"] = {a["name"]: {"ptr": a["ptr"]} for a in rec["ptr_args"]}
+            if "ptr_ret" in rec:
+                out["ptr_ret"] = rec["ptr_ret"]
+            return out
+
+        types = {r["name"]: {"_comment_user": r.get("_comment_user"),
+                             "fields": {f["name"]: {k: v for k, v in f.items() if k != "name"}
+                                        for f in r.get("fields") or []}}
+                 for r in doc["types"]}
+        symbols: dict = {}
+        for r in doc["symbols"]:
+            if r.get("variant"):
+                symbols[r["name"]].setdefault("forks", []).append(sym(r))
+            else:
+                symbols[r["name"]] = sym(r)
+        ex = _example()
+        self.assertEqual(types, ex["types"])
+        self.assertEqual(symbols, ex["symbols"])

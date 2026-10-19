@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 from wavefront.dag import Node
 from wavefront.schedule import (
-    Unit, _coalesce, _field_anchors, _pack, _resolve,
+    Unit, _coalesce, _field_anchors, _node_doc, _pack, _resolve,
     build_raw_lifetime_wave, build_wave, write_wave,
 )
 
@@ -57,7 +57,7 @@ class SchedulePackingParityTests(unittest.TestCase):
 
     def test_documented_wave_example_is_structurally_consistent(self) -> None:
         root = Path(__file__).resolve().parents[1]
-        wave = json.loads((root / "examples" / "waves.json").read_text())
+        wave = json.loads((root / "examples" / "schedule.json").read_text())
 
         self.assertEqual(wave["schema_version"], 3)
         items = _scheduled_items(wave)
@@ -77,9 +77,11 @@ class SchedulePackingParityTests(unittest.TestCase):
         scheduled = [(item["name"], item["defined_in"])
                      for batch in batches for item in batch["items"]]
         self.assertCountEqual(scheduled, planned)
+        # Every item has exactly the keys the scheduler writes.
+        keys = set(_node_doc(_node("x"))) | {"field_anchors"}
         for batch in batches:
             for item in batch["items"]:
-                self.assertIn("field_anchors", item)
+                self.assertEqual(set(item), keys)
 
     def test_write_wave_requires_an_existing_output_directory(self) -> None:
         with TemporaryDirectory() as directory:

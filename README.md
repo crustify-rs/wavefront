@@ -55,7 +55,7 @@ wavefront REPO_ROOT --config PATH COMMAND ...
 | `impl_files` | Sources and private headers that implement the library. |
 | `api_headers` | Headers that publish the library's API. |
 | `out_of_scope.paths` | Files excluded from `impl_files` and `api_headers`. |
-| `t3_dir` | Optional. Directory, relative to `state_dir`, holding the T3 tables. |
+| `t3_dir` | Optional. Directory, relative to `state_dir`, holding the T3 tables ([`examples/t3/`](examples/t3/)). |
 
 Paths are relative to `REPO_ROOT`. A trailing slash selects a directory
 recursively. See [`examples/wavefront-config.json`](examples/wavefront-config.json).
@@ -182,10 +182,10 @@ Example:
 ```sh
 wavefront /src/widget --config wavefront-config.json schedule \
   --file include/widget.h --transitive --api-headers-only \
-  --output /src/widget/waves.json
+  --output /src/widget/schedule.json
 ```
 
-See [`examples/waves.json`](examples/waves.json) for the output.
+See [`examples/schedule.json`](examples/schedule.json) for the output.
 
 ## Documentation
 

@@ -2,7 +2,7 @@
 
 Field meaning for the document `wavefront <repo> --config PATH schedule
 --output PATH` writes. Complete example:
-[`examples/waves.json`](../../examples/waves.json).
+[`examples/schedule.json`](../../examples/schedule.json).
 
 A schedule is objective-neutral: it orders and packs work without deciding
 what a consumer does with it. Waves are sequential and barrier-separated;

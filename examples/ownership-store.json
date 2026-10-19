@@ -1,0 +1,177 @@
+{
+  "_comment": "Authored analysis: ownership, lifecycle, refcount and locking judgements that no composer can derive, keyed to the C entities they describe. The structural half of each record (field layout, signatures, footprints, casts) is composed from the CodeQL tables on demand and merged in at read time, so a re-extract rewrites nothing here. Written only by `wavefront <repo> <target> query {types,symbols} --update`; read through wavefront.manifests. Hand-edit at your own risk: `--update` validates a submission against the composed skeleton (unknown field, wrong kind, ptr-invariant violation) and this file does not.",
+  "types": [
+    {
+      "name": "widget_st",
+      "defined_in": "include/widget.h",
+      "_comment_user": "Reference-counted; widget_free drops the last reference.",
+      "fields": [
+        {
+          "name": "buf",
+          "ptr": {
+            "scalar": null,
+            "array": {
+              "by_val": true
+            },
+            "string": false,
+            "owned": true,
+            "borrowed": null,
+            "nullable": true,
+            "mutable": true,
+            "note": "len bytes, allocated by widget_new and freed by widget_free."
+          },
+          "refcount": false,
+          "locked_by": null
+        },
+        {
+          "name": "refs",
+          "refcount": true,
+          "locked_by": null
+        },
+        {
+          "name": "users",
+          "refcount": false,
+          "locked_by": {
+            "lock": "lock",
+            "lock_op": [
+              "mutex_lock"
+            ],
+            "unlock_op": [
+              "mutex_unlock"
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "symbols": [
+    {
+      "name": "widget_default_opts",
+      "defined_in": "src/widget.c",
+      "ptr": {
+        "scalar": {
+          "by_val": true
+        },
+        "array": null,
+        "string": false,
+        "owned": false,
+        "borrowed": {
+          "lifetime": "static"
+        },
+        "nullable": false,
+        "mutable": false,
+        "note": "Points at a static, read-only options table."
+      },
+      "locked_by": null
+    },
+    {
+      "name": "widget_new",
+      "defined_in": "src/widget.c",
+      "lifetime": {
+        "for": "return",
+        "is_dropper": false,
+        "is_disposer": false,
+        "is_cloner": null,
+        "is_constructor": {
+          "alloc": true,
+          "init": false
+        }
+      },
+      "ptr_args": [
+        {
+          "name": "opts",
+          "ptr": {
+            "scalar": {
+              "by_val": true
+            },
+            "array": null,
+            "string": false,
+            "owned": false,
+            "borrowed": {
+              "lifetime": "arg:opts"
+            },
+            "nullable": true,
+            "mutable": false,
+            "note": "Read during the call only; NULL selects the defaults."
+          }
+        }
+      ],
+      "ptr_ret": {
+        "ptr": {
+          "scalar": {
+            "by_val": true
+          },
+          "array": null,
+          "string": false,
+          "owned": true,
+          "borrowed": null,
+          "nullable": true,
+          "mutable": true,
+          "note": "NULL when the allocation fails."
+        }
+      }
+    },
+    {
+      "name": "widget_release_fn",
+      "defined_in": null,
+      "lifetime": {
+        "for": "w",
+        "is_dropper": true,
+        "is_disposer": false,
+        "is_cloner": null,
+        "is_constructor": null
+      },
+      "ptr_args": [
+        {
+          "name": "w",
+          "ptr": {
+            "scalar": {
+              "by_val": true
+            },
+            "array": null,
+            "string": false,
+            "owned": true,
+            "borrowed": null,
+            "nullable": false,
+            "mutable": true,
+            "note": "The callee frees the widget."
+          }
+        }
+      ]
+    },
+    {
+      "name": "widget_release_fn",
+      "defined_in": null,
+      "variant": 1,
+      "lifetime": {
+        "for": "w",
+        "is_dropper": false,
+        "is_disposer": true,
+        "is_cloner": null,
+        "is_constructor": null
+      },
+      "ptr_args": [
+        {
+          "name": "w",
+          "ptr": {
+            "scalar": {
+              "by_val": true
+            },
+            "array": null,
+            "string": false,
+            "owned": false,
+            "borrowed": {
+              "lifetime": "arg:w"
+            },
+            "nullable": false,
+            "mutable": true,
+            "note": "widget_reset clears the fields and keeps the widget."
+          }
+        }
+      ],
+      "callsites": [
+        "widget_reset"
+      ]
+    }
+  ]
+}

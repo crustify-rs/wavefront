@@ -21,7 +21,8 @@ not be edited by hand. Concurrent updates are serialized, and each one is
 written atomically, with records sorted by key.
 
 The store describes the C code and is shared by every config of a
-repository.
+repository. [`examples/ownership-store.json`](../../examples/ownership-store.json)
+holds the findings of [`examples/findings.json`](../../examples/findings.json).
 
 ## Top level
 

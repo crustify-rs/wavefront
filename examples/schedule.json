@@ -4,7 +4,7 @@
     "path": "examples/wavefront-config.json",
     "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
   },
-  "api_headers_only": false,
+  "api_headers_only": true,
   "budgets": {
     "max_syms": 25,
     "max_loc": 500,
@@ -12,7 +12,7 @@
     "min_fields": 20
   },
   "summary": {
-    "unit_count": 2,
+    "unit_count": 3,
     "layer_count": 2,
     "batch_count": 2,
     "file_count": 2
@@ -31,7 +31,7 @@
               "kind": "type",
               "source_kind": "struct",
               "layer": 0,
-              "loc": 0,
+              "loc": 5,
               "deps": {
                 "types": [],
                 "symbols": []
@@ -40,8 +40,11 @@
               "back_fill": [],
               "generates": [],
               "field_anchors": [
-                "refcount",
-                "payload"
+                "buf",
+                "len",
+                "refs",
+                "lock",
+                "users"
               ]
             }
           ]
@@ -49,7 +52,7 @@
       ]
     },
     {
-      "unit_count": 1,
+      "unit_count": 2,
       "batches": [
         {
           "kind": "symbol",
@@ -77,6 +80,28 @@
                     "scope": "port"
                   }
                 ]
+              },
+              "fallback": [],
+              "back_fill": [],
+              "generates": [],
+              "field_anchors": []
+            },
+            {
+              "name": "widget_free",
+              "defined_in": "src/widget.c",
+              "kind": "symbol",
+              "source_kind": "function_exported",
+              "layer": 1,
+              "loc": 14,
+              "deps": {
+                "types": [
+                  {
+                    "name": "widget_st",
+                    "defined_in": "include/widget.h",
+                    "scope": "wrap"
+                  }
+                ],
+                "symbols": []
               },
               "fallback": [],
               "back_fill": [],

@@ -246,3 +246,53 @@ class T3Tests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ExampleTablesTests(unittest.TestCase):
+    """`examples/t3/` loads through the real checks, against a T1 that holds
+    the entities it names."""
+
+    def test_example_tables_load(self) -> None:
+        example = Path(__file__).resolve().parents[1] / "examples" / "t3"
+        with tempfile.TemporaryDirectory() as tmp:
+            t1 = Path(tmp) / "t1"
+            homes = {"ObjClass": "include/log.h", "Decoder": "include/decoder.h",
+                     "SideData": "include/frame.h", "HdrMetadata": "include/hdr.h",
+                     "Packet": "include/packet.h", "Stream": "include/stream.h",
+                     "unaligned32": "src/intread.h", "Buffer": "include/buffer.h",
+                     "Frame": "include/frame.h", "strmap": "src/strmap.h",
+                     "intmap": "src/intmap.h"}
+            _write(t1 / "types.csv", TYPE_COLS,
+                   [_type(n, df) for n, df in homes.items()])
+            _write(t1 / "functions.csv", FN_COLS,
+                   [{"name": "log_msg", "def_file": "src/log.c",
+                     "decl_files": "include/log.h"}])
+            _write(t1 / "params.csv", PARAM_COLS, [
+                {"function_name": "log_msg", "function_def_file": "src/log.c",
+                 "position": "0", "param_type": "void *", "ptr_depth": "1",
+                 "is_erased": "true"}])
+            erased = {"field_type": "void *", "ptr_depth": "1", "is_erased": "true"}
+            bytes_ = {"field_type": "uint8_t *", "is_scalar": "true",
+                      "ptr_depth": "1", "is_erased": "false"}
+            _write(t1 / "fields.csv", FIELD_COLS, [
+                {"struct_name": "SideData", "struct_def_file": "include/frame.h",
+                 "field_name": "data", **bytes_},
+                {"struct_name": "Packet", "struct_def_file": "include/packet.h",
+                 "field_name": "data", **bytes_},
+                {"struct_name": "Stream", "struct_def_file": "include/stream.h",
+                 "field_name": "priv", **erased},
+                {"struct_name": "Decoder", "struct_def_file": "include/decoder.h",
+                 "field_name": "priv", **erased},
+            ])
+            _write(t1 / "macros.csv", MACRO_COLS, [
+                {"name": "HASHMAP_STRUCT", "def_file": "src/hashmap.h"},
+                {"name": "HASHMAP_FUNCTIONS", "def_file": "src/hashmap.h"}])
+            t3.configure(example)
+            self.addCleanup(t3.configure, None)
+            tables = t3.load(t1)
+        self.assertEqual(tables.erased_args[("log_msg", "src/log.c")],
+                         {("ObjClass", "include/log.h")})
+        self.assertIn(("Decoder", "include/decoder.h"), tables.bases)
+        self.assertEqual(len(tables.drop_fields), 3)
+        self.assertIn(("Frame", "include/frame.h"), tables.drop_bases)
+        self.assertEqual(len(tables.generates[("HASHMAP_STRUCT", "src/hashmap.h")]), 3)

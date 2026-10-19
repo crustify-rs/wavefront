@@ -1,0 +1,4 @@
+generator_macro,generator_def_file,derived_kind,derived_name,derived_def_file
+HASHMAP_STRUCT,src/hashmap.h,type,strmap,src/strmap.h
+HASHMAP_STRUCT,src/hashmap.h,type,intmap,src/intmap.h
+HASHMAP_STRUCT,src/hashmap.h,macro,HASHMAP_FUNCTIONS,src/hashmap.h
