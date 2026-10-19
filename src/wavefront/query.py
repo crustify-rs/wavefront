@@ -58,7 +58,7 @@ def query(
     if update_help:
         print(json.dumps(_findings_schema(kind), indent=2))
         return
-    # --schema: the record's field/slot MEANING (docs/schemas/<types|syms>.md);
+    # --schema: the record's field/slot MEANING (docs/artifacts/<types|syms>.md);
     # no --name. Distinct from --update-help, which gives the submission shape.
     if schema:
         print(_schema(kind))
@@ -955,7 +955,7 @@ _LOCKED_BY_KEYS = {"lock", "lock_op", "unlock_op"}
 
 def _schema(kind: str) -> str:
     """Field/slot MEANING for ``--schema`` — display-only markdown, read from
-    ``docs/schemas/<types|syms>.md`` and split on ``## <field>`` headings.
+    ``docs/artifacts/<types|syms>.md`` and split on ``## <field>`` headings.
     Distinct from ``--update-help`` (:func:`_findings_schema`), which gives the
     submission *shape* + rules; meaning and shape are never duplicated. Empty
     string if the doc is unreadable."""
@@ -981,7 +981,7 @@ def _findings_schema(kind: str) -> dict:
     own (``_FINDINGS_TOP`` / ``_SYM_FINDINGS_TOP``), so this never drifts from
     what ``--update`` actually accepts."""
     # Raw submission SHAPE only -- field MEANING + enforced invariants live in the
-    # schema doc (`query <kind> --schema` = docs/schemas/{types,syms}.md), which is
+    # schema doc (`query <kind> --schema` = docs/artifacts/{types,syms}.md), which is
     # fed to the agent. `_valid_top_keys` is the drift guard (validator constants).
     if kind == "type":
         return {

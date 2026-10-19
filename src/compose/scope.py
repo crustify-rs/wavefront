@@ -394,7 +394,7 @@ def build_lifecycle_index(analysis_root) -> dict[str, dict]:
     A concrete type stores no lifecycle of its own. The fact lives once, on the
     acting symbol: ``syms.json``'s entry-level ``lifetime``
     ``{for, is_dropper, is_disposer, is_cloner, is_constructor}`` (see
-    docs/schemas/syms.md). The subject is the arg named by ``for`` (an
+    docs/artifacts/syms.md). The subject is the arg named by ``for`` (an
     ``alloc`` constructor's out-parameter included), or the returned object
     when ``for`` is ``"return"``.
     This inverts that relation — the composer-side equivalent of

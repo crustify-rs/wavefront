@@ -55,33 +55,12 @@ names the one slot both casts meet at (two when a named slot is stored into
 another named slot), as `kind:name.member@file` with `kind` in `param` |
 `ret` | `field`.
 
-ONLY DIRECT CASTS: both casts must sit at the same slot. A NAMED value
-handed on (`av_log(s->avctx)`) is converted at that call, so it counts as
-a `from`. An ERASED value handed on (`av_log(avcl)` -> `av_vlog`) is a call
-chain and is not followed: following it joins every type reaching the
-callee with every type any branch reads (`git_cached_obj_decref` would pair
-`git_blob` with `git_odb_object`). Those chains are false negatives by
-design, left to the orchestrator's review.
-
-Fields and returns are one slot for every instance or call, so they yield a
-pair only when both sides are named -- a `Base *` field read as `Derived *`,
-or a `Derived *` stored into it -- and a type-erased field is recorded on
-its field record as `erased_as` instead (see `fields`).
-
-Every edge is a conversion written at the slot access itself; no flow
-through locals, memory or calls is followed. A pair is still
-path-insensitive within its slot: a read guarded by a type check joins every
-type stored into that slot.
-
-This manifest field is unprojected, and so are the scheduler's cast facts:
-pairs are formed program-wide, bodies included. The scheduler's API mode
-(`--api-headers-only`) prunes them against its API closure -- what the public
-signatures and fields reach from the API items, walked before any cast edge
-exists -- and keeps a pair as an edge only when both of its types are in it.
-The slot that witnesses a pair is evidence, not a node, so it need not be
-public: `AVCodecContext -> AVClass`, witnessed by `av_opt_copy` in another
-library's headers, is an edge of libavcodec's API graph, while `AVCodec ->
-FFCodec` neither pulls `FFCodec` in nor moves `AVCodec`.
+Only direct casts: both casts sit at the same slot. A value handed on
+through calls, locals or memory is not followed, and a type-erased field
+yields no pair: its variants are recorded on the field as `erased_as` (see
+`fields`). Pairs are formed program-wide, function bodies included. How they
+order the graph, and which of them are false positives, is in
+[`graph.md`](../graph.md#polymorphism).
 
 ## opaque_in
 
@@ -146,12 +125,10 @@ string cannot show, both of which used to collapse to a bare scalar with no
   field (`void *`, `uint8_t *`, ...) that some code casts: `{stored: [tags],
   read_as: [tags]}`, the named types written into it and the ones its reads
   are converted to (`AVCodecContext.priv_data`: `stored` one context,
-  `read_as` every codec's). These are the field's VARIANTS -- which type a
-  given instance holds is a runtime choice -- so they never become
-  `casted_via` pairs. In the DAG each variant depends on the owner, as a
-  derived type on its base: the owner is the generic container, the variant
-  one instance of it. The edge is a cast edge, pruned like every cast; T3 `drop` rows remove the ones
-  that are no polymorphism (see `t3.md`). The record lists them all.
+  `read_as` every codec's). These are the field's variants: which type an
+  instance holds is a runtime choice, so they are never `casted_via`
+  pairs. Every one is listed, including those a T3 `drop` row removes from
+  the graph ([`graph.md`](../graph.md#type-erasure)).
 
 Three agent-fillable keys ride on a field record:
 

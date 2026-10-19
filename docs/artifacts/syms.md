@@ -94,8 +94,8 @@ callbacks.
 
 Body line span (`endLine-startLine+1`) of a function's definition; 1 for a
 global, 0 for a macro; 0 when absent (a pre-loc extraction). Composer-filled from
-`functions.csv`. Feeds the port bin-packer's lines-of-code batch budget
-(`config.TRANSLATE_MAX_LOC`), which binds together with the symbol-count cap.
+`functions.csv`. A schedule's `--max-loc` budget sums it per symbol batch
+([`batching.md`](../batching.md#batches)).
 
 ## ptr_args/ptr_ret
 

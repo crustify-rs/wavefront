@@ -47,7 +47,16 @@ always inventory inputs.
 tier: dependencies the extracted T1/T2 facts cannot show, such as a `void *`
 handed on through calls, and the macros accepted as type generators. They
 are authored outside wavefront, checked against T1 when loaded, and become
-DAG edges. See [`docs/schemas/t3.md`](docs/schemas/t3.md).
+DAG edges. See [`docs/artifacts/t3.md`](docs/artifacts/t3.md).
+
+## Documentation
+
+| doc | covers |
+|---|---|
+| [`docs/graph.md`](docs/graph.md) | the dependency graph: nodes, edges, type erasure, cycles, polymorphism, limitations |
+| [`docs/scoping.md`](docs/scoping.md) | targeted and imported sections, the API view, default and API mode |
+| [`docs/batching.md`](docs/batching.md) | selection, waves, and the batch budgets |
+| [`docs/artifacts/`](docs/artifacts/) | field meaning of type and symbol records, schedules, and T3 tables |
 
 ## Commands
 
@@ -210,7 +219,8 @@ wavefront /work/project \
   --output /work/project/crustify/campaigns/widget/waves.json
 ```
 
-Field meaning is in [`docs/schemas/schedule.md`](docs/schemas/schedule.md); the
+How units are selected and packed is in [`docs/batching.md`](docs/batching.md).
+Field meaning is in [`docs/artifacts/schedule.md`](docs/artifacts/schedule.md); the
 complete schema-v3 output example is
 [`examples/waves.json`](examples/waves.json). Its major sections are:
 
@@ -222,9 +232,6 @@ complete schema-v3 output example is
 - `field_anchors`: fields a type wrapper should expose for this target.
 
 Waves execute in order. Batches within a wave may execute concurrently.
-Adjacent dependency layers are folded into one wave whenever their selected
-units fit a single batch, whether or not `--transitive` selected the units.
-Folding never produces parallel producer/consumer batches.
 
 ## Artifacts
 
