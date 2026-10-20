@@ -114,6 +114,12 @@ def _walk_dir(rel_dir: str, repo_root: Path, out_of_scope: list[str]) -> list[st
 #: The two top-level file-set keys of `wavefront-config.json`.
 IMPL_FILES = "impl_files"
 API_HEADERS = "api_headers"
+#: The entity lists that narrow a config's ownership: ``items`` at the top
+#: level, ``out_of_scope.items`` beside ``out_of_scope.paths``.
+ITEMS = "items"
+#: Where the composed manifest keeps the targeted entities a config's items
+#: narrowed out, until `wavefront.scope.build` files them as imported.
+NARROWED = "narrowed"
 
 def enumerate_files(config: dict, repo_root: Path, key: str) -> list[str]:
     """Return the repo-root-relative candidate file paths ``config[key]`` names
@@ -292,6 +298,104 @@ def _api_entities(t1_dir: Path, api_files: set[str]) -> dict[str, list[dict]]:
     return {k: sorted(v, key=keyf) for k, v in out.items()}
 
 
+def _item_entries(config: dict, where: str, entries) -> list[tuple[str, str]]:
+    """The ``(name, defined_in)`` pairs of one entity list, validated."""
+    if entries is None:
+        return []
+    if not isinstance(entries, list):
+        raise SystemExit(f"wavefront-config.json: `{where}` must be a list")
+    out = []
+    for i, e in enumerate(entries):
+        if (not isinstance(e, dict) or set(e) != {"name", "defined_in"}
+                or not all(isinstance(e[k], str) and e[k] for k in e)):
+            raise SystemExit(
+                f"wavefront-config.json: `{where}[{i}]` must be "
+                f'{{"name": ..., "defined_in": ...}} with non-empty strings')
+        out.append((e["name"], e["defined_in"]))
+    if len(set(out)) != len(out):
+        raise SystemExit(f"wavefront-config.json: `{where}` repeats an entity")
+    return out
+
+
+def _narrow(entities: dict[str, list[dict]], config: dict,
+            types_rows: list[dict]) -> tuple[dict, dict]:
+    """Split the targeted ``entities`` into those the config owns and those
+    its ``items`` / ``out_of_scope.items`` narrow out.
+
+    An entry matches an entity of its name defined in its ``defined_in``, or,
+    for an entity with no definition in the database, declared there. A
+    typedef and the type it finally names are one group, so an entry selects
+    both. Only targeted entities can be named: an entry that matches none --
+    a header macro, which is never targeted, or an entity the config's files
+    do not define -- is an error, as is an entity both lists name.
+    """
+    include = _item_entries(config, ITEMS, config.get(ITEMS))
+    exclude = _item_entries(config, "out_of_scope.items",
+                            (config.get("out_of_scope") or {}).get(ITEMS))
+    if not include and ITEMS not in config and not exclude:
+        return entities, {k: [] for k in entities}
+    both = sorted(set(include) & set(exclude))
+    if both:
+        raise SystemExit(
+            "wavefront-config.json: `items` and `out_of_scope.items` both name "
+            + ", ".join(f"{n} ({d})" for n, d in both))
+
+    by_name = _scope.build_types_index(types_rows)
+
+    def group(kind: str, e: dict) -> tuple[str, str, str]:
+        if kind == "types" and e.get("kind") == "typedef":
+            base = _scope.resolve_typedef(e["name"], by_name)
+            if base is not None and base["kind"] != "typedef":
+                return ("types", base["name"], base["def_file"])
+        return (kind, e["name"], e["defined_in"])
+
+    def matches(entry: tuple[str, str], e: dict) -> bool:
+        name, file = entry
+        return e["name"] == name and (
+            e["defined_in"] == file
+            or (not e["defined_in"] and file in e.get("declared_in", [])))
+
+    def groups_of(entries: list[tuple[str, str]], where: str) -> set:
+        out = set()
+        for entry in entries:
+            hit = {group(kind, e) for kind, es in entities.items()
+                   for e in es if matches(entry, e)}
+            if not hit:
+                raise SystemExit(
+                    f"wavefront-config.json: `{where}` names {entry[0]} "
+                    f"({entry[1]}), which the config's files do not define: "
+                    f"only a targeted entity can be named, and a header macro "
+                    f"never is")
+            out |= hit
+        return out
+
+    selected = groups_of(include, ITEMS) if ITEMS in config else None
+    excluded = groups_of(exclude, "out_of_scope.items")
+    owned, narrowed = {}, {}
+    for kind, es in entities.items():
+        owned[kind], narrowed[kind] = [], []
+        for e in es:
+            g = group(kind, e)
+            keep = (selected is None or g in selected) and g not in excluded
+            (owned if keep else narrowed)[kind].append(e)
+    return owned, narrowed
+
+
+def file_narrowed(manifest: dict) -> None:
+    """File what the config's items narrowed out under ``imported``, once the
+    imported section is composed.
+
+    Narrowed-out entities are another config's work: imports here, nodes and
+    dependencies of what reaches them, never units of this config.
+    """
+    imported = manifest[_scope.IMPORTED]
+    for kind, entries in manifest.pop(NARROWED, {}).items():
+        have = {(e["name"], e["defined_in"]) for e in imported.get(kind, [])}
+        imported.setdefault(kind, []).extend(
+            e for e in entries if (e["name"], e["defined_in"]) not in have)
+        imported[kind].sort(key=lambda r: (r["name"], r["defined_in"]))
+
+
 def _contributing_files(
     t1_dir: Path, entities: dict[str, list[dict]], candidate_files: set[str]
 ) -> list[str]:
@@ -343,7 +447,8 @@ def compose(config_path: Path, t1_dir: Path, repo_root: Path | None = None) -> d
     else:
         repo_root = Path(repo_root).resolve()
     candidate_files = set(targeted_candidates(config, repo_root))
-    entities = _target_entities(t1_dir, candidate_files)
+    entities, narrowed = _narrow(_target_entities(t1_dir, candidate_files), config,
+                                 _scope.load_csv(t1_dir / "types.csv"))
     files = _contributing_files(t1_dir, entities, candidate_files)
     api_files = set(api_candidates(config, repo_root))
     api = _api_entities(t1_dir, api_files)
@@ -365,4 +470,5 @@ def compose(config_path: Path, t1_dir: Path, repo_root: Path | None = None) -> d
             "macros": entities["macros"],
             "types": entities["types"],
         },
+        NARROWED: narrowed,
     }

@@ -47,7 +47,9 @@ from pathlib import Path
 #: 17 — a type-erased field's variants are cast edges, each variant depending
 #:      on the owner, as do T3 `erased_field` rows (was owner -> type); T3
 #:      `op` column, whose `drop` rows remove derived cast edges.
-_VERSION = 17
+#: 18 — `items` and `out_of_scope.items` narrow the targeted section; the
+#:      entities they leave out are imported (an older composer ignored them).
+_VERSION = 18
 
 
 def fingerprint(layout, target) -> dict:

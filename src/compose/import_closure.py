@@ -170,6 +170,11 @@ def build_index(
     tgt_funcs = scope.load_entities(scope_json_path, scope.TARGETED, "functions")
     tgt_globals = scope.load_entities(scope_json_path, scope.TARGETED, "globals")
     tgt_macros = scope.load_entities(scope_json_path, scope.TARGETED, "macros")
+    # The targeted-file entities the config's items narrowed out are another
+    # config's: they seed no walk here, so their dependencies are not ours.
+    narrowed = {(e["name"], e.get("defined_in") or "")
+                for es in (scope._doc(scope_json_path).get("narrowed") or {}).values()
+                for e in es}
 
     idx = _Index()
 
@@ -201,7 +206,7 @@ def build_index(
                    if isinstance(t, dict) and t.get("type")}
             if sig:
                 idx.sig_types.setdefault(name, set()).update(sig)
-            if def_file in target_paths:
+            if def_file in target_paths and (name, def_file) not in narrowed:
                 dep_syms = (
                     sm._compose_dep_syms(
                         sm._forward_syms_of(name, def_file, reach), sym_index)

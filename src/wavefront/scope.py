@@ -97,6 +97,7 @@ def build(layout: Layout, target: Path, *, stage: str) -> dict:
         _scope.load_csv(t1 / "types.csv"),
         _scope.load_csv(t2 / "field_type_uses.csv"),
     )
+    _sm.file_narrowed(manifest)
     _CACHE[ck] = manifest
     return manifest
 

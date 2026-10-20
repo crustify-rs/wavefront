@@ -30,9 +30,16 @@ definition. A typedef follows the type it names, so naming a struct or its typed
 selects both. A header macro is imported in every config, as the Targeted section
 describes, so an entry cannot select one.
 
-An entity a list names but the config's files do not define or publish is an error, as
-is one both lists name. An entity left out of a config's targeted section by either list
-is not dropped: whatever reaches it imports it, as the Imported section describes.
+Only a targeted entity can be named: an entry that matches none, because the config's
+files do not define it or because it is a header macro, is an error, as is an entity
+both lists name. An entity either list leaves out is not dropped: it is filed as
+imported, another config's work, so it stays a node and a dependency of whatever reaches
+it, but is never a unit of this config. Its body seeds no walk here, so what only it
+reaches is not imported on its account.
+
+`out_of_scope.paths` and `out_of_scope.items` act at two grains: the first drops files a
+directory entry expands to, before anything is classified; the second drops entities
+from the targeted section, after.
 
 The lists are the counterparts of one another across configs. A config narrowed by
 `items` shares its files with the config that owns the rest of them, which names the same
