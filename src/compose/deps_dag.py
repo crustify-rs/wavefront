@@ -1084,8 +1084,6 @@ def _build_graph(types, syms, ext_syms, ext_types):
             "_dt": n.dep_types, "_ds": n.dep_syms,
         })
     for key, n in syms.items():
-        if n.name in types:              # collision -> represented by the type
-            continue
         add(_sid(key), {
             "id": n.name, "node_kind": "symbol", "subkind": n.kind or "symbol",
             **({"generates": n.generates} if n.generates else {}),

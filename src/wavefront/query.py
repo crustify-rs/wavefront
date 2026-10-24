@@ -1845,9 +1845,12 @@ def _records(target, kind, names, files, *, imported_only=False,
 
     load = _load_type_entry if kind == "type" else _load_sym_entry
     recs: list = []
+    found = []
     for nm in names:
-        layout, node, _bk = _resolve(target, kind=kind, name=nm, files=files,
-                                     with_ops=False)
+        layout, nodes = _resolve(target, kind=kind, name=nm, files=files,
+                                 with_ops=False, every=True)
+        found.extend((nm, layout, node) for node in nodes)
+    for nm, layout, node in found:
         entry = load(layout, target, node.id, node.defined_in)
         if entry is None:
             raise SystemExit(f"query {kind}: no manifest entry for {nm!r}.")
@@ -1888,7 +1891,7 @@ def _load_type_entry(layout, target, tag: str, defined_in: str | None) -> dict |
 
 
 def _resolve(target, *, kind: str, name: str, files: list[str] | None,
-             with_ops: bool = True):
+             with_ops: bool = True, every: bool = False):
     """``(layout, node, by_key)`` for one type/symbol, resolved from the composed
     records (never the dag — see the note above). For a *type*, ``by_key`` is
     populated with the type's op nodes so :func:`dag.ordered_ops` can serve
@@ -1897,7 +1900,10 @@ def _resolve(target, *, kind: str, name: str, files: list[str] | None,
 
     ``with_ops=False`` skips that: reverse-deriving the lifecycle needs the
     SYMBOL records as well as the type ones, so a plain record lookup was
-    composing the whole symbol side to build an op list nothing then read."""
+    composing the whole symbol side to build an op list nothing then read.
+
+    ``every=True`` returns ``(layout, nodes)`` instead, every entity the name
+    names in ``--file``, for a reading query that reports them all."""
     from wavefront import dag as D
     from wavefront.layout import Layout
 
@@ -1948,6 +1954,11 @@ def _resolve(target, *, kind: str, name: str, files: list[str] | None,
                       defined_in=e.get("defined_in"),
                       layer=0, dep_types=[], dep_syms=[])
 
+    if every:
+        nodes = [_mk(e) for e in uniq.values()]
+        if not nodes:
+            _pick(nodes)
+        return layout, nodes
     node = _pick([_mk(e) for e in uniq.values()])
     by_key = {node.key: node}
     if kind == "type" and with_ops:
@@ -2008,7 +2019,7 @@ def _load_sym_entry(layout, target, name: str, defined_in: str | None) -> dict |
 
 
 def _dag_loc(by_key, by_name, names, files, layer, as_json, keep=None,
-             ops_of=None) -> None:
+             ops_of=None, kind=None) -> None:
     """``query dag --loc`` — translated-LoC accounting over the dag.
 
     A **type**'s LoC is ``node.loc`` (its struct field count, Rule 1) **plus**
@@ -2055,16 +2066,10 @@ def _dag_loc(by_key, by_name, names, files, layer, as_json, keep=None,
                 and (keep is None or keep(n))]
     elif names:
         from wavefront import dag as D
-        file_set = set(files or [])
-        D.require_unambiguous(names, by_key, by_name, file_set,
-                              stage="query dag --loc")
-        rows, unknown = [], []
-        for nm in names:
-            hits = [by_key[k] for k in by_name.get(nm, [])
-                    if not file_set or (by_key[k].defined_in or "") in file_set]
-            rows.extend(hits) if hits else unknown.append(nm)
+        keys, unknown = D.select(names, by_key, by_name, set(files or []), kind)
+        rows = [by_key[k] for k in keys]
         if unknown:
-            extra = " matching --file" if file_set else ""
+            extra = " matching --file/--kind" if files or kind else ""
             raise SystemExit(f"query dag --loc: no node{extra} for: {', '.join(unknown)}")
     else:
         raise SystemExit("query dag --loc: pass --name T/S or --layer N.")
@@ -2074,7 +2079,8 @@ def _dag_loc(by_key, by_name, names, files, layer, as_json, keep=None,
     if as_json:
         recs = []
         for n in rows:
-            r = {"id": n.id, "kind": n.node_kind, "layer": n.layer, "loc": val(n)}
+            r = {"id": n.id, "kind": n.node_kind, "subkind": n.subkind,
+                 "defined_in": n.defined_in, "layer": n.layer, "loc": val(n)}
             if n.node_kind == "type":
                 r["nfields"], r["nops"] = n.loc, nops(n)
             recs.append(r)
@@ -2140,6 +2146,7 @@ def query_dag(
     targeted_only: bool = False,
     api_only: bool = False,
     api_headers_only: bool = False,
+    kind: str | None = None,
 ) -> None:
     """Structural views over the dag. Three mutually-exclusive modes:
 
@@ -2153,7 +2160,10 @@ def query_dag(
         **naked**); ``lo-deps`` = X's ``back_fill`` (lower-layer twins that
         **used X naked**).
 
-    ``--file`` disambiguates a ``--name`` collision.
+    A ``--name`` resolves to every node it names, ``--file`` and ``--kind``
+    narrowing them; when one names several, the output lists them under
+    ``matches``, each with its kind and defining file. Every record carries
+    its ``kind``, the node's own: ``struct``, ``function_static``, …
 
     ``api_headers_only`` selects the public-signature graph. Otherwise the
     query uses the implementation/body-deep graph."""
@@ -2173,8 +2183,11 @@ def query_dag(
     if loc:
         ops_of = {t: lc for t, (_f, lc)
                   in D.load_type_meta(_entry_pair(layout, target)).items()}
-        _dag_loc(by_key, by_name, names, files, layer, False, keep, ops_of)
+        _dag_loc(by_key, by_name, names, files, layer, False, keep, ops_of,
+                 kind)
         return
+
+    matches: list = []                  # the nodes of a --name that names several
 
     def _emit(rows: list) -> None:
         """rows: list[(node, depth|None)] -> JSON grouped by what the caller
@@ -2199,21 +2212,26 @@ def query_dag(
         out: dict[str, list] = {k: [] for k in
                                 ("types", "callbacks", "functions",
                                  "globals", "macros")}
-        seen: set[str] = set()
+        seen: set = set()
         for n, d in rows:
-            if n.id in seen:
+            if n.key in seen:
                 continue
-            seen.add(n.id)
+            seen.add(n.key)
             # `defined_in` already falls back to declared_in[0] upstream: the
             # dag composer fills it when the manifest entry has no definition
             # site (239 such entries here — the DEFINE_STACK_OF instances and
             # friends). What stays null is only `external` / `builtin`, which
             # has no manifest entry to fall back to.
-            rec = {"id": n.id, "layer": n.layer, "defined_in": n.defined_in}
+            rec = {"id": n.id, "kind": n.subkind, "layer": n.layer,
+                   "defined_in": n.defined_in}
             if d is not None:
                 rec["depth"] = d
             out[_group_of(n)].append(rec)
-        print(json.dumps({k: v for k, v in out.items() if v}, indent=2))
+        doc = {k: v for k, v in out.items() if v}
+        if matches:
+            doc["matches"] = [{"id": k[0], "kind": by_key[k].subkind,
+                               "defined_in": k[1]} for k in matches]
+        print(json.dumps(doc, indent=2))
 
     # ── mode: layer slice ──────────────────────────────────────────────
     if layer is not None:
@@ -2227,18 +2245,15 @@ def query_dag(
         raise SystemExit("query dag: pass --name T/S (closure or --scc) "
                          "or --layer N (slice).")
 
-    # Resolve each --name to its node key(s), --file disambiguating collisions.
-    file_set = set(files or [])
-    D.require_unambiguous(names, by_key, by_name, file_set, stage="query dag")
-    start: list = []
-    unknown: list[str] = []
-    for nm in names:
-        hit = [k for k in by_name.get(nm, [])
-               if not file_set or (by_key[k].defined_in or "") in file_set]
-        (start.extend(hit) if hit else unknown.append(nm))
+    # Resolve each --name to every node it names, --file and --kind narrowing.
+    start, unknown = D.select(names, by_key, by_name, set(files or []), kind)
     if unknown:
-        extra = " matching --file" if file_set else ""
+        extra = " matching --file/--kind" if files or kind else ""
         raise SystemExit(f"query dag: no node{extra} for: {', '.join(unknown)}")
+    named: dict = {}
+    for k in start:
+        named.setdefault(k[0], []).append(k)
+    matches = [k for ks in named.values() if len(ks) > 1 for k in ks]
 
     # ── mode: scc twins (fallback / back_fill) ─────────────────────────
     if scc:

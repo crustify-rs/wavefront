@@ -16,10 +16,13 @@ from dataclasses import dataclass, field
 from typing import Callable
 
 
-#: Every node's identity, types and symbols alike: ``(name, defined_in)``. A
-#: bare name is ambiguous on BOTH sides — same-named file-local statics, and
-#: TU-local aggregates (a `struct version_info` per `.c` that declares one).
-NodeKey = tuple[str, "str | None"]
+#: Every node's identity, types and symbols alike: ``(name, defined_in, kind)``,
+#: ``kind`` being ``"type"`` or ``"symbol"``. A bare name is ambiguous on BOTH
+#: sides — same-named file-local statics, and TU-local aggregates (a `struct
+#: version_info` per `.c` that declares one) — and ``(name, defined_in)`` is
+#: ambiguous ACROSS them: ``static const struct typelen {...} typelen[]`` is a
+#: type and a global of one name in one file.
+NodeKey = tuple[str, "str | None", str]
 
 #: Historical alias. Kept because the scheduler's public signatures read
 #: `SymKey` throughout and the two are the same tuple.
@@ -51,8 +54,8 @@ class Node:
     generates: list[str] = field(default_factory=list)
 
     @property
-    def key(self) -> SymKey:
-        return (self.id, self.defined_in)
+    def key(self) -> NodeKey:
+        return (self.id, self.defined_in, self.node_kind)
 
     @property
     def is_bare(self) -> bool:
@@ -103,7 +106,9 @@ def load_nodes(dag: dict) -> tuple[dict[SymKey, Node], dict[str, list[SymKey]]]:
     by_name: dict[str, list[SymKey]] = {}
 
     def keys(group: dict | None, side: str) -> list[NodeKey]:
-        return [(d["name"], d.get("defined_in")) for d in (group or {}).get(side) or []]
+        kind = "type" if side == "types" else "symbol"
+        return [(d["name"], d.get("defined_in"), kind)
+                for d in (group or {}).get(side) or []]
 
     def add(rec: dict, layer: int) -> None:
         deps = rec.get("deps") or {}
@@ -136,44 +141,52 @@ def load_nodes(dag: dict) -> tuple[dict[SymKey, Node], dict[str, list[SymKey]]]:
     return by_key, by_name
 
 
-def require_unambiguous(
+def select(
     names: list[str],
     by_key: dict[NodeKey, Node],
     by_name: dict[str, list[NodeKey]],
     files: set[str] | None = None,
-    *,
-    stage: str,
-) -> None:
-    """Refuse a ``--name`` that still resolves to more than one node after
-    ``--file`` has been applied.
+    kind: str | None = None,
+) -> tuple[list[NodeKey], list[str]]:
+    """Resolve each ``--name`` to EVERY node it names, ``--file`` and ``kind``
+    narrowing them, and return ``(keys, unknown names)``.
 
-    Both sides of the graph are keyed ``(name, defined_in)``, so a bare name is
-    a QUERY, not an identity: `ring_buf` is two unrelated structs (the QUIC
-    stream buffer in `include/internal/ring_buf.h` and a private one in
-    `crypto/bio/bss_dgram_pair.c`), and `stat` is a type and a syscall. Taking
-    every match silently unions two closures, and — for wrap — schedules an
-    agent whose worklist spans types that share nothing but a spelling. Making
-    the caller say WHICH costs one flag and removes the whole class of error.
-
-    Bulk selectors (``--all``, ``--dag-layer N``) do not come through here:
-    they resolve keys directly, never names, so there is nothing to disambiguate.
+    A bare name is a query, not an identity: `ring_buf` is two unrelated
+    structs, `stat` a type and a syscall, `typelen` a struct and the array of
+    it in one file. A reading query reports every match, each labelled with
+    its kind and defining file, so the caller can tell them apart; what needs
+    one entity picks it with :func:`ambiguous`.
     """
     file_set = set(files or [])
-    bad: list[tuple[str, list[str]]] = []
+    keys: list[NodeKey] = []
+    unknown: list[str] = []
     for nm in dict.fromkeys(names or []):
-        homes = [by_key[k].defined_in or "" for k in by_name.get(nm, [])
-                 if not file_set or (by_key[k].defined_in or "") in file_set]
-        if len(homes) > 1:
-            bad.append((nm, sorted(homes)))
+        hit = [k for k in dict.fromkeys(by_name.get(nm, []))
+               if (not file_set or (by_key[k].defined_in or "") in file_set)
+               and (kind is None or k[2] == kind)]
+        (keys.extend(hit) if hit else unknown.append(nm))
+    return keys, unknown
+
+
+def ambiguous(keys: list[NodeKey], *, stage: str, by_file: bool = True) -> None:
+    """Refuse a selection that must name one entity but names several. Each
+    candidate is listed with its kind and defining file. With ``by_file``,
+    only candidates in different files count: a type and a symbol of one name
+    in one file are both the caller's."""
+    by_name: dict[str, list[NodeKey]] = {}
+    for k in keys:
+        by_name.setdefault(k[0], []).append(k)
+    bad = {nm: ks for nm, ks in by_name.items()
+           if len({k[1] for k in ks} if by_file else ks) > 1}
     if not bad:
         return
     lines = []
-    for nm, homes in bad:
-        lines.append(f"  - {nm}  ({len(homes)} nodes)")
-        lines.extend(f"      --file {h or '<no defining file>'}" for h in homes)
-    narrowed = " (already narrowed by --file)" if file_set else ""
+    for nm, ks in bad.items():
+        lines.append(f"  - {nm}  ({len(ks)} nodes)")
+        lines.extend(f"      {k[2]:<6} --file {k[1] or '<no defining file>'}"
+                     for k in ks)
     raise SystemExit(
-        f"{stage}: {len(bad)} name(s) resolve to more than one node{narrowed} — "
+        f"{stage}: {len(bad)} name(s) resolve to more than one node — "
         f"pass --file to pick one:\n" + "\n".join(lines))
 
 
@@ -198,8 +211,10 @@ def ordered_ops(node: Node, by_key: dict[SymKey, Node], lifecycle: set[str],
     return ops
 
 
-def load_type_meta(entry_pair) -> dict[str, tuple[list[str], set[str]]]:
-    """type tag -> (field names, lifecycle op names). Fields drive the
+def load_type_meta(entry_pair, *, by_file: bool = False) -> dict:
+    """type tag -> (field names, lifecycle op names), or ``(tag, defined_in)``
+    -> the same with ``by_file``, so same-tagged TU-local aggregates keep their
+    own fields. Fields drive the
     agent's accessor working set; the lifecycle set names its ops. Neither is a
     budget any more — a type is one batch.
 
@@ -215,13 +230,14 @@ def load_type_meta(entry_pair) -> dict[str, tuple[list[str], set[str]]]:
     filenames."""
     from compose.scope import build_lifecycle_index, type_method_syms
 
-    meta: dict[str, tuple[list[str], set[str]]] = {}
+    meta: dict = {}
     types, syms = entry_pair
     lifecycle = build_lifecycle_index((types, syms))
     for e in types:
         tag = e.get("name") or e.get("type")
-        if not tag or tag in meta:
+        key = (tag, e.get("defined_in")) if by_file else tag
+        if not tag or key in meta:
             continue
         fields = [x["name"] for x in (e.get("fields") or []) if x.get("name")]
-        meta[tag] = (fields, set(type_method_syms(e, lifecycle)))
+        meta[key] = (fields, set(type_method_syms(e, lifecycle)))
     return meta

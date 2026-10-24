@@ -93,7 +93,7 @@ Common flags:
 | Flag | Effect |
 |---|---|
 | `--name NAME ...` | Select entities by name. Without it, `types` and `symbols` list names. |
-| `--file FILE ...` | Select or disambiguate entities by defining file. |
+| `--file FILE ...` | Narrow named entities to those defined in these files. |
 | `--targeted-only`, `--imported-only` | Keep entities the config owns, or the external ones it reaches. |
 | `--api-only` | Keep entities the `api_headers` publish. |
 | `--update FINDINGS` | Submit findings for one named entity (`-` reads stdin). |
@@ -129,6 +129,7 @@ Graph views (`query dag`):
 | `--layer N` | Print every node in layer `N`. |
 | `--scc hi-deps\|lo-deps` | With `--name`, print the cycle twins recorded in `fallback` or `back_fill`. |
 | `--loc` | Report estimated lines of code. |
+| `--kind type\|symbol` | With `--name`, keep its type or its symbol nodes. A name that names several nodes resolves to all of them, listed under `matches` with their kinds and files. |
 | `--api-headers-only` | Use the public-signature graph. |
 
 Examples:

@@ -143,14 +143,14 @@ class SchedulePackingParityTests(unittest.TestCase):
             anchors = _field_anchors(
                 object(), None, api_headers_only=True)
 
-        self.assertEqual(anchors[("opaque_st", "src/private.c")], [])
+        self.assertEqual(anchors[("opaque_st", "src/private.c", "type")], [])
         self.assertEqual(
-            anchors[("visible_st", "include/public.h")],
+            anchors[("visible_st", "include/public.h", "type")],
             ["public_field"],
         )
-        self.assertEqual(anchors[("collision_st", "src/one.c")], [])
+        self.assertEqual(anchors[("collision_st", "src/one.c", "type")], [])
         self.assertEqual(
-            anchors[("collision_st", "include/public.h")],
+            anchors[("collision_st", "include/public.h", "type")],
             ["public_collision"],
         )
 

@@ -390,7 +390,13 @@ def _add_query_command(sub) -> None:
     )
     dag_q.add_argument(
         "--file", nargs="+", default=None, metavar="FILE", dest="files",
-        help="Disambiguate a --name collision (pick the one defined here).",
+        help="Narrow a --name to the nodes defined in these files.",
+    )
+    dag_q.add_argument(
+        "--kind", choices=("type", "symbol"), default=None,
+        help="Narrow a --name to its type or its symbol nodes. A name that "
+             "still names several nodes resolves to all of them, listed under "
+             "`matches` with their kinds and files.",
     )
     dag_q.add_argument(
         "--depth", type=int, default=None, metavar="N",
@@ -455,6 +461,7 @@ def _dispatch_query(args: argparse.Namespace, target: Path) -> None:
             targeted_only=bool(getattr(args, "targeted_only", False)),
             api_only=bool(getattr(args, "api_only", False)),
             api_headers_only=bool(getattr(args, "api_headers_only", False)),
+            kind=getattr(args, "kind", None),
         )
         return
     from wavefront.query import query

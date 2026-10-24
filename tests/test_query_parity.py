@@ -36,10 +36,10 @@ class QueryParityTests(unittest.TestCase):
             finally:
                 set_config_path(None)
         expected = json.dumps({
-            "types": [{"id": "alpha_st", "layer": 0,
+            "types": [{"id": "alpha_st", "kind": "struct", "layer": 0,
                        "defined_in": "include/alpha.h"}],
-            "functions": [{"id": "alpha_new", "layer": 0,
-                           "defined_in": "src/alpha.c"}],
+            "functions": [{"id": "alpha_new", "kind": "function_def",
+                           "layer": 0, "defined_in": "src/alpha.c"}],
         }, indent=2) + "\n"
         self.assertEqual(output.getvalue(), expected)
 

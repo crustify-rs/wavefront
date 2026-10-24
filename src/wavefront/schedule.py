@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
 
-from wavefront.dag import Node, NodeKey, load_nodes, load_type_meta
+from wavefront.dag import Node, NodeKey, ambiguous, load_nodes, load_type_meta
 
 DEFAULT_MAX_SYMS = 25
 DEFAULT_MAX_LOC = 500
@@ -69,13 +69,10 @@ def _resolve(names: list[str], by_key, by_name,
             walked = [n for n in hits if n.key in prefer_keys]
             if walked:
                 hits = walked
-        if require_unambiguous and len(hits) > 1:
-            homes = "\n".join(
-                f"      --file {node.defined_in or '<no defining file>'}"
-                for node in hits)
-            raise SystemExit(
-                f"schedule: {name!r} resolves to {len(hits)} nodes — pass "
-                f"--file to pick one:\n{homes}")
+        if require_unambiguous:
+            # A type and a symbol of one name in one file are both selected;
+            # only nodes in different files need --file to pick one.
+            ambiguous([n.key for n in hits], stage="schedule")
         if not hits:
             unknown.append(name)
         for node in hits:
@@ -172,10 +169,10 @@ def _coalesce(by_layer: dict[int, list[Unit]], layers: list[int], *,
 def _node_doc(node: Node, *, dependency_scope=None) -> dict:
     def refs(keys):
         entries = []
-        for name, home in keys:
+        for name, home, kind in keys:
             entry = {"name": name, "defined_in": home}
             if dependency_scope is not None:
-                entry["scope"] = dependency_scope((name, home))
+                entry["scope"] = dependency_scope((name, home, kind))
             entries.append(entry)
         return entries
     return {
@@ -224,7 +221,7 @@ def _field_anchors(layout, target: Path, *,
         if not tag:
             continue
         defined_in = entry.get("defined_in")
-        key = (tag, defined_in)
+        key = (tag, defined_in, "type")
         if api_paths is not None and defined_in not in api_paths:
             out[key] = []
             continue
@@ -314,7 +311,7 @@ def build_wave(layout, target: Path, *, names: list[str] | None,
     # Each type unit carries its declared fields. Lifecycle roles are agent
     # findings submitted after this plan is made, so they neither bundle nor
     # filter anything here: every selected symbol is scheduled.
-    declared = load_type_meta(pair)
+    declared = load_type_meta(pair, by_file=True)
     anchors = _field_anchors(layout, target,
                              api_headers_only=api_headers_only)
     def section(node: Node) -> str:
@@ -330,7 +327,8 @@ def build_wave(layout, target: Path, *, names: list[str] | None,
         nodes = [n for n in nodes if section(n) != "imported"]
         if not nodes:
             raise SystemExit("schedule: nothing selected in scope.")
-    units = [Unit(n, list(declared.get(n.id, ([], set()))[0]), section(n))
+    units = [Unit(n, list(declared.get((n.id, n.defined_in), ([], set()))[0]),
+                  section(n))
              for n in nodes]
     selected_keys = {node.key for node in nodes}
 
