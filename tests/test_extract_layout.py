@@ -41,8 +41,8 @@ class ExtractLayoutTests(unittest.TestCase):
             second = repo / "campaigns" / "two" / "wavefront-config.json"
             first.parent.mkdir(parents=True)
             second.parent.mkdir(parents=True)
-            content = ('{"state_dir":"analysis","impl_files":["src/a.c"],'
-                       '"api_headers":["include/a.h"]}\n')
+            content = ('{"state_dir":"analysis","impl_files":{"included":["src/a.c"]},'
+                       '"api_headers":{"included":["include/a.h"]}}\n')
             first.write_text(content)
             second.write_text(content)
             set_repo_root(repo)
@@ -72,8 +72,8 @@ class ExtractLayoutTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             repo = Path(directory)
             cfg = repo / "wavefront-config.json"
-            cfg.write_text('{"state_dir":"analysis","impl_files":["src/a.c"],'
-                           '"api_headers":[],"t3_dir":"t3"}\n')
+            cfg.write_text('{"state_dir":"analysis","impl_files":{"included":["src/a.c"]},'
+                           '"api_headers":{"included":[]},"t3_dir":"t3"}\n')
             set_repo_root(repo)
             set_config_path(cfg)
             self.addCleanup(t3.configure, None)

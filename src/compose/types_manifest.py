@@ -551,7 +551,7 @@ def compose(
         without persisting the tag to disk. Assumes a stem-group
         manifest dir carries entries of a single scope only; the
         mixed-scope case (a stem-group split by
-        `config.out_of_scope.paths`) is tracked in docs/TODO.md.
+        an `excluded` list of the config) is tracked in docs/TODO.md.
 
     See module docstring for the seed/closure + port/wrap model.
     """

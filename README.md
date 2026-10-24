@@ -42,9 +42,8 @@ wavefront REPO_ROOT --config PATH COMMAND ...
 ```json
 {
   "state_dir": ".wavefront",
-  "impl_files": ["src/"],
-  "api_headers": ["include/widget.h"],
-  "out_of_scope": {"paths": ["src/tests/"]},
+  "impl_files": {"included": ["src/"], "excluded": ["src/tests/"]},
+  "api_headers": {"included": ["include/widget.h"]},
   "t3_dir": "t3"
 }
 ```
@@ -52,15 +51,13 @@ wavefront REPO_ROOT --config PATH COMMAND ...
 | Key | Meaning |
 |---|---|
 | `state_dir` | Directory for the CodeQL database and tables, ownership findings, and caches. |
-| `impl_files` | Sources and private headers that implement the library. |
-| `api_headers` | Headers that publish the library's API. |
-| `items` | Optional. The entities the config owns, which narrow it to them; see [Items](docs/scoping.md#items). |
-| `out_of_scope.paths` | Files excluded from `impl_files` and `api_headers`. |
-| `out_of_scope.items` | Optional. Entities the config never owns, although its files define or publish them. |
+| `impl_files` | Sources and private headers that implement the library: `included` files and directories, less what `excluded` matches. |
+| `api_headers` | Headers that publish the library's API, as `included` and `excluded`. |
+| `items` | Optional. `included` narrows the config to the entities it names, `excluded` removes those it names; each entry is `{name, defined_in, kind}`, `kind` being `type` or `symbol`. See [Items](docs/scoping.md#items). |
 | `t3_dir` | Optional. Directory, relative to `state_dir`, holding the T3 tables ([`examples/t3/`](examples/t3/)). |
 
 Paths are relative to `REPO_ROOT`. A trailing slash selects a directory
-recursively. See [`examples/wavefront-config.json`](examples/wavefront-config.json).
+recursively, in `included` and `excluded` alike; `excluded` is optional. See [`examples/wavefront-config.json`](examples/wavefront-config.json).
 
 ### 1. Extract
 

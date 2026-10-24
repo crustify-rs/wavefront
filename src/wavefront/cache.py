@@ -49,7 +49,9 @@ from pathlib import Path
 #:      `op` column, whose `drop` rows remove derived cast edges.
 #: 18 — `items` and `out_of_scope.items` narrow the targeted section; the
 #:      entities they leave out are imported (an older composer ignored them).
-_VERSION = 18
+#: 19 — the config's `impl_files`, `api_headers` and `items` are each
+#:      `{included, excluded}`, items carry a kind, and `out_of_scope` is gone.
+_VERSION = 19
 
 
 def fingerprint(layout, target) -> dict:

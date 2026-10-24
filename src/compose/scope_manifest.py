@@ -10,12 +10,12 @@ closure, and the `api` view is what `api_headers` declares.
 
 Rules:
 
-  1. A file is a *candidate* if `impl_files` or `api_headers` names it —
-     directly, or through a trailing-slash directory entry that expands to
-     every C/C++ source or header (`.c`, `.cc`, `.cpp`, `.h`, `.hpp`)
-     beneath it.
+  1. A file is a *candidate* if the `included` list of `impl_files` or
+     `api_headers` names it — directly, or through a trailing-slash
+     directory entry that expands to every C/C++ source or header (`.c`,
+     `.cc`, `.cpp`, `.h`, `.hpp`) beneath it.
   2. A candidate survives iff its repo-root-relative path does not match
-     any entry in `config.out_of_scope.paths` (entries ending with `/`
+     any entry of the same key's `excluded` list (entries ending with `/`
      match recursively; otherwise exact-file match).
   3. Everything an in-scope entity REACHES but that neither key names is
      imported, derived by `import_closure.py` into the sibling `imported`
@@ -50,9 +50,9 @@ _ALL_EXTS = _SOURCE_EXTS | _HEADER_EXTS
 
 _COMMENT = (
     "The TARGETED section: every entity whose home file `wavefront-config.json` "
-    "names. The candidate file universe is `impl_files` + `api_headers` "
-    "expanded (trailing-slash entries walked) minus `config.out_of_scope."
-    "paths`; the ENTITY sets (functions/globals/macros/types) and the derived "
+    "names. The candidate file universe is the `included` lists of "
+    "`impl_files` + `api_headers` expanded (trailing-slash entries walked) "
+    "minus their `excluded` lists; the ENTITY sets (functions/globals/macros/types) and the derived "
     "`files` list are then anchored on the CodeQL T1 tables, so they reflect "
     "the #ifdef-resolved (post-preprocessor) view of what the build actually "
     "compiled — a file whose body is elided by a disabled feature contributes "
@@ -82,8 +82,8 @@ _API_COMMENT = (
 )
 
 
-def _is_out_of_scope(rel_path: str, out_of_scope: list[str]) -> bool:
-    for pattern in out_of_scope:
+def _is_excluded(rel_path: str, excluded: list[str]) -> bool:
+    for pattern in excluded:
         if pattern.endswith("/"):
             if rel_path.startswith(pattern):
                 return True
@@ -92,7 +92,7 @@ def _is_out_of_scope(rel_path: str, out_of_scope: list[str]) -> bool:
     return False
 
 
-def _walk_dir(rel_dir: str, repo_root: Path, out_of_scope: list[str]) -> list[str]:
+def _walk_dir(rel_dir: str, repo_root: Path, excluded: list[str]) -> list[str]:
     """Every source/header file under ``rel_dir``, repo-root-relative."""
     base = repo_root if rel_dir in (".", "", "/") else (repo_root / rel_dir)
     base = base.resolve()
@@ -105,7 +105,7 @@ def _walk_dir(rel_dir: str, repo_root: Path, out_of_scope: list[str]) -> list[st
             rel = str(p.resolve().relative_to(repo_root.resolve()))
         except ValueError:
             continue  # symlinks pointing outside repo_root; skip
-        if _is_out_of_scope(rel, out_of_scope):
+        if _is_excluded(rel, excluded):
             continue
         files.append(rel)
     return files
@@ -114,16 +114,55 @@ def _walk_dir(rel_dir: str, repo_root: Path, out_of_scope: list[str]) -> list[st
 #: The two top-level file-set keys of `wavefront-config.json`.
 IMPL_FILES = "impl_files"
 API_HEADERS = "api_headers"
-#: The entity lists that narrow a config's ownership: ``items`` at the top
-#: level, ``out_of_scope.items`` beside ``out_of_scope.paths``.
+#: The entity lists that narrow a config's ownership: ``items.included`` and
+#: ``items.excluded``.
 ITEMS = "items"
+#: The two lists of each of :data:`IMPL_FILES`, :data:`API_HEADERS` and
+#: :data:`ITEMS`.
+INCLUDED, EXCLUDED = "included", "excluded"
+#: An item's kind: a type (struct, union or enum tag, or typedef) or a symbol
+#: (function, global, macro or callback typedef), the two kinds of dag node. C
+#: keeps tags apart from ordinary identifiers, so a tag and a function or
+#: global may share a name in one file; nothing else can.
+ITEM_KINDS = ("type", "symbol")
+
+_SCHEMA_HINT = (
+    'Each of `impl_files`, `api_headers` and `items` is '
+    '{"included": [...], "excluded": [...]}, `excluded` optional; an item is '
+    '{"name": ..., "defined_in": ..., "kind": "type"|"symbol"}. '
+    '`out_of_scope` is gone: its `paths` go to the `excluded` lists of the '
+    'file keys whose directories expand to them, its `items` to '
+    '`items.excluded`.')
+
+
+def _lists(config: dict, key: str) -> tuple[list, list]:
+    """``(included, excluded)`` of one key, validated; both empty when the key
+    is absent."""
+    if "out_of_scope" in config:
+        raise SystemExit(
+            f"wavefront-config.json: `out_of_scope` is no longer read. {_SCHEMA_HINT}")
+    value = config.get(key)
+    if value is None:
+        return [], []
+    if not isinstance(value, dict) or not set(value) <= {INCLUDED, EXCLUDED}:
+        raise SystemExit(
+            f"wavefront-config.json: `{key}` must be an object of "
+            f"`{INCLUDED}` and `{EXCLUDED}` lists. {_SCHEMA_HINT}")
+    out = []
+    for part in (INCLUDED, EXCLUDED):
+        entries = value.get(part) or []
+        if not isinstance(entries, list):
+            raise SystemExit(f"wavefront-config.json: `{key}.{part}` must be a list")
+        out.append(entries)
+    return out[0], out[1]
 #: Where the composed manifest keeps the targeted entities a config's items
 #: narrowed out, until `wavefront.scope.build` files them as imported.
 NARROWED = "narrowed"
 
 def enumerate_files(config: dict, repo_root: Path, key: str) -> list[str]:
     """Return the repo-root-relative candidate file paths ``config[key]`` names
-    (:data:`IMPL_FILES` | :data:`API_HEADERS`).
+    (:data:`IMPL_FILES` | :data:`API_HEADERS`): its ``included`` entries,
+    less what its ``excluded`` entries match.
 
     Always an explicit list — there is no implicit directory walk, so the key
     must name everything it covers. Entries are repo-root-relative
@@ -133,9 +172,9 @@ def enumerate_files(config: dict, repo_root: Path, key: str) -> list[str]:
       * a **directory**, written with a trailing slash — ``ssl/`` — which
         expands to every source/header file beneath it
 
-    The trailing-slash convention matches ``out_of_scope.paths``, so the
-    two path fields read the same way, and ``out_of_scope`` applies to
-    whatever a directory entry expands to. Directory entries are what make
+    ``excluded`` entries follow the same trailing-slash convention, so the two
+    lists read the same way, and ``excluded`` applies to whatever a directory
+    entry of ``included`` expands to. Directory entries are what make
     "this whole subtree **plus** these specific headers" expressible: a
     port cluster often spans a tree it does not own, because the structs
     its code implements are declared in headers that live elsewhere.
@@ -144,14 +183,13 @@ def enumerate_files(config: dict, repo_root: Path, key: str) -> list[str]:
     these actually compiled under the build configuration — so naming a
     file that the build never compiled is harmless, not an error.
     """
-    out_of_scope = list(config.get("out_of_scope", {}).get("paths", []))
-    entries = config.get(key) or []
+    entries, excluded = _lists(config, key)
 
     files: list[str] = []
     for entry in entries:
         if entry.endswith("/"):
-            files.extend(_walk_dir(entry, repo_root, out_of_scope))
-        elif not _is_out_of_scope(entry, out_of_scope):
+            files.extend(_walk_dir(entry, repo_root, excluded))
+        elif not _is_excluded(entry, excluded):
             files.append(entry)
     return sorted(set(files))
 
@@ -298,20 +336,18 @@ def _api_entities(t1_dir: Path, api_files: set[str]) -> dict[str, list[dict]]:
     return {k: sorted(v, key=keyf) for k, v in out.items()}
 
 
-def _item_entries(config: dict, where: str, entries) -> list[tuple[str, str]]:
-    """The ``(name, defined_in)`` pairs of one entity list, validated."""
-    if entries is None:
-        return []
-    if not isinstance(entries, list):
-        raise SystemExit(f"wavefront-config.json: `{where}` must be a list")
+def _item_entries(where: str, entries: list) -> list[tuple[str, str, str]]:
+    """The ``(name, defined_in, kind)`` triples of one entity list, validated."""
     out = []
     for i, e in enumerate(entries):
-        if (not isinstance(e, dict) or set(e) != {"name", "defined_in"}
-                or not all(isinstance(e[k], str) and e[k] for k in e)):
+        if (not isinstance(e, dict) or set(e) != {"name", "defined_in", "kind"}
+                or not all(isinstance(e[k], str) and e[k] for k in e)
+                or e["kind"] not in ITEM_KINDS):
             raise SystemExit(
                 f"wavefront-config.json: `{where}[{i}]` must be "
-                f'{{"name": ..., "defined_in": ...}} with non-empty strings')
-        out.append((e["name"], e["defined_in"]))
+                f'{{"name": ..., "defined_in": ..., "kind": "type"|"symbol"}} '
+                f"with non-empty strings")
+        out.append((e["name"], e["defined_in"], e["kind"]))
     if len(set(out)) != len(out):
         raise SystemExit(f"wavefront-config.json: `{where}` repeats an entity")
     return out
@@ -320,25 +356,28 @@ def _item_entries(config: dict, where: str, entries) -> list[tuple[str, str]]:
 def _narrow(entities: dict[str, list[dict]], config: dict,
             types_rows: list[dict]) -> tuple[dict, dict]:
     """Split the targeted ``entities`` into those the config owns and those
-    its ``items`` / ``out_of_scope.items`` narrow out.
+    its ``items.included`` / ``items.excluded`` narrow out.
 
-    An entry matches an entity of its name defined in its ``defined_in``, or,
-    for an entity with no definition in the database, declared there. A
-    typedef and the type it finally names are one group, so an entry selects
-    both. Only targeted entities can be named: an entry that matches none --
-    a header macro, which is never targeted, or an entity the config's files
-    do not define -- is an error, as is an entity both lists name.
+    An entry matches an entity of its name and kind defined in its
+    ``defined_in``, or, for an entity with no definition in the database,
+    declared there. A typedef and the type it finally names are one group, so
+    an entry selects both. A non-empty ``included`` keeps only what it names;
+    ``excluded`` drops what it names. Only targeted entities can be named: an
+    entry that matches none -- a header macro, which is never targeted, or an
+    entity the config's files do not define -- is an error, as is an entity
+    both lists name.
     """
-    include = _item_entries(config, ITEMS, config.get(ITEMS))
-    exclude = _item_entries(config, "out_of_scope.items",
-                            (config.get("out_of_scope") or {}).get(ITEMS))
-    if not include and ITEMS not in config and not exclude:
+    include_raw, exclude_raw = _lists(config, ITEMS)
+    include = _item_entries(f"{ITEMS}.{INCLUDED}", include_raw)
+    exclude = _item_entries(f"{ITEMS}.{EXCLUDED}", exclude_raw)
+    if not include and not exclude:
         return entities, {k: [] for k in entities}
     both = sorted(set(include) & set(exclude))
     if both:
         raise SystemExit(
-            "wavefront-config.json: `items` and `out_of_scope.items` both name "
-            + ", ".join(f"{n} ({d})" for n, d in both))
+            f"wavefront-config.json: `{ITEMS}.{INCLUDED}` and "
+            f"`{ITEMS}.{EXCLUDED}` both name "
+            + ", ".join(f"{n} ({d}, {k})" for n, d, k in both))
 
     by_name = _scope.build_types_index(types_rows)
 
@@ -349,28 +388,29 @@ def _narrow(entities: dict[str, list[dict]], config: dict,
                 return ("types", base["name"], base["def_file"])
         return (kind, e["name"], e["defined_in"])
 
-    def matches(entry: tuple[str, str], e: dict) -> bool:
-        name, file = entry
-        return e["name"] == name and (
-            e["defined_in"] == file
-            or (not e["defined_in"] and file in e.get("declared_in", [])))
+    def matches(entry: tuple[str, str, str], bucket: str, e: dict) -> bool:
+        name, file, kind = entry
+        return (e["name"] == name
+                and (bucket == "types") == (kind == "type")
+                and (e["defined_in"] == file
+                     or (not e["defined_in"] and file in e.get("declared_in", []))))
 
-    def groups_of(entries: list[tuple[str, str]], where: str) -> set:
+    def groups_of(entries: list[tuple[str, str, str]], where: str) -> set:
         out = set()
         for entry in entries:
-            hit = {group(kind, e) for kind, es in entities.items()
-                   for e in es if matches(entry, e)}
+            hit = {group(bucket, e) for bucket, es in entities.items()
+                   for e in es if matches(entry, bucket, e)}
             if not hit:
                 raise SystemExit(
-                    f"wavefront-config.json: `{where}` names {entry[0]} "
-                    f"({entry[1]}), which the config's files do not define: "
-                    f"only a targeted entity can be named, and a header macro "
-                    f"never is")
+                    f"wavefront-config.json: `{where}` names the {entry[2]} "
+                    f"{entry[0]} ({entry[1]}), which the config's files do not "
+                    f"define: only a targeted entity can be named, and a header "
+                    f"macro never is")
             out |= hit
         return out
 
-    selected = groups_of(include, ITEMS) if ITEMS in config else None
-    excluded = groups_of(exclude, "out_of_scope.items")
+    selected = groups_of(include, f"{ITEMS}.{INCLUDED}") if include else None
+    excluded = groups_of(exclude, f"{ITEMS}.{EXCLUDED}")
     owned, narrowed = {}, {}
     for kind, es in entities.items():
         owned[kind], narrowed[kind] = [], []

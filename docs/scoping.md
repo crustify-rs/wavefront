@@ -8,25 +8,31 @@ disk. Field meaning of the config itself is in the
 ## Files
 
 `impl_files` names the sources and private headers that implement the
-library, and `api_headers` the headers that publish it. An entry ending in
-`/` expands to every C or C++ source and header beneath it; an entry
-matching `out_of_scope.paths` is removed. The resulting candidates are then
+library, and `api_headers` the headers that publish it, each as two lists:
+`included` names files and directories, and the optional `excluded` removes
+what they would otherwise select. An entry ending in `/` expands to every C
+or C++ source and header beneath it, in either list; a file an `included`
+entry selects is removed when it matches its key's `excluded` list. The resulting candidates are then
 anchored on the T1 tables: a file the traced build never compiled, or whose
 body an `#ifdef` elides, contributes no entities.
 
 ## Items
 
-A config owns its files whole by default. Two optional lists narrow it to entities, so
-that two configs can share a file and split what it defines:
+A config owns its files whole by default. `items` narrows it to entities, so that two
+configs can share a file and split what it defines, with two optional lists:
 
-- `items` names the only entities the config owns: its targeted section holds those of
-  its files' entities that the list names, and nothing else;
-- `out_of_scope.items` names entities the config never owns, although its files define
-  or publish them.
+- `items.included` names the only entities the config owns: its targeted section holds
+  those of its files' entities that the list names, and nothing else; an empty list
+  narrows nothing;
+- `items.excluded` names entities the config never owns, although its files define or
+  publish them.
 
-Each entry is `{"name": ..., "defined_in": ...}`: the entity's name and the
+Each entry is `{"name": ..., "defined_in": ..., "kind": ...}`: the entity's name, the
 repo-relative file of its definition, or of its declarations when the database holds no
-definition. A typedef follows the type it names, so naming a struct or its typedef
+definition, and its kind, `type` for a struct, union or enum tag or a typedef, `symbol`
+for a function, global, macro or callback typedef. C keeps tags apart from ordinary
+identifiers, so a struct and a function or global may share a name in one file, as
+`static const struct typelen {...} typelen[]` does; the kind tells them apart. A typedef follows the type it names, so naming a struct or its typedef
 selects both. A header macro is imported in every config, as the Targeted section
 describes, so an entry cannot select one.
 
@@ -37,13 +43,13 @@ imported, another config's work, so it stays a node and a dependency of whatever
 it, but is never a unit of this config. Its body seeds no walk here, so what only it
 reaches is not imported on its account.
 
-`out_of_scope.paths` and `out_of_scope.items` act at two grains: the first drops files a
-directory entry expands to, before anything is classified; the second drops entities
-from the targeted section, after.
+The file lists and the item lists act at two grains: `excluded` file entries drop files a
+directory entry expands to, before anything is classified; `items` drops entities from
+the targeted section, after.
 
-The lists are the counterparts of one another across configs. A config narrowed by
-`items` shares its files with the config that owns the rest of them, which names the same
-entities in `out_of_scope.items`, so that each entity is targeted by exactly one config
+The item lists are the counterparts of one another across configs. A config narrowed by
+`items.included` shares its files with the config that owns the rest of them, which names
+the same entities in `items.excluded`, so that each entity is targeted by exactly one config
 and scheduled once. A project-wide config, whose files are the union of every config's,
 sets neither list and owns everything.
 

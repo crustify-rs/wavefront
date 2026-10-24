@@ -731,7 +731,7 @@ def compose(
         manifest with its scope without persisting the tag to disk.
         Assumes a stem-group manifest dir carries entries of a
         single scope only; the mixed-scope case (a stem-group split
-        by `config.out_of_scope.paths`) is tracked in docs/TODO.md.
+        by an `excluded` list of the config) is tracked in docs/TODO.md.
 
     Behaviour modes (driven by `filter_spec`):
 
@@ -1016,7 +1016,7 @@ def compose(
     # it, otherwise IMPORTED. This holds for stem-grouped manifest
     # dirs whose files all sit on one side of in-memory inventory. The
     # mixed-scope-in-one-dir case (a stem-group split by
-    # `config.out_of_scope.paths`) is a known limitation tracked in
+    # an `excluded` list of the config) is a known limitation tracked in
     # docs/TODO.md.
     entries_by_dir: dict[Path, list[dict[str, Any]]] = defaultdict(list)
     dir_scope: dict[Path, str] = {}
