@@ -6,7 +6,7 @@ from __future__ import annotations
 import unittest
 
 from wavefront.dag import ambiguous, load_nodes, select
-from wavefront.schedule import _resolve
+from wavefront.schedule import _resolve, _skips
 
 
 def _rec(name, kind, home, *, types=(), syms=()):
@@ -62,6 +62,12 @@ class NameCollisionTests(unittest.TestCase):
     def test_schedule_selects_both_kinds_of_one_file(self) -> None:
         out = _resolve(["typelen"], self.by_key, self.by_name, lambda n: True)
         self.assertEqual(sorted(n.node_kind for n in out), ["symbol", "type"])
+
+    def test_skip_by_kind(self) -> None:
+        self.assertEqual(_skips(["a", "type:b", "symbol:c"]),
+                         {None: {"a"}, "type": {"b"}, "symbol": {"c"}})
+        with self.assertRaises(SystemExit):
+            _skips(["field:x"])
 
 
 if __name__ == "__main__":

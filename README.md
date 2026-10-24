@@ -173,7 +173,7 @@ wavefront REPO_ROOT --config PATH schedule --output PATH SELECTION [FLAGS]
 | `--dag-layer N` | | Select every unit in graph layer `N`. |
 | `--lifetime-for void\|string` | | Emit the single raw-lifetime wave. |
 | `--transitive` | | Add the selection's dependency closure. |
-| `--skip NAME ...` | | Remove named units. |
+| `--skip NAME ...` | | Remove named units; `type:NAME` or `symbol:NAME` removes only that kind. |
 | `--api-headers-only` | | Schedule the public API from the public-signature graph. |
 | `--max-types N` | `2` | Types per type batch. |
 | `--min-fields N` | `20` | Declared fields that close a type batch. |

@@ -93,6 +93,23 @@ def _resolve(names: list[str], by_key, by_name,
     return out
 
 
+def _skips(entries) -> dict[str | None, set[str]]:
+    """``--skip`` entries by kind: ``NAME`` removes every node of that name,
+    ``type:NAME`` or ``symbol:NAME`` only its type or its symbol nodes. A C
+    identifier holds no colon, so the prefix cannot be mistaken for a name."""
+    out: dict[str | None, set[str]] = {}
+    for entry in entries:
+        kind, sep, name = entry.partition(":")
+        if not sep:
+            kind, name = None, entry
+        elif kind not in ("type", "symbol") or not name:
+            raise SystemExit(
+                f"schedule: --skip {entry!r}: expected NAME, type:NAME or "
+                f"symbol:NAME.")
+        out.setdefault(kind, set()).add(name)
+    return out
+
+
 def _closure(seeds: list[Node], by_key) -> list[Node]:
     pending = list(seeds)
     seen: set[NodeKey] = set()
@@ -301,8 +318,10 @@ def build_wave(layout, target: Path, *, names: list[str] | None,
         nodes = _resolve(closure_names, by_key, by_name, keep_scope,
                          require_unambiguous=False,
                          prefer_keys={n.key for n in walked})
-    blocked = set(skip or ())
-    nodes = [n for n in nodes if n.id not in blocked]
+    blocked = _skips(skip or ())
+    nodes = [n for n in nodes
+             if n.id not in blocked.get(None, ())
+             and n.id not in blocked.get(n.node_kind, ())]
     if not nodes:
         raise SystemExit("schedule: nothing selected in scope.")
 

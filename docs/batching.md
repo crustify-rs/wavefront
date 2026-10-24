@@ -17,7 +17,9 @@ batch one unit of work for one user. It reads the layers of the dependency graph
    over the graph's edges (not its cut `fallback` edges) and kept to the
    inventory. A name the walk reached resolves to the node it reached, not
    to a same-named twin elsewhere.
-3. **Skips.** `--skip` removes named units.
+3. **Skips.** `--skip` removes named units: `NAME` every node of that name,
+   `type:NAME` or `symbol:NAME` only its type or its symbol nodes, since a
+   struct tag and a function or global may share a name in one file.
 4. **API ownership.** With `--api-headers-only`, imported items leave the
    selection: another config's `api_headers` own them, and that config's
    schedule wraps them. They stay dependencies of the units that reach them.

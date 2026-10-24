@@ -79,7 +79,10 @@ def build_parser() -> argparse.ArgumentParser:
     schedule.add_argument("--lifetime-for", choices=("void", "string"), default=None)
     schedule.add_argument("--file", nargs="+", dest="files", default=None)
     schedule.add_argument("--dag-layer", type=int, default=None)
-    schedule.add_argument("--skip", nargs="+", action="extend", default=None)
+    schedule.add_argument(
+        "--skip", nargs="+", action="extend", default=None, metavar="NAME",
+        help="Remove named units: NAME removes every node of the name, "
+             "type:NAME or symbol:NAME only its type or its symbol nodes.")
     schedule.add_argument("--transitive", action="store_true")
     schedule.add_argument(
         "--api-headers-only", action="store_true",
