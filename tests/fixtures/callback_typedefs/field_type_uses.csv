@@ -1,0 +1,5 @@
+struct_name,struct_def_file,field_name,type_name,type_kind,type_def_file
+options,api.h,inline_cb,handle,typedef,
+options,api.h,on_count,count_cb,typedef,
+options,api.h,on_handle,handle_cb,typedef,
+options,api.h,owner,handle,typedef,

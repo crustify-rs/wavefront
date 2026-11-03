@@ -162,9 +162,24 @@ Type embeddedTypeOf(Type t) {
     else result = t
 }
 
+/**
+ * The type `f` is declared with. The extractor can give one field several
+ * types, one per translation-unit variant of a type it names: a struct that
+ * some TUs complete and others leave incomplete is two entities, so a pointer
+ * to it is two pointer types, and a callback typedef whose signature names it
+ * gives the field one routine type per variant, none of them the typedef. The
+ * declaration entries keep the type as written, so a field with several types
+ * takes theirs; every other field keeps its one.
+ */
+Type fieldType(Field f) {
+  if strictcount(f.getType()) > 1 and exists(f.getADeclarationEntry().getType())
+  then result = f.getADeclarationEntry().getType()
+  else result = f.getType()
+}
+
 /** The ANONYMOUS struct/union a field embeds by value, if any. */
 UserType anonMemberAggregate(Field f) {
-  result = embeddedTypeOf(f.getType()) and
+  result = embeddedTypeOf(fieldType(f)) and
   isAnonymous(result) and
   (result instanceof Struct or result instanceof Union)
 }

@@ -85,7 +85,7 @@ predicate reachableUserType(Type outer, UserType t) {
 
 from Field f, UserType t, string struct_name, string struct_def_file, string field_name
 where
-  reachableUserType(f.getType(), t) and
+  reachableUserType(fieldType(f), t) and
   not isAnonNamed(canonicalTypeName(t)) and
   typeKindOf(t) != "other" and
   (

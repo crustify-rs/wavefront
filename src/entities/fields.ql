@@ -91,7 +91,7 @@ predicate containsAggregateType(Type t) {
 }
 
 string isScalarOf(Field f) {
-  if containsAggregateType(f.getType())
+  if containsAggregateType(fieldType(f))
   then result = "false"
   else result = "true"
 }
@@ -121,7 +121,7 @@ where
 select struct_name,
        struct_def_file,
        field_name,
-       f.getType().toString() as field_type,
+       fieldType(f).toString() as field_type,
        isScalarOf(f) as is_scalar,
-       pointerDepthOf(f.getType()) as ptr_depth,
-       isErasedOf(f.getType()) as is_erased
+       pointerDepthOf(fieldType(f)) as ptr_depth,
+       isErasedOf(fieldType(f)) as is_erased

@@ -182,10 +182,10 @@ predicate retSlot(Function f, string name, string file, string member,
 
 predicate fieldSlot(Field fld, string name, string file, string member,
                     string decl, string ctype) {
-  pointerSlot(fld.getType()) and
+  pointerSlot(fieldType(fld)) and
   ownerOf(fld.getDeclaringType(), name, file) and
   member = fld.getName() and
-  decl = declOf(fld.getType()) and ctype = fld.getType().toString()
+  decl = declOf(fieldType(fld)) and ctype = fieldType(fld).toString()
 }
 
 /** `e` reads the slot named by the remaining columns. */

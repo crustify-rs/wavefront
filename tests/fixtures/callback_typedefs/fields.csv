@@ -1,0 +1,7 @@
+struct_name,struct_def_file,field_name,field_type,is_scalar,ptr_depth,is_erased
+handle,impl.c,refs,int,true,0,false
+options,api.h,inline_cb,..(*)(..),true,1,false
+options,api.h,on_count,count_cb,true,1,false
+options,api.h,on_handle,handle_cb,true,1,false
+options,api.h,owner,handle *,false,1,false
+options,api.h,payload,void *,true,1,true
