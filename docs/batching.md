@@ -37,9 +37,9 @@ the order of the modules. Each module's units are then ordered within it,
 their own cycles cut the same way, and layered by longest path.
 
 Every unit edge a cut removes, between groups or within a module, stays
-recorded on both ends: the user lists the dependency, scheduled after it, in
-`higher_cuts`, and the dependency lists the user, scheduled before it, in
-`lower_cuts`. A cut between two modules is recorded on the user's module with
+recorded on both ends: the user lists the dependency, ordered after it, in its
+`depends_on.cut`, and the dependency lists the user, ordered before it, in its
+`depended_on_by.cut`. A cut between two modules is recorded on the user's module with
 the unit edges it crosses: what the module uses of a module ordered after it.
 
 The schedule keeps the seeds and every unit they depend on, transitively, the

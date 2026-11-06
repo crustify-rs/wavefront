@@ -343,14 +343,17 @@ def build_schedule(layout, target: Path, *, api_headers_only: bool = False,
         return {"name": key[0], "defined_in": key[1], "scope": scope_of(key)}
 
     def route(key: NodeKey) -> str:
-        """A key's side of ``deps``: a generator macro is a type, as its item
-        is."""
+        """A key's side of a reference list: a generator macro is a type, as
+        its item is."""
         node = by_key.get(key)
         return "type" if node is not None and is_generator(node) else key[2]
 
     def refs(keys, kind=None):
         return [ref(k) for k in sorted(keys, key=_sort_key)
                 if kind is None or route(k) == kind]
+
+    def sides(keys) -> dict:
+        return {"types": refs(keys, "type"), "symbols": refs(keys, "symbol")}
 
     def doc(key: NodeKey) -> dict:
         node = by_key[key]
@@ -368,9 +371,8 @@ def build_schedule(layout, target: Path, *, api_headers_only: bool = False,
             "loc": node.loc,
             "stats": stats.of(node.id, node.defined_in, node.node_kind,
                               node.subkind),
-            "deps": {"types": refs(deps, "type"), "symbols": refs(deps, "symbol")},
-            "higher_cuts": refs(higher),
-            "lower_cuts": refs(lower.get(key, ())),
+            "depends_on": {"scheduled": sides(deps), "cut": sides(higher)},
+            "depended_on_by": {"cut": sides(lower.get(key, ()))},
             "type_generator_for": list(node.type_generator_for),
             "used_fields": used.get(key, []),
         }
@@ -465,7 +467,12 @@ def build_schedule(layout, target: Path, *, api_headers_only: bool = False,
         keys = sorted(plan[sl], key=_sort_key)
         n = index_of[sl]
         module = sl[1] if sl[0] == "module" else None
+        # A cut dependency listed before it is met by the order: only one
+        # listed after it is cut.
         ds = {index_of[slot[d]] for k in keys for d in kept(k)} - {n}
+        cut_ds = {index_of[slot[d]] for k in keys for d in adj[k]
+                  if (k, d) in cut} - {n}
+        ds |= {w for w in cut_ds if w < n}
         wave = {"index": n, "module": mods[module].name if module is not None else None}
         if module is not None:
             if module in previous:
@@ -476,11 +483,12 @@ def build_schedule(layout, target: Path, *, api_headers_only: bool = False,
         else:
             wave["layer"] = sl[1][0]
         wave.update({
-            "depends_on": sorted(ds),
+            "depends_on": {"scheduled": sorted(ds),
+                           "cut": sorted(w for w in cut_ds if w > n)},
             "unit_count": len(keys),
             "batches": batches_of(keys),
         })
-        assert all(d < n for d in wave["depends_on"]), n
+        assert all(d < n for d in wave["depends_on"]["scheduled"]), n
         waves.append(wave)
 
     # A module's dependencies are those of its scheduled units, which every

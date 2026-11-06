@@ -87,9 +87,9 @@ class OrderTests(unittest.TestCase):
                                           ("b2", "b.c")])
         items = {i["name"]: i for i in _scheduled_items(
             _schedule(graph, inventory, config=_config()))}
-        self.assertEqual([r["name"] for r in items["a1"]["higher_cuts"]], ["b2"])
-        self.assertEqual([r["name"] for r in items["b2"]["lower_cuts"]], ["a1"])
-        self.assertEqual(items["a1"]["deps"]["symbols"],
+        self.assertEqual([r["name"] for r in items["a1"]["depends_on"]["cut"]["symbols"]], ["b2"])
+        self.assertEqual([r["name"] for r in items["b2"]["depended_on_by"]["cut"]["symbols"]], ["a1"])
+        self.assertEqual(items["a1"]["depends_on"]["scheduled"]["symbols"],
                          [{"name": "b1", "defined_in": "b.c", "scope": "scheduled"}])
         self.assertEqual(_names(_schedule(graph, inventory, config=_config())),
                          [["b1"], ["a1"], ["b2"]])
@@ -138,7 +138,7 @@ class SelectionTests(unittest.TestCase):
         items = {i["name"]: i for i in _scheduled_items(schedule)}
         self.assertEqual({n: i["seeded"] for n, i in items.items()},
                          {"a1": True, "a2": True, "b1": False})
-        self.assertEqual(items["a1"]["deps"]["symbols"],
+        self.assertEqual(items["a1"]["depends_on"]["scheduled"]["symbols"],
                          [{"name": "b1", "defined_in": "b.c", "scope": "scheduled"}])
         self.assertEqual((schedule["summary"]["unit_count"],
                           schedule["summary"]["seeded_count"]), (3, 2))
@@ -180,7 +180,7 @@ def _modules(config, *modules):
 
 def _waves(schedule):
     return [(w["module"], [i["name"] for b in w["batches"] for i in b["items"]],
-             w["depends_on"], w["sublayer"] if w["module"] else w["layer"])
+             w["depends_on"]["scheduled"], w["sublayer"] if w["module"] else w["layer"])
             for w in schedule["waves"]]
 
 
@@ -216,7 +216,7 @@ class ModuleTests(unittest.TestCase):
         self.assertEqual(items["a2"]["module"], "A")
         self.assertEqual({m: modules[m]["layer"] for m in modules},
                          {"B": 0, "H": 0, "A": 1})
-        self.assertEqual([r["name"] for r in items["b2"]["higher_cuts"]], ["a1"])
+        self.assertEqual([r["name"] for r in items["b2"]["depends_on"]["cut"]["symbols"]], ["a1"])
 
     def test_units_no_module_claims_are_ordered_alone(self) -> None:
         config = _modules(_config("a.c", "h.h"), ("A", "a.c"))
@@ -444,7 +444,7 @@ class KindTests(unittest.TestCase):
         self.assertEqual(_names(schedule), [["f"]])
         self.assertEqual(schedule["waves"][0]["layer"], 0)
         f = _scheduled_items(schedule)[0]
-        self.assertEqual([r["scope"] for r in f["deps"]["types"] + f["deps"]["symbols"]],
+        self.assertEqual([r["scope"] for r in f["depends_on"]["scheduled"]["types"] + f["depends_on"]["scheduled"]["symbols"]],
                          ["closure", "closure"])
 
     def test_flags_make_them_units(self) -> None:
@@ -469,7 +469,7 @@ class KindTests(unittest.TestCase):
         items = {i["name"]: i for i in
                  _scheduled_items(_schedule(graph, inventory, config=_config()))}
         self.assertEqual(items["GEN"]["kind"], "type")
-        self.assertEqual(items["T"]["deps"],
+        self.assertEqual(items["T"]["depends_on"]["scheduled"],
                          {"types": [{"name": "GEN", "defined_in": "a.c",
                                      "scope": "scheduled"}], "symbols": []})
 

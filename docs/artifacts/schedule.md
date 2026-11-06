@@ -85,7 +85,7 @@ record names across a module boundary that is still in the other language.
   "index": 2,
   "module": "src/widget.c",
   "sublayer": 1,
-  "depends_on": [0, 1],
+  "depends_on": {"scheduled": [0, 1], "cut": []},
   "unit_count": 2,
   "batches": [{"kind": "symbol", "items": []}]
 }
@@ -97,7 +97,8 @@ record names across a module boundary that is still in the other language.
 | `module` | the module whose units it holds, with the dependencies no module claims that the module needs first; `null` for a wave of seeds no module claims, or of what they alone need first |
 | `sublayer` | on a module's wave: its place among its module's waves, from 0 |
 | `layer` | on a wave with no module: the layer it is listed in, a seed's place in the order or that of the seed's wave it runs just before. Without `modules`, every wave's place in the units' order |
-| `depends_on` | the waves that must complete before it: its module's previous wave, and those that hold its units' dependencies. A consumer that runs each wave once these complete runs every wave as early as it can |
+| `depends_on.scheduled` | the waves that must complete before it: its module's previous wave, and those that hold its units' dependencies, a cut one among them when it is listed before. A consumer that runs each wave once these complete runs every wave as early as it can |
+| `depends_on.cut` | the waves listed after it that hold its units' cut dependencies: what it reaches before they run |
 | `unit_count` | the items of its batches |
 | `batches` | its batches; each batch's `kind` is its route (`type` or `symbol`), and `items` its exact worklist. A batch packed under a cap also records its `source_file`, a type batch's first type's defining file |
 
@@ -116,9 +117,9 @@ record names across a module boundary that is still in the other language.
   "stats": {"loc": 36, "params": 2, "pointer_params": 1, "erased_params": 0,
             "returns_pointer": true, "variadic": false, "callers": 0,
             "callees": 2, "field_accesses": 6},
-  "deps": {"types": [], "symbols": []},
-  "higher_cuts": [],
-  "lower_cuts": [],
+  "depends_on": {"scheduled": {"types": [], "symbols": []},
+                 "cut": {"types": [], "symbols": []}},
+  "depended_on_by": {"cut": {"types": [], "symbols": []}},
   "type_generator_for": [],
   "used_fields": []
 }
@@ -134,13 +135,14 @@ record names across a module boundary that is still in the other language.
 | `module` | the module that claims it; `null` when none does. Its place in the order is its wave's |
 | `loc` | a function's body line span, 1 for a global, 0 for a macro; a type's field count |
 | `stats` | the counts a consumer weighs the item's work by, below |
-| `deps` | the nodes it depends on whose edges were kept, as `types` and `symbols` by their route, a generator macro among the types: a unit among them is scheduled before it |
-| `higher_cuts` | the dependencies whose edges were cut to break a cycle: scheduled after it, so it is processed before them |
-| `lower_cuts` | the reverse: the units scheduled before it whose dependency on it was cut |
+| `depends_on.scheduled` | the nodes it depends on whose edges were kept: a unit among them is scheduled before it |
+| `depends_on.cut` | the units it depends on whose edges were cut to break a cycle: ordered after it, so it is processed before them |
+| `depended_on_by.cut` | the reverse: the units ordered before it whose dependency on it was cut |
 | `type_generator_for` | on a generator macro (T3 `type_generators.csv`), the instance types it mints, routed as one type so one generic is written for them; `[]` otherwise |
 | `used_fields` | on a type, the fields its users reach: in API mode every field of a type an `api_headers` file defines, and none of a type defined elsewhere; otherwise the fields the closure's own functions access |
 
-Every reference in `deps`, `higher_cuts`, and `lower_cuts` is
+Each list is split into `types` and `symbols` by route, a generator macro
+among the types, and each reference in them is
 `{"name": "...", "defined_in": "...", "scope": "..."}`, so a consumer needs no
 second node table. `scope` is:
 

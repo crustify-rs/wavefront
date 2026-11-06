@@ -138,7 +138,8 @@ user in `back_fill`, the units that already refer to it.
 `query dag --name X --scc hi-deps|lo-deps` reads the
 two lists. The greedy order is deterministic but not a minimum cut. A
 schedule cuts its units' cycles the same way, between its modules and
-within each, and records its cuts as `higher_cuts` and `lower_cuts`
+within each, and records its cuts in its items' `depends_on.cut` and
+`depended_on_by.cut`
 ([`batching.md`](batching.md#order)).
 
 ### Polymorphism

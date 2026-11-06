@@ -109,15 +109,17 @@ class SchedulePackingParityTests(unittest.TestCase):
             self.assertEqual(wave["unit_count"], sum(
                 len(batch["items"]) for batch in wave["batches"]))
             self.assertIn("sublayer" if wave["module"] else "layer", wave)
-            for dep in wave["depends_on"]:
+            for dep in wave["depends_on"]["scheduled"]:
                 self.assertLess(dep, index)
+            for dep in wave["depends_on"]["cut"]:
+                self.assertGreater(dep, index)
             for item in (i for b in wave["batches"] for i in b["items"]):
                 self.assertEqual(item["module"], wave["module"])
         for module in schedule["modules"]:
             for index in module["waves"]:
                 self.assertEqual(waves[index]["module"], module["name"])
         keys = {"name", "defined_in", "declared_in", "kind", "source_kind",
-                "seeded", "module", "loc", "stats", "deps", "higher_cuts", "lower_cuts",
+                "seeded", "module", "loc", "stats", "depends_on", "depended_on_by",
                 "type_generator_for", "used_fields"}
         for item in items:
             self.assertEqual(set(item), keys)
@@ -283,7 +285,7 @@ class SchedulePackingParityTests(unittest.TestCase):
         )
         dependencies = {
             item["name"]: item["scope"]
-            for item in public_item["deps"]["symbols"]
+            for item in public_item["depends_on"]["scheduled"]["symbols"]
             if item["name"] == macro.id
         }
         self.assertEqual(
@@ -318,7 +320,7 @@ class SchedulePackingParityTests(unittest.TestCase):
             items = _scheduled_items(
                 _schedule(graph, inventory, api_headers_only=api))
             self.assertEqual([item["name"] for item in items], ["Holder"])
-            self.assertEqual(items[0]["deps"]["types"], [
+            self.assertEqual(items[0]["depends_on"]["scheduled"]["types"], [
                 {"name": "Option", "defined_in": "include/opt.h",
                  "scope": "external"}])
 
