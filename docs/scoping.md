@@ -75,7 +75,9 @@ the dependencies they share both; each item's key tells them apart.
 The **targeted** section is what the closure owns: every entity whose
 definition sits in `impl_files` or `api_headers`. An entity with no
 definition in the database is targeted when all of its declarations sit in
-those files. A typedef takes the section of the type it finally names, so a
+those files; a forward declaration of a tag defined elsewhere is no such
+entity, and follows its definition, so a closure header's `struct tm;` leaves
+the system's `tm` imported. A typedef takes the section of the type it finally names, so a
 typedef and its struct never fall on opposite sides. A macro defined in a
 header is always imported, since any C still built may include that header;
 only a macro defined in a targeted `.c` file is targeted.

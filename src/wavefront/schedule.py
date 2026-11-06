@@ -216,7 +216,14 @@ def build_schedule(layout, target: Path, *, api_headers_only: bool = False,
             # A header macro is imported, whatever file defines it: with
             # macros, every one the closure's files define is a unit.
             return with_macros and (node.defined_in or "") in closure_files
-        return bool({(node.id, node.defined_in or ""), (node.id, "")} & targeted)
+        if (node.id, node.defined_in or "") in targeted:
+            return True
+        # The declaration-only key stands for an entity defined nowhere, whose
+        # node sits at a declaration in the closure. A node defined outside
+        # the closure, which a closure header only forward-declares (`struct
+        # tm;`), stays an external leaf.
+        return ((node.id, "") in targeted
+                and (not node.defined_in or node.defined_in in closure_files))
 
     def is_seed(node: Node) -> bool:
         if not is_unit(node):

@@ -199,6 +199,14 @@ def classify_type(row: dict, by_name: dict[str, dict], target_paths: set[str]) -
     `typedef enum { … } STATE;`).
     """
     if row["kind"] != "typedef":
+        # A declaration-only tag row folds into the definition of its tag
+        # (docs/graph.md, Nodes), so it takes the definition's section: a
+        # target header's forward `struct tm;` does not claim glibc's `tm`.
+        # The declaration fallback is for a tag defined nowhere.
+        if not row["def_file"] and row["kind"] in ("struct", "union", "enum"):
+            d = by_name.get(row["name"])
+            if d is not None and d["def_file"] and d["kind"] == row["kind"]:
+                return classify(d["def_file"], parse_decl_files(d["decl_files"]), target_paths)
         return classify(row["def_file"], parse_decl_files(row["decl_files"]), target_paths)
     if row["aliases"] and row["aliases"] in by_name:
         base = resolve_typedef(row["aliases"], by_name)
