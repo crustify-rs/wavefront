@@ -51,7 +51,10 @@ from pathlib import Path
 #:      entities they leave out are imported (an older composer ignored them).
 #: 19 — the config's `impl_files`, `api_headers` and `items` are each
 #:      `{included, excluded}`, items carry a kind, and `out_of_scope` is gone.
-_VERSION = 19
+#: 20 — the feedback-arc-set reads each type edge's reference multiplicity
+#:      (it read 1 for every edge), and each node lists its edges heavier than
+#:      1 as `weights`.
+_VERSION = 20
 
 
 def fingerprint(layout, target) -> dict:

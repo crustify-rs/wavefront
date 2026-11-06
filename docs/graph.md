@@ -120,7 +120,9 @@ the other. Wavefront finds the strongly connected components (Tarjan) and
 flattens each one by a weighted feedback arc set:
 
 1. order the component's members by net weight, how much more each is
-   depended on than it depends, heaviest first (ties by id);
+   depended on than it depends, heaviest first (ties by id). An edge
+   between two types weighs how many times one refers to the other; any
+   other edge weighs 1;
 2. every edge from a member to one ordered after it is a **back-edge**, and
    is cut.
 

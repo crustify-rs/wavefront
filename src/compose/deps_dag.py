@@ -1193,6 +1193,19 @@ def _layer(adj, sccs):
 
 # --------------------------------------------- weighted feedback-arc-set break
 
+def _type_key(nid: str) -> tuple[str, str]:
+    """The ``(tag, def_file)`` key a type node id encodes, as `wedge` keys it."""
+    tag, _, df = nid[2:].partition("\x00")
+    return (tag, df)
+
+
+def _edge_weight(u: str, v: str, wedge) -> int:
+    """An edge's weight: a type-to-type edge's reference multiplicity, else 1."""
+    if u.startswith("t:") and v.startswith("t:"):
+        return wedge.get((_type_key(u), _type_key(v)), 1)
+    return 1
+
+
 def _break_sccs(sccs, adj, nodes, wedge) -> set[tuple[str, str]]:
     """Flatten each non-trivial SCC with a **weighted feedback-arc-set**: order
     its members so the heaviest dependencies are satisfied (the more-referenced
@@ -1204,9 +1217,7 @@ def _break_sccs(sccs, adj, nodes, wedge) -> set[tuple[str, str]]:
     it depends is placed earlier); an edge ``u -> v`` (``u`` needs ``v``) is a
     back-edge when ``v`` ends up *after* ``u``."""
     def w(u: str, v: str) -> int:
-        if u.startswith("t:") and v.startswith("t:"):
-            return wedge.get((nodes[u]["id"], nodes[v]["id"]), 1)
-        return 1
+        return _edge_weight(u, v, wedge)
 
     back: set[tuple[str, str]] = set()
     for comp in sccs:
@@ -1440,6 +1451,13 @@ def compose(analysis_root, scope_json=None, codeql_dir: Path | None = None,
                 fbk |= {d for d in adj[nid] if (nid, d) in back}
                 bfl |= rev_back.get(nid, set())
             rec["deps"] = _grp(fwd)
+            heavy = [(d, _edge_weight(nid, d, wedge)) for nid in comp
+                     for d in sorted(adj[nid])]
+            heavy = [(d, ww) for d, ww in heavy if ww > 1]
+            if heavy:
+                rec["weights"] = [{"name": nodes[d]["id"],
+                                   "defined_in": nodes[d]["defined_in"],
+                                   "w": ww} for d, ww in heavy]
             if fbk:
                 rec["fallback"] = _grp(fbk)
             if bfl - internal:
