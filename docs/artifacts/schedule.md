@@ -93,7 +93,7 @@ record names across a module boundary that is still in the other language.
 
 | field | meaning |
 |---|---|
-| `index` | the wave's position in `waves`, which lists them by layer, and a module's by `sublayer` within it, each wave a dependency no module claims gets just before the wave that needs it |
+| `index` | the wave's position in `waves`, which lists them by layer, then by `sublayer`, then by module; a wave with no module is listed before the module waves of its layer, or, when it holds a dependency, right before the wave that needs it |
 | `module` | the module whose units it holds, with the dependencies no module claims that the module needs first; `null` for a wave of seeds no module claims, or of what they alone need first |
 | `sublayer` | on a module's wave: its place among its module's waves, from 0 |
 | `layer` | on a wave with no module: the layer it is listed in, a seed's place in the order or that of the seed's wave it runs just before. Without `modules`, every wave's place in the units' order |

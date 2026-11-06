@@ -46,6 +46,10 @@ wavefront REPO_ROOT --config PATH COMMAND ...
     "impl_files": {"included": ["src/"], "excluded": ["src/tests/"]},
     "api_headers": {"included": ["include/widget.h"]}
   },
+  "modules": [
+    {"name": "src/mem.c", "files": ["src/mem.c", "src/mem.h"]},
+    {"name": "src/widget.c", "files": ["src/widget.c", "include/widget.h"]}
+  ],
   "schedule_seeds": ["include/widget.h"],
   "t3_dir": "t3"
 }
@@ -56,7 +60,7 @@ wavefront REPO_ROOT --config PATH COMMAND ...
 | `state_dir` | Directory for the CodeQL database and tables, ownership findings, and caches. |
 | `closure` | The program Wavefront analyzes, for its graph, queries and usage counts: `impl_files`, the sources and private headers that implement it, and `api_headers`, the headers that publish its API, each `included` files and directories, less what `excluded` matches. See [Files](docs/scoping.md#files). |
 | `modules` | Optional. Module records, `{name, files}`, each file entry as in `schedule_seeds`: a schedule orders each module's units together, the modules in dependency order with their cycles cut. A unit no module claims is ordered alone. See [Modules](docs/scoping.md#modules). |
-| `schedule_seeds` | Optional. What `wavefront schedule` starts from: a list of file entries, each seeding what its file defines or declares; a schedule holds its seeds and what they depend on. A file entry is a path, or `{path, items}` whose `included` and `excluded` items, each `{name, kind}`, narrow what it seeds. Without it, every unit of the closure. See [Schedule seeds](docs/scoping.md#schedule-seeds). |
+| `schedule_seeds` | Optional. What `wavefront schedule` starts from: a list of file entries, each seeding what its file defines or declares; a schedule holds its seeds and what they depend on. A file entry is a path, a directory written with a trailing slash, or `{path, items}` whose `included` and `excluded` items, each `{name, kind}`, narrow what it seeds. Without it, every unit of the closure. See [Schedule seeds](docs/scoping.md#schedule-seeds). |
 | `t3_dir` | Optional. Directory, relative to `state_dir`, holding the T3 tables ([`examples/t3/`](examples/t3/)). |
 
 Paths are relative to `REPO_ROOT`. A trailing slash selects a directory
@@ -168,8 +172,10 @@ wavefront REPO_ROOT --config PATH schedule --output PATH [FLAGS]
 A schedule orders every unit of the config's closure, in the groups its
 [`modules`](docs/scoping.md#modules) make, keeps its
 [`schedule_seeds`](docs/scoping.md#schedule-seeds) and every unit they depend
-on, and emits one wave per layer of each module, the units no module claims
-in waves of their own. A narrow schedule keeps the order and cuts of the whole
+on, and emits one wave per layer of each module. A unit no module claims
+goes in a wave of the first module that needs it, ahead of the wave that
+does, or in a wave of its own when it is a seed, or what only such a seed
+needs. A narrow schedule keeps the order and cuts of the whole
 closure, so a consumer can schedule parts of a library in turn without
 changing the order. Each unit carries its module, its `defined_in` and
 `declared_in` files, and the statistics a consumer weighs its work by.
@@ -202,7 +208,7 @@ See [`examples/schedule.json`](examples/schedule.json) for the output.
 | Document | Contents |
 |---|---|
 | [`docs/graph.md`](docs/graph.md) | The dependency graph: nodes, edges, type erasure, cycles, polymorphism, and limitations. |
-| [`docs/scoping.md`](docs/scoping.md) | The closure, the schedule seeds, closure and external entities, the API view, and default and API modes. |
+| [`docs/scoping.md`](docs/scoping.md) | The closure, modules, the schedule seeds, closure and external entities, the API view, and default and API modes. |
 | [`docs/batching.md`](docs/batching.md) | Units, their order, waves, and batch caps. |
 | [`docs/pointer-properties.md`](docs/pointer-properties.md) | The pointer properties recorded in the ownership store. |
 | [`docs/type-lifecycle.md`](docs/type-lifecycle.md) | Lifecycle roles, and how to find the routines that play them. |

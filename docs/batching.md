@@ -61,17 +61,22 @@ that runs each wave once those complete runs every wave as early as it can,
 and one that runs the waves in their listed order, by layer and sublayer,
 runs them correctly too, if later.
 
-A dependency no module claims, which the schedule warns of, goes in the wave
-right before the first one listed that needs it, so that work outside the modules arrives when they need
-it. Before a module's wave, that is the module's previous wave, or a new wave
-of the module ahead of its first, so that the module's waves hold what it
-needs and its `sublayer`s count them all; the dependency's item still names
-no module. Without `modules`, it is the previous layer's wave. A seed no
-module claims keeps its place in the order instead, in a wave of its own
-listed before its layer's module waves, with what it alone needs in waves of
-their own just before it. Such a wave has no module, and the `layer` it is
-listed in; without `modules`, every wave is one, and its `layer` is its place
-in the units' order.
+A unit no module claims, which the schedule warns of, is placed by what it
+is:
+
+- a dependency goes in the wave listed right before the first one that
+  needs it, so that it arrives when it is needed. Before a module's wave,
+  that is the module's previous wave, or a new wave of the module ahead of
+  its first, so that the module's waves hold what it needs and its
+  `sublayer`s count them all; the item itself still names no module. Before
+  a wave with no module, it is a wave of its own;
+- a seed keeps its place in the order, in a wave of its own listed before
+  the module waves of its layer.
+
+A wave with no module records the `layer` it is listed in. Without
+`modules`, no unit is claimed and none is warned of: every wave has no
+module, its `layer` its place in the units' order, and a dependency goes in
+the previous layer's wave.
 
 ## Batches
 

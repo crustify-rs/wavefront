@@ -27,9 +27,12 @@ Both are cached under `state_dir/.cache/`, keyed by the inputs' hashes.
 
 ## Nodes
 
-A node is one entity, keyed `(name, defined_in)`. A bare name does not
-identify one: same-named file-local statics, and a struct a `.c` file
-defines locally, recur across translation units.
+A node is one entity, keyed `(name, defined_in, kind)`, its kind `type` or
+`symbol`. A bare name does not identify one: same-named file-local statics,
+and a struct a `.c` file defines locally, recur across translation units.
+Nor does a name and its file: C keeps tags apart from ordinary identifiers,
+so `static const struct typelen {...} typelen[]` is a type and a global of
+one name in one file, two nodes.
 
 - **Types**: structs, unions and enums, keyed by tag and defining file (or
   the declaring header for a declaration-only type). A typedef of an
@@ -43,8 +46,7 @@ defines locally, recur across translation units.
   have, it folds into each, and Wavefront warns.
 - **Symbols**: functions, globals, macros and callbacks (function-pointer
   typedefs), keyed by defining file, or the canonical declaration file for
-  one that is declared but never defined. A symbol whose name is also a
-  type tag is represented by the type node.
+  one that is declared but never defined.
 - **External leaves**: a function or type something depends on that the
   database never defines (libc, a compiler builtin) is a leaf with subkind
   `external` or `builtin`, so the order is complete.
@@ -77,9 +79,6 @@ An external function contributes its signature only: it is bound, not
 translated. So does a macro a closure header defines, which stays C's
 ([`scoping.md`](scoping.md#default-mode)). In the API graph every function
 does.
-
-Field edges carry their multiplicity (how many fields of A have type B),
-which weighs them when a cycle is cut.
 
 ### Type erasure
 

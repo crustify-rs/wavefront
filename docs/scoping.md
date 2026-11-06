@@ -4,7 +4,7 @@ A config names the program Wavefront analyzes, its `closure`, and what
 `wavefront schedule` orders, its `schedule_seeds`. From the closure Wavefront
 composes, in memory, an inventory with two sections and one view; nothing is
 written to disk. Field meaning of the config itself is in the
-[README](../README.md#inputs).
+[README](../README.md#configuration).
 
 ## Files
 
