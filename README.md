@@ -55,6 +55,7 @@ wavefront REPO_ROOT --config PATH COMMAND ...
 |---|---|
 | `state_dir` | Directory for the CodeQL database and tables, ownership findings, and caches. |
 | `closure` | The program Wavefront analyzes, for its graph, queries and usage counts: `impl_files`, the sources and private headers that implement it, and `api_headers`, the headers that publish its API, each `included` files and directories, less what `excluded` matches. See [Files](docs/scoping.md#files). |
+| `modules` | Optional. Module records, `{name, files}`, each file entry as in `schedule_seeds`: a schedule orders each module's units together, the modules in dependency order with their cycles cut. A unit no module claims is ordered alone. See [Modules](docs/scoping.md#modules). |
 | `schedule_seeds` | Optional. What `wavefront schedule` starts from: a list of file entries, each seeding what its file defines or declares; a schedule holds its seeds and what they depend on. A file entry is a path, or `{path, items}` whose `included` and `excluded` items, each `{name, kind}`, narrow what it seeds. Without it, everything the closure targets. See [Schedule seeds](docs/scoping.md#schedule-seeds). |
 | `t3_dir` | Optional. Directory, relative to `state_dir`, holding the T3 tables ([`examples/t3/`](examples/t3/)). |
 
@@ -164,12 +165,14 @@ and [`examples/findings.json`](examples/findings.json).
 wavefront REPO_ROOT --config PATH schedule --output PATH [FLAGS]
 ```
 
-A schedule orders every unit of the config's closure, keeps its
+A schedule orders every unit of the config's closure, in the groups its
+[`modules`](docs/scoping.md#modules) make, keeps its
 [`schedule_seeds`](docs/scoping.md#schedule-seeds) and every unit they depend
-on, and emits one wave per layer of the order. A narrow schedule keeps the
-layers and cuts of the whole closure, so a consumer can split a schedule by
-module, or schedule parts of a library in turn, without changing the order. Each unit carries its `defined_in` and
-`declared_in` files and the statistics a consumer weighs its work by.
+on, and emits one wave per layer of each module, the units no module claims
+in waves of their own. A narrow schedule keeps the order and cuts of the whole
+closure, so a consumer can schedule parts of a library in turn without
+changing the order. Each unit carries its module, its `defined_in` and
+`declared_in` files, and the statistics a consumer weighs its work by.
 
 | Flag | Default | Effect |
 |---|---:|---|

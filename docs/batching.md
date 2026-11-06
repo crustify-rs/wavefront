@@ -24,26 +24,51 @@ they are made with the same flags, which each records.
 
 ## Order
 
-The units are ordered over all of them, whatever the seeds: their cycles
-are cut ([`graph.md`](graph.md#cycles)) and they are layered by longest path.
-Every edge a cut removes stays recorded on both ends: the user lists the
-dependency, scheduled after it, in `higher_cuts`, and the dependency lists the
-user, scheduled before it, in `lower_cuts`.
+The units are ordered over all of them, whatever the seeds, in groups: each
+module's ([`scoping.md`](scoping.md#modules)), and each unit no module claims
+alone, so that without `modules` every unit is a group of its own. An edge
+between two groups weighs the distinct units the one depends on in the other:
+a cut leaves each of them to a binding, however many edges reach it. A unit
+edge weighs 1 ([`graph.md`](graph.md#cycles)). The groups' cycles are cut as the graph's
+are: within each, the group the others depend on most, net of what it depends
+on, comes first, and every edge from a group to one placed after it is cut.
+The groups are layered by longest path: a module's `layer` is its place in
+the order of the modules. Each module's units are then ordered within it,
+their own cycles cut the same way, and layered by longest path.
 
-The schedule keeps the seeds and every unit they depend on, transitively,
-the cut dependencies included: a cycle partner is still needed, after its
-user. Each keeps its layer in the order, and `seeded` tells the seeds from
-what came along. A schedule of the whole closure and a narrow one agree on
-every unit's layer and cuts, so that the schedules of several seeds are parts
-of one order, and so is any
-grouping a consumer makes of a schedule's items by their `defined_in` and
-`declared_in`.
+Every unit edge a cut removes, between groups or within a module, stays
+recorded on both ends: the user lists the dependency, scheduled after it, in
+`higher_cuts`, and the dependency lists the user, scheduled before it, in
+`lower_cuts`. A cut between two modules is recorded on the user's module with
+the unit edges it crosses: what the module uses of a module ordered after it.
+
+The schedule keeps the seeds and every unit they depend on, transitively, the
+cut dependencies included: a cycle partner is still needed, after its user.
+`seeded` tells the seeds from what came along. A schedule of the whole
+closure and a narrow one agree on every unit's order and cuts, so that the
+schedules of several seeds are parts of one order, and so is any grouping a
+consumer makes of a schedule's items by their `defined_in` and `declared_in`.
 
 ## Waves
 
-Each layer that holds a scheduled unit is a wave. Its units depend only on
-units of lower layers, the cut edges aside, so the waves run in order and the
-batches of one wave may run at once.
+Each layer of a module's units is a wave, its `sublayer` its place among the
+module's waves, from 0. A wave depends on its module's previous wave and on
+the waves that hold its units' dependencies, the cut ones aside: a consumer
+that runs each wave once those complete runs every wave as early as it can,
+and one that runs the waves in their listed order, by layer and sublayer,
+runs them correctly too, if later.
+
+A dependency no module claims, which the schedule warns of, goes in the wave
+right before the first one listed that needs it, so that work outside the modules arrives when they need
+it. Before a module's wave, that is the module's previous wave, or a new wave
+of the module ahead of its first, so that the module's waves hold what it
+needs and its `sublayer`s count them all; the dependency's item still names
+no module. Without `modules`, it is the previous layer's wave. A seed no
+module claims keeps its place in the order instead, in a wave of its own
+listed before its layer's module waves, with what it alone needs in waves of
+their own just before it. Such a wave has no module, and the `layer` it is
+listed in; without `modules`, every wave is one, and its `layer` is its place
+in the units' order.
 
 ## Batches
 
@@ -52,9 +77,9 @@ and generator macros, then a `symbol` batch of its functions, globals and
 callbacks. Its consumer splits them by the items' statistics
 ([`artifacts/schedule.md`](artifacts/schedule.md#items)).
 
-Any cap packs each wave into batches, in name order, and lets adjacent
-layers fold into one wave while their merged units still pack into a single
-batch: one user then receives them in layer order, so a producer
+Any cap packs each wave into batches, in name order, and lets a module's
+adjacent layers of units fold into one wave while their merged units still pack into a
+single batch: one user then receives them in layer order, so a producer
 still comes before its consumer. A fold never creates two batches, which
 would run in parallel. A cap that is not given bounds nothing.
 

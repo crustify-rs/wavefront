@@ -122,12 +122,12 @@ that witnesses a cast is evidence, not a node, and need not be public.
 C allows cycles that a topological order cannot: a parent and a child that
 point at each other, mutually recursive functions, two types each cast to
 the other. Wavefront finds the strongly connected components (Tarjan) and
-flattens each one by a weighted feedback arc set:
+flattens each one by a feedback arc set:
 
-1. order the component's members by net weight, how much more each is
-   depended on than it depends, heaviest first (ties by id). An edge
-   between two types weighs how many times one refers to the other; any
-   other edge weighs 1;
+1. order the component's members by how many more of its edges reach them
+   than leave them, the most depended on first (ties by id). An edge counts
+   once, however often its user refers to its dependency: cutting it leaves
+   one binding of the dependency to write;
 2. every edge from a member to one ordered after it is a **back-edge**, and
    is cut.
 
@@ -137,8 +137,8 @@ is processed before the dependency it refers to, and the dependency lists the
 user in `back_fill`, the units that already refer to it.
 `query dag --name X --scc hi-deps|lo-deps` reads the
 two lists. The greedy order is deterministic but not a minimum cut. A
-schedule cuts its units' cycles the same way, over the units alone, and
-records its cuts as `higher_cuts` and `lower_cuts`
+schedule cuts its units' cycles the same way, between its modules and
+within each, and records its cuts as `higher_cuts` and `lower_cuts`
 ([`batching.md`](batching.md#order)).
 
 ### Polymorphism

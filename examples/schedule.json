@@ -16,56 +16,53 @@
   "summary": {
     "unit_count": 4,
     "seeded_count": 4,
-    "wave_count": 2,
+    "module_count": 2,
+    "wave_count": 3,
     "batch_count": 3,
     "cut_count": 0
   },
+  "modules": [
+    {
+      "name": "src/mem.c",
+      "layer": 0,
+      "unit_count": 1,
+      "waves": [
+        0
+      ],
+      "depends_on": {
+        "scheduled": [],
+        "cut": []
+      }
+    },
+    {
+      "name": "src/widget.c",
+      "layer": 1,
+      "unit_count": 3,
+      "waves": [
+        1,
+        2
+      ],
+      "depends_on": {
+        "scheduled": [
+          {
+            "module": "src/mem.c",
+            "unique_edges": 1,
+            "total_edges": 1,
+            "via_dependency": []
+          }
+        ],
+        "cut": []
+      }
+    }
+  ],
   "waves": [
     {
       "index": 0,
-      "layers": [
-        0
-      ],
-      "unit_count": 2,
+      "module": "src/mem.c",
+      "sublayer": 0,
+      "depends_on": [],
+      "unit_count": 1,
       "batches": [
-        {
-          "kind": "type",
-          "items": [
-            {
-              "name": "widget_st",
-              "defined_in": "include/widget.h",
-              "declared_in": [
-                "include/widget.h"
-              ],
-              "kind": "type",
-              "source_kind": "struct",
-              "seeded": true,
-              "layer": 0,
-              "loc": 5,
-              "stats": {
-                "fields": 5,
-                "pointer_fields": 2,
-                "erased_fields": 0,
-                "field_touchers": 2,
-                "field_accesses": 9
-              },
-              "deps": {
-                "types": [],
-                "symbols": []
-              },
-              "higher_cuts": [],
-              "lower_cuts": [],
-              "generates": [],
-              "used_fields": [
-                "buf",
-                "len",
-                "refs",
-                "lock",
-                "users"
-              ]
-            }
-          ]
-        },
         {
           "kind": "symbol",
           "items": [
@@ -79,7 +76,7 @@
               "kind": "symbol",
               "source_kind": "function_exported",
               "seeded": true,
-              "layer": 0,
+              "module": "src/mem.c",
               "loc": 9,
               "stats": {
                 "loc": 9,
@@ -104,7 +101,7 @@
               },
               "higher_cuts": [],
               "lower_cuts": [],
-              "generates": [],
+              "type_generator_for": [],
               "used_fields": []
             }
           ]
@@ -113,7 +110,57 @@
     },
     {
       "index": 1,
-      "layers": [
+      "module": "src/widget.c",
+      "sublayer": 0,
+      "depends_on": [],
+      "unit_count": 1,
+      "batches": [
+        {
+          "kind": "type",
+          "items": [
+            {
+              "name": "widget_st",
+              "defined_in": "include/widget.h",
+              "declared_in": [
+                "include/widget.h"
+              ],
+              "kind": "type",
+              "source_kind": "struct",
+              "seeded": true,
+              "module": "src/widget.c",
+              "loc": 5,
+              "stats": {
+                "fields": 5,
+                "pointer_fields": 2,
+                "erased_fields": 0,
+                "field_touchers": 2,
+                "field_accesses": 9
+              },
+              "deps": {
+                "types": [],
+                "symbols": []
+              },
+              "higher_cuts": [],
+              "lower_cuts": [],
+              "type_generator_for": [],
+              "used_fields": [
+                "buf",
+                "len",
+                "refs",
+                "lock",
+                "users"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "index": 2,
+      "module": "src/widget.c",
+      "sublayer": 1,
+      "depends_on": [
+        0,
         1
       ],
       "unit_count": 2,
@@ -131,7 +178,7 @@
               "kind": "symbol",
               "source_kind": "function_exported",
               "seeded": true,
-              "layer": 1,
+              "module": "src/widget.c",
               "loc": 36,
               "stats": {
                 "loc": 36,
@@ -167,7 +214,7 @@
               },
               "higher_cuts": [],
               "lower_cuts": [],
-              "generates": [],
+              "type_generator_for": [],
               "used_fields": []
             },
             {
@@ -180,7 +227,7 @@
               "kind": "symbol",
               "source_kind": "function_exported",
               "seeded": true,
-              "layer": 1,
+              "module": "src/widget.c",
               "loc": 14,
               "stats": {
                 "loc": 14,
@@ -205,7 +252,7 @@
               },
               "higher_cuts": [],
               "lower_cuts": [],
-              "generates": [],
+              "type_generator_for": [],
               "used_fields": []
             }
           ]

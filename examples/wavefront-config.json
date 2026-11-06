@@ -6,6 +6,7 @@
     "closure names the program Wavefront analyzes, for its graph, queries and usage counts:",
     "impl_files the sources and private headers that implement it, api_headers the headers that publish its API, each included less excluded.",
     "schedule_seeds, optional, seeds what `wavefront schedule` holds: each entry a file, which seeds what it defines or declares, as its items narrow it; a schedule holds its seeds and every unit they depend on. The order is always computed over the whole closure.",
+    "modules, optional, groups the units a schedule orders: each a name and its file entries; a unit no module claims is ordered alone.",
     "t3_dir, relative to state_dir, holds the authored T3 tables."
   ],
   "state_dir": ".wavefront",
@@ -25,6 +26,22 @@
       ]
     }
   },
+  "modules": [
+    {
+      "name": "src/mem.c",
+      "files": [
+        "src/mem.c",
+        "src/mem.h"
+      ]
+    },
+    {
+      "name": "src/widget.c",
+      "files": [
+        "src/widget.c",
+        "include/widget.h"
+      ]
+    }
+  ],
   "schedule_seeds": [
     "src/mem.c",
     {

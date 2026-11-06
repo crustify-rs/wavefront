@@ -103,15 +103,22 @@ class SchedulePackingParityTests(unittest.TestCase):
         self.assertEqual(summary["wave_count"], len(waves))
         self.assertEqual(summary["batch_count"],
                          sum(len(wave["batches"]) for wave in waves))
+        self.assertEqual(summary["module_count"], len(schedule["modules"]))
         for index, wave in enumerate(waves):
             self.assertEqual(wave["index"], index)
             self.assertEqual(wave["unit_count"], sum(
                 len(batch["items"]) for batch in wave["batches"]))
-            self.assertEqual({i["layer"] for b in wave["batches"]
-                              for i in b["items"]}, set(wave["layers"]))
+            self.assertIn("sublayer" if wave["module"] else "layer", wave)
+            for dep in wave["depends_on"]:
+                self.assertLess(dep, index)
+            for item in (i for b in wave["batches"] for i in b["items"]):
+                self.assertEqual(item["module"], wave["module"])
+        for module in schedule["modules"]:
+            for index in module["waves"]:
+                self.assertEqual(waves[index]["module"], module["name"])
         keys = {"name", "defined_in", "declared_in", "kind", "source_kind",
-                "seeded", "layer", "loc", "stats", "deps", "higher_cuts", "lower_cuts",
-                "generates", "used_fields"}
+                "seeded", "module", "loc", "stats", "deps", "higher_cuts", "lower_cuts",
+                "type_generator_for", "used_fields"}
         for item in items:
             self.assertEqual(set(item), keys)
 
@@ -263,14 +270,14 @@ class SchedulePackingParityTests(unittest.TestCase):
         wave = _schedule(graph, inventory, api_headers_only=True)
 
         self.assertEqual(wave["schema_version"], 4)
-        self.assertEqual([w["layers"] for w in wave["waves"]], [[0], [1]])
+        self.assertEqual([w["layer"] for w in wave["waves"]], [0, 1])
         self.assertEqual(
             [item["name"] for item in _scheduled_items(wave)],
             [dependency.id, public.id],
         )
         folded = _schedule(graph, inventory, api_headers_only=True,
                            caps={"max_syms": 50})
-        self.assertEqual([w["layers"] for w in folded["waves"]], [[0, 1]])
+        self.assertEqual([w["layer"] for w in folded["waves"]], [0, 1])
         public_item = next(
             item for item in _scheduled_items(wave) if item["name"] == public.id
         )

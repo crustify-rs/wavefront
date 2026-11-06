@@ -879,11 +879,7 @@ def _build_edges(types, syms, amap, cast_scope: tuple[set, set] | None = None):
     # its signature types as its own deps, so those types are still wrapped
     # before it. The type node stores no ops either — the wrap scheduler
     # reverse-derives that surface from the analysis tree at schedule time.
-    #
-    # `wedge[(T1,T2)]` keeps the reference multiplicity so the genuine cycles
-    # (parent↔child backrefs) can be flattened by weighted feedback-arc-set, not
-    # collapsed into a co-scheduled blob.
-    wedge: dict[tuple[str, str], int] = collections.defaultdict(int)
+
     keep_t = None if cast_scope is None else cast_scope[0]
     keep_s = None if cast_scope is None else cast_scope[1]
 
@@ -897,15 +893,12 @@ def _build_edges(types, syms, amap, cast_scope: tuple[set, set] | None = None):
                     if cast_t(key, b := _resolve_ctype(ref, amap, types))}
     for key, n in types.items():
         for ref in n.ctype_refs:                     # field refs (hard layout)
-            t = _resolve_ctype(ref, amap, types)
             # `n.dep_syms` passed so a field of function-pointer-typedef type
             # lands on the callback's SYMBOL node. This edge is load-bearing:
             # a function that invokes a callback it reached through a struct
             # field never names the typedef in its own signature, so its
             # ordering runs struct -> callback, and it depends on the struct.
             res_ctype(ref, n.dep_types, n.dep_syms)
-            if t in types and t != key:
-                wedge[(key, t)] += 1
         # What a type-erased field holds depends on its owner, as a derived
         # type on its base: the owner is the generic container
         # (`AVFrameSideData`), each variant one instance of it
@@ -916,7 +909,6 @@ def _build_edges(types, syms, amap, cast_scope: tuple[set, set] | None = None):
             t = _resolve_ctype(ref, amap, types)
             if t in types and t != key and cast_t(key, t):
                 types[t].dep_types.add(key)
-                wedge[(t, key)] += 1
         # Macro-generator ordering edge. The generator is the MACRO itself --
         # already a symbol node -- so this is a type -> symbol dep, and there is
         # no synthetic type to mint (which would collide with the macro's own
@@ -937,10 +929,8 @@ def _build_edges(types, syms, amap, cast_scope: tuple[set, set] | None = None):
             t = _resolve_ctype(ref, amap, types)
             if t in types and t != key and cast_t(key, t):
                 n.dep_types.add(t)
-                wedge[(key, t)] += 1
 
         n.dep_types.discard(key)         # no self-edge
-        wedge.pop((key, key), None)
 
     # Cast-graph ordering edges. A cast is written in one direction: `X` cast
     # TO `T` makes X depend on T (an upcast to a base, an erasure to an
@@ -974,7 +964,6 @@ def _build_edges(types, syms, amap, cast_scope: tuple[set, set] | None = None):
                     and types[t].cast_degree(amap, keep_t) <= n.cast_degree(amap, keep_t)):
                 continue
             n.dep_types.add(t)
-            wedge[(key, t)] += 1
 
     # Array-cluster element inversion. A typed `CVec<T>` alias on cluster A
     # references element wrapper T, but the cluster is a foundational leaf (the
@@ -1014,7 +1003,7 @@ def _build_edges(types, syms, amap, cast_scope: tuple[set, set] | None = None):
                     n.dep_types.add(t)
         n.dep_syms.discard(key)          # no self-edge
 
-    return ext_syms, ext_types, dict(wedge)
+    return ext_syms, ext_types
 
 
 def _build_api_edges(types, syms, amap, scope_json):
@@ -1201,34 +1190,20 @@ def _layer(adj, sccs):
     return buckets
 
 
-# --------------------------------------------- weighted feedback-arc-set break
+# --------------------------------------------- feedback-arc-set break
 
-def _type_key(nid: str) -> tuple[str, str]:
-    """The ``(tag, def_file)`` key a type node id encodes, as `wedge` keys it."""
-    tag, _, df = nid[2:].partition("\x00")
-    return (tag, df)
+def _break_sccs(sccs, adj) -> set[tuple[str, str]]:
+    """Flatten each non-trivial SCC with a **feedback-arc-set**: order its
+    members so the most depended-upon comes first, and return the
+    **back-edges** — the reverse references that the wrap stage must render
+    as raw `ffi::T` (they point at a not-yet-wrapped cycle sibling).
 
-
-def _edge_weight(u: str, v: str, wedge) -> int:
-    """An edge's weight: a type-to-type edge's reference multiplicity, else 1."""
-    if u.startswith("t:") and v.startswith("t:"):
-        return wedge.get((_type_key(u), _type_key(v)), 1)
-    return 1
-
-
-def _break_sccs(sccs, adj, nodes, wedge) -> set[tuple[str, str]]:
-    """Flatten each non-trivial SCC with a **weighted feedback-arc-set**: order
-    its members so the heaviest dependencies are satisfied (the more-referenced
-    type is emitted first), and return the minimal set of **back-edges** — the
-    weaker reverse references that the wrap stage must render as raw `ffi::T`
-    (they point at a not-yet-wrapped cycle sibling).
-
-    The order is the greedy net-weight heuristic (a node depended-upon more than
-    it depends is placed earlier); an edge ``u -> v`` (``u`` needs ``v``) is a
-    back-edge when ``v`` ends up *after* ``u``."""
-    def w(u: str, v: str) -> int:
-        return _edge_weight(u, v, wedge)
-
+    The order is the greedy net-degree heuristic: a member more of the
+    component depends on, net of the members it depends on, is placed
+    earlier. Each edge counts once, however often its user refers to its
+    dependency: a cut costs one binding of the dependency. An edge
+    ``u -> v`` (``u`` needs ``v``) is a back-edge when ``v`` ends up *after*
+    ``u``."""
     back: set[tuple[str, str]] = set()
     for comp in sccs:
         if len(comp) < 2:
@@ -1238,9 +1213,8 @@ def _break_sccs(sccs, adj, nodes, wedge) -> set[tuple[str, str]]:
         outw = collections.defaultdict(int)
         for u in comp:
             for v in adj[u] & s:
-                ww = w(u, v)
-                outw[u] += ww
-                inw[v] += ww
+                outw[u] += 1
+                inw[v] += 1
         # depended-upon (high in-weight) first; tie-break stable by id.
         order = sorted(comp, key=lambda x: (inw[x] - outw[x], x), reverse=True)
         pos = {nid: i for i, nid in enumerate(order)}
@@ -1266,13 +1240,13 @@ def _emit_node(nodes, comp):
         # A template generator's family. Carried on the node because the wrap
         # scheduler reads it off `dag.Node` to make its one macro exception.
         if rec.get("generates"):
-            out["generates"] = rec["generates"]
+            out["type_generator_for"] = rec["generates"]
         return out  # deps filled by caller
     def member(m):
         d = {"id": m["id"], "node_kind": m["node_kind"], "subkind": str(m["subkind"]),
              "defined_in": m.get("defined_in")}
         if m.get("generates"):
-            d["generates"] = m["generates"]
+            d["type_generator_for"] = m["generates"]
         if m["node_kind"] == "type":
             if m.get("loc"):
                 d["loc"] = m["loc"]
@@ -1407,9 +1381,9 @@ def compose(analysis_root, scope_json=None, codeql_dir: Path | None = None,
 
     amap = _alias_map(analysis_root, types, talias)
     if api_headers_only and scope_json is not None:
-        ext_syms, ext_types, wedge = _build_api_edges(types, syms, amap, scope_json)
+        ext_syms, ext_types = _build_api_edges(types, syms, amap, scope_json)
     else:
-        ext_syms, ext_types, wedge = _build_edges(types, syms, amap)
+        ext_syms, ext_types = _build_edges(types, syms, amap)
     # A macro a generator expands into a family of its own depends on it.
     for _m, _f in _fams.items():
         for _d in _f["macros"]:
@@ -1417,11 +1391,11 @@ def compose(analysis_root, scope_json=None, codeql_dir: Path | None = None,
                 syms[_d].dep_syms.add((_m, _f["def_file"]))
     nodes, adj = _build_graph(types, syms, ext_syms, ext_types)
     sccs = _tarjan(adj)
-    # Flatten genuine cycles (parent↔child backrefs) with a weighted FAS: the
+    # Flatten genuine cycles (parent↔child backrefs) with a FAS: the
     # back-edges become per-node `fallback` deps (the wrap stage renders those as
     # raw `ffi::T` — their target is a not-yet-wrapped cycle sibling), and the
     # remaining graph is acyclic, so every node layers individually.
-    back = _break_sccs(sccs, adj, nodes, wedge)
+    back = _break_sccs(sccs, adj)
     n_cyclic = sum(1 for c in sccs if len(c) > 1)
     adj_dag = {nid: {d for d in deps if (nid, d) not in back}
                for nid, deps in adj.items()}
@@ -1461,13 +1435,6 @@ def compose(analysis_root, scope_json=None, codeql_dir: Path | None = None,
                 fbk |= {d for d in adj[nid] if (nid, d) in back}
                 bfl |= rev_back.get(nid, set())
             rec["deps"] = _grp(fwd)
-            heavy = [(d, _edge_weight(nid, d, wedge)) for nid in comp
-                     for d in sorted(adj[nid])]
-            heavy = [(d, ww) for d, ww in heavy if ww > 1]
-            if heavy:
-                rec["weights"] = [{"name": nodes[d]["id"],
-                                   "defined_in": nodes[d]["defined_in"],
-                                   "w": ww} for d, ww in heavy]
             if fbk:
                 rec["fallback"] = _grp(fbk)
             if bfl - internal:

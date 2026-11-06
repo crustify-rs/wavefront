@@ -127,13 +127,16 @@ INCLUDED, EXCLUDED = "included", "excluded"
 #: global may share a name in one file; nothing else can.
 ITEM_KINDS = ("type", "symbol")
 
-_TOP_LEVEL = {"_comment", "state_dir", "t3_dir", CLOSURE, SCHEDULE}
+#: The section that groups the units a schedule orders.
+MODULES = "modules"
+
+_TOP_LEVEL = {"_comment", "state_dir", "t3_dir", CLOSURE, MODULES, SCHEDULE}
 _SCHEMA_HINT = (
     '`closure` holds `impl_files` and `api_headers`, each '
-    '{"included": [...], "excluded": [...]}, `excluded` optional; `schedule_seeds` '
-    'lists what `wavefront schedule` orders, and a schedule entry\'s `items` '
-    'excludes what it does not. The top-level `impl_files`, `api_headers`, '
-    '`items` and `out_of_scope` are gone.')
+    '{"included": [...], "excluded": [...]}, `excluded` optional; the optional '
+    '`modules` groups the units a schedule orders, and the optional '
+    '`schedule_seeds` names the units a schedule starts from. The top-level '
+    '`impl_files`, `api_headers`, `items` and `out_of_scope` are gone.')
 
 
 def closure(config: dict) -> dict:

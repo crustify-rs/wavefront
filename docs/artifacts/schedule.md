@@ -5,10 +5,11 @@ Field meaning for the document `wavefront <repo> --config PATH schedule
 [`examples/schedule.json`](../../examples/schedule.json).
 
 A schedule is objective-neutral: it orders and packs work without deciding
-what a consumer does with it. It orders every unit of the config's closure,
-keeps its `schedule_seeds` and every unit they depend on, and emits
-one wave per layer of the order;
-the waves run in order, and the batches within one wave may run at once. A
+what a consumer does with it. It orders every unit of the config's closure in
+the groups its `modules` make, keeps its `schedule_seeds` and every unit they
+depend on, and emits one wave per sublayer of each module; a wave runs once
+the waves it depends on have, and the batches within one wave may run at
+once. A
 consumer adds its own objective, grouping and concurrency. How units are
 seeded, ordered and packed is in [`batching.md`](../batching.md).
 
@@ -29,8 +30,9 @@ prefers. Wavefront never creates that directory.
   "with_enums": false,
   "with_macros": false,
   "caps": {"max_syms": null, "max_loc": null, "max_types": null, "min_fields": null},
-  "summary": {"unit_count": 4, "seeded_count": 4, "wave_count": 2,
-              "batch_count": 3, "cut_count": 0},
+  "summary": {"unit_count": 4, "seeded_count": 4, "module_count": 2,
+              "wave_count": 3, "batch_count": 3, "cut_count": 0},
+  "modules": [],
   "waves": []
 }
 ```
@@ -43,15 +45,47 @@ and macros are units, and `caps` the batch caps applied, `null` for
 each one not given.
 
 `summary` gives totals: the scheduled units, the seeds among them, the
-waves, the batches, and the cut edges with a scheduled end. Selected items occur exactly once, under their
-batch.
+modules that hold any, the waves, the batches, and the cut edges
+with a scheduled end. Scheduled items occur exactly once, under their batch.
+
+## Modules
+
+```json
+{
+  "name": "src/widget.c",
+  "layer": 1,
+  "unit_count": 3,
+  "waves": [1, 2],
+  "depends_on": {
+    "scheduled": [{"module": "src/mem.c", "unique_edges": 1, "total_edges": 1,
+                   "via_dependency": []}],
+    "cut": []
+  }
+}
+```
+
+One record per module that holds a scheduled unit, in their order.
+
+| field | meaning |
+|---|---|
+| `name` | the module's name in the config's `modules` |
+| `layer` | its layer in the order of the modules, their cycles cut |
+| `unit_count` | the scheduled units it holds |
+| `waves` | the indices of its waves |
+| `depends_on.scheduled` | the modules its scheduled units depend on that are ordered before it, directly or through units no module claims: each one's `module`; the unit edges that reach its units, from this module's scheduled units or from the unclaimed units they depend on, as `total_edges`, and the distinct units of it they reach as `unique_edges`, what the order weighs; and `via_dependency`, the unclaimed units among those edges' ends. A narrow schedule counts only the edges it holds, so it names no module it leaves out |
+| `depends_on.cut` | the modules it depends on whose edges were cut to break a cycle, as `scheduled`, with `items`: each crossing edge as `from` (this module's unit), `to` (the other module's unit) and the `kind` of `to` |
+
+A consumer that ships a module once its units are done reaches what a `cut`
+record names across a module boundary that is still in the other language.
 
 ## Waves
 
 ```json
 {
-  "index": 1,
-  "layers": [1],
+  "index": 2,
+  "module": "src/widget.c",
+  "sublayer": 1,
+  "depends_on": [0, 1],
   "unit_count": 2,
   "batches": [{"kind": "symbol", "items": []}]
 }
@@ -59,8 +93,11 @@ batch.
 
 | field | meaning |
 |---|---|
-| `index` | the wave's position in `waves` |
-| `layers` | the layers of the order it holds; several only when a cap folded them |
+| `index` | the wave's position in `waves`, which lists them by layer, and a module's by `sublayer` within it, each wave a dependency no module claims gets just before the wave that needs it |
+| `module` | the module whose units it holds, with the dependencies no module claims that the module needs first; `null` for a wave of seeds no module claims, or of what they alone need first |
+| `sublayer` | on a module's wave: its place among its module's waves, from 0 |
+| `layer` | on a wave with no module: the layer it is listed in, a seed's place in the order or that of the seed's wave it runs just before. Without `modules`, every wave's place in the units' order |
+| `depends_on` | the waves that must complete before it: its module's previous wave, and those that hold its units' dependencies. A consumer that runs each wave once these complete runs every wave as early as it can |
 | `unit_count` | the items of its batches |
 | `batches` | its batches; each batch's `kind` is its route (`type` or `symbol`), and `items` its exact worklist. A batch packed under a cap also records its `source_file`, a type batch's first type's defining file |
 
@@ -74,7 +111,7 @@ batch.
   "kind": "symbol",
   "source_kind": "function_exported",
   "seeded": true,
-  "layer": 1,
+  "module": "src/widget.c",
   "loc": 36,
   "stats": {"loc": 36, "params": 2, "pointer_params": 1, "erased_params": 0,
             "returns_pointer": true, "variadic": false, "callers": 0,
@@ -82,7 +119,7 @@ batch.
   "deps": {"types": [], "symbols": []},
   "higher_cuts": [],
   "lower_cuts": [],
-  "generates": [],
+  "type_generator_for": [],
   "used_fields": []
 }
 ```
@@ -94,13 +131,13 @@ batch.
 | `kind` | the route: `type` (a type, or a generator macro), `symbol`, or `callback` |
 | `source_kind` | what the C entity is: `struct`, `union`, `enum`, `function_*`, `global_*`, `macro*`, `callback`, `external` |
 | `seeded` | whether `schedule_seeds` names it; `false` for a unit scheduled because a seed depends on it |
-| `layer` | its layer in the order of the whole closure, whatever the seeds |
+| `module` | the module that claims it; `null` when none does. Its place in the order is its wave's |
 | `loc` | a function's body line span, 1 for a global, 0 for a macro; a type's field count |
 | `stats` | the counts a consumer weighs the item's work by, below |
-| `deps` | the nodes it depends on whose edges were kept: a unit is of a lower layer |
-| `higher_cuts` | the dependencies whose edges were cut to break a cycle: of a higher layer, so it is processed before them |
-| `lower_cuts` | the reverse: the units of lower layers whose dependency on it was cut |
-| `generates` | on a generator macro (T3 `type_generators.csv`), the instance types it mints, routed as one type so one generic is written for them; `[]` otherwise |
+| `deps` | the nodes it depends on whose edges were kept, as `types` and `symbols` by their route, a generator macro among the types: a unit among them is scheduled before it |
+| `higher_cuts` | the dependencies whose edges were cut to break a cycle: scheduled after it, so it is processed before them |
+| `lower_cuts` | the reverse: the units scheduled before it whose dependency on it was cut |
+| `type_generator_for` | on a generator macro (T3 `type_generators.csv`), the instance types it mints, routed as one type so one generic is written for them; `[]` otherwise |
 | `used_fields` | on a type, the fields its users reach: in API mode every field of a type an `api_headers` file defines, and none of a type defined elsewhere; otherwise the fields the closure's own functions access |
 
 Every reference in `deps`, `higher_cuts`, and `lower_cuts` is

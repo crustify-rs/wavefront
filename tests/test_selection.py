@@ -2,7 +2,9 @@
 config's `schedule` keeps of it."""
 from __future__ import annotations
 
+import contextlib
 import csv
+import io
 import tempfile
 import unittest
 from pathlib import Path
@@ -71,8 +73,8 @@ class OrderTests(unittest.TestCase):
     def test_every_unit_is_layered_and_one_wave_per_layer(self) -> None:
         schedule = _schedule(GRAPH, INVENTORY, config=_config())
         self.assertEqual(_names(schedule), [["T", "b1"], ["a1"], ["a2", "b2"]])
-        self.assertEqual([w["layers"] for w in schedule["waves"]],
-                         [[0], [1], [2]])
+        self.assertEqual([w["layer"] for w in schedule["waves"]], [0, 1, 2])
+        self.assertEqual({w["module"] for w in schedule["waves"]}, {None})
 
     def test_the_cut_is_recorded_on_both_ends(self) -> None:
         # a1 and b2 depend on each other: equal weights, so the tie goes to
@@ -89,7 +91,8 @@ class OrderTests(unittest.TestCase):
         self.assertEqual([r["name"] for r in items["b2"]["lower_cuts"]], ["a1"])
         self.assertEqual(items["a1"]["deps"]["symbols"],
                          [{"name": "b1", "defined_in": "b.c", "scope": "scheduled"}])
-        self.assertEqual([items[n]["layer"] for n in ("b1", "a1", "b2")], [0, 1, 2])
+        self.assertEqual(_names(_schedule(graph, inventory, config=_config())),
+                         [["b1"], ["a1"], ["b2"]])
 
     def test_an_item_carries_its_declarations(self) -> None:
         items = {i["name"]: i for i in _scheduled_items(
@@ -99,12 +102,14 @@ class OrderTests(unittest.TestCase):
 
 class SelectionTests(unittest.TestCase):
     def test_a_selection_keeps_the_order_of_the_whole_closure(self) -> None:
-        whole = {i["name"]: i["layer"] for i in _scheduled_items(
-            _schedule(GRAPH, INVENTORY, config=_config()))}
+        def stages(schedule):
+            return {i["name"]: w["layer"] for w in schedule["waves"]
+                    for b in w["batches"] for i in b["items"]}
+        whole = stages(_schedule(GRAPH, INVENTORY, config=_config()))
         narrow = _schedule(GRAPH, INVENTORY, config=_config("a.c"))
         self.assertEqual(_names(narrow), [["b1"], ["a1"], ["a2"]])
-        for item in _scheduled_items(narrow):
-            self.assertEqual(item["layer"], whole[item["name"]])
+        for name, stage in stages(narrow).items():
+            self.assertEqual(stage, whole[name])
 
     def test_a_file_selects_what_it_defines_or_declares(self) -> None:
         schedule = _schedule(GRAPH, INVENTORY, config=_config("h.h"))
@@ -117,6 +122,16 @@ class SelectionTests(unittest.TestCase):
         less = {"path": "h.h", "items": {"excluded": [{"name": "b1", "kind": "symbol"}]}}
         self.assertEqual(_names(_schedule(GRAPH, INVENTORY, config=_config(less))),
                          [["T"]])
+
+    def test_a_directory_selects_the_closure_files_under_it(self) -> None:
+        # The closure decides what src/ holds, not the disk, where it is empty.
+        graph = {"layers": [[_rec("f", "src/a.c"), _rec("g", "src/sub/b.c"),
+                             _rec("h", "lib/c.c")]]}
+        inventory = _inventory(functions=[("f", "src/a.c"), ("g", "src/sub/b.c"),
+                                          ("h", "lib/c.c")])
+        files = ("src/a.c", "src/sub/b.c", "lib/c.c")
+        schedule = _schedule(graph, inventory, config=_config("src/", files=files))
+        self.assertEqual(_names(schedule), [["f", "g"]])
 
     def test_a_selection_brings_what_it_depends_on(self) -> None:
         schedule = _schedule(GRAPH, INVENTORY, config=_config("a.c"))
@@ -147,7 +162,8 @@ class SelectionTests(unittest.TestCase):
             "both lists name": _config({"path": "h.h", "items": {
                 "included": [{"name": "T", "kind": "type"}],
                 "excluded": [{"name": "T", "kind": "type"}]}}),
-            "the closure does not": _config("c.c"),
+            "c.c is no file of the closure": _config("c.c"),
+            "src/ holds no file of the closure": _config("src/"),
             "a directory": _config({"path": "src/", "items": {}}),
             "non-empty list": {"closure": {"impl_files": {"included": ["a.c"]}},
                                "schedule_seeds": []},
@@ -156,6 +172,263 @@ class SelectionTests(unittest.TestCase):
             with self.subTest(message), \
                     self.assertRaisesRegex(SystemExit, message.strip()):
                 _schedule(GRAPH, INVENTORY, config=config)
+
+
+def _modules(config, *modules):
+    return {**config, "modules": [{"name": n, "files": list(fs)} for n, *fs in modules]}
+
+
+def _waves(schedule):
+    return [(w["module"], [i["name"] for b in w["batches"] for i in b["items"]],
+             w["depends_on"], w["sublayer"] if w["module"] else w["layer"])
+            for w in schedule["waves"]]
+
+
+class ModuleTests(unittest.TestCase):
+    def test_modules_are_ordered_and_their_cycle_cut(self) -> None:
+        # A uses two units of B (a1 -> b1, a2 -> b3), B one of A (b2 -> a1):
+        # the cycle is cut on B's side, and B, the producer, comes first.
+        graph = {"layers": [
+            [_rec("b1", "b.c"), _rec("b2", "b.c", fallback=[("a1", "a.c")]),
+             _rec("b3", "b.c"), _rec("T", "h.h", kind="type")],
+            [_rec("a1", "a.c", syms=[("b1", "b.c")])],
+            [_rec("a2", "a.c", syms=[("a1", "a.c"), ("b3", "b.c")])]]}
+        inventory = _inventory(
+            functions=[("a1", "a.c"), ("a2", "a.c"), ("b1", "b.c"),
+                       ("b2", "b.c"), ("b3", "b.c")],
+            types=[("T", "h.h")])
+        config = _modules(_config(), ("A", "a.c"), ("B", "b.c"), ("H", "h.h"))
+        schedule = _schedule(graph, inventory, config=config)
+        self.assertEqual(_waves(schedule), [
+            ("B", ["b1", "b2", "b3"], [], 0),
+            ("H", ["T"], [], 0),
+            ("A", ["a1"], [0], 0),
+            ("A", ["a2"], [0, 2], 1),
+        ])
+        modules = {m["name"]: m for m in schedule["modules"]}
+        self.assertEqual(modules["A"]["depends_on"]["scheduled"],
+                         [{"module": "B", "unique_edges": 2, "total_edges": 2,
+                           "via_dependency": []}])
+        self.assertEqual(modules["B"]["depends_on"]["cut"][0]["items"], [
+            {"from": {"name": "b2", "defined_in": "b.c"},
+             "to": {"name": "a1", "defined_in": "a.c"}, "kind": "symbol"}])
+        items = {i["name"]: i for i in _scheduled_items(schedule)}
+        self.assertEqual(items["a2"]["module"], "A")
+        self.assertEqual({m: modules[m]["layer"] for m in modules},
+                         {"B": 0, "H": 0, "A": 1})
+        self.assertEqual([r["name"] for r in items["b2"]["higher_cuts"]], ["a1"])
+
+    def test_units_no_module_claims_are_ordered_alone(self) -> None:
+        config = _modules(_config("a.c", "h.h"), ("A", "a.c"))
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            schedule = _schedule(GRAPH, INVENTORY, config=config)
+        # T and b1 are seeds no module claims: they keep their place, layer 0.
+        self.assertEqual(_waves(schedule), [
+            (None, ["T", "b1"], [], 0),
+            ("A", ["a1"], [0], 0),
+            ("A", ["a2"], [0, 1], 1),
+        ])
+        self.assertIsNone(_scheduled_items(schedule)[0]["module"])
+        # h.h defines T and declares b1: both are seeds no module claims.
+        self.assertIn("2 scheduled unit(s) belong to no module (2 seed(s), "
+                      "0 dependenc(ies))", err.getvalue())
+        self.assertIn("type T (h.h), symbol b1 (b.c)", err.getvalue())
+        # b1 is only a dependency here, and still needs a module.
+        config = _modules(_config("a.c"), ("A", "a.c"))
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            _schedule(GRAPH, INVENTORY, config=config)
+        self.assertIn("1 scheduled unit(s) belong to no module (0 seed(s), "
+                      "1 dependenc(ies)), and are ordered alone: symbol b1 (b.c)",
+                      err.getvalue())
+        # Once B claims it, nothing is warned of: b2, which no seed reaches,
+        # needs no module.
+        config = _modules(_config("a.c"), ("A", "a.c"), ("B", {"path": "b.c", "items": {
+            "included": [{"name": "b1", "kind": "symbol"}]}}))
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            _schedule(GRAPH, INVENTORY, config=config)
+        self.assertEqual(err.getvalue(), "")
+
+    def test_a_dependency_no_module_claims_joins_the_wave_before_its_user(self) -> None:
+        # x.c is in no module; only a3, A's third layer, uses x.
+        graph = {"layers": [
+            [_rec("a1", "a.c"), _rec("x", "x.c")],
+            [_rec("a2", "a.c", syms=[("a1", "a.c")])],
+            [_rec("a3", "a.c", syms=[("a2", "a.c"), ("x", "x.c")])]]}
+        inventory = _inventory(functions=[("a1", "a.c"), ("a2", "a.c"),
+                                          ("a3", "a.c"), ("x", "x.c")])
+        config = _modules(_config("a.c", files=("a.c", "x.c")), ("A", "a.c"))
+        # x joins the wave right before a3's: A's second.
+        self.assertEqual(_waves(_schedule(graph, inventory, config=config)), [
+            ("A", ["a1"], [], 0),
+            ("A", ["a2", "x"], [0], 1),
+            ("A", ["a3"], [1], 2),
+        ])
+        flat = _schedule(graph, inventory, config=_config(files=("a.c", "x.c")))
+        self.assertEqual(_names(flat), [["a1", "x"], ["a2"], ["a3"]])
+        # Seeded by a.c, x is a dependency: it runs just before a3 there too.
+        seeded = _schedule(graph, inventory,
+                           config=_config("a.c", files=("a.c", "x.c")))
+        self.assertEqual(_names(seeded), [["a1"], ["a2", "x"], ["a3"]])
+
+    def test_a_dependency_through_an_unclaimed_unit_names_its_module(self) -> None:
+        # a1 uses x, which no module claims, and x uses b1.
+        graph = {"layers": [[_rec("b1", "b.c")],
+                            [_rec("x", "x.c", syms=[("b1", "b.c")])],
+                            [_rec("a1", "a.c", syms=[("x", "x.c")])]]}
+        inventory = _inventory(functions=[("a1", "a.c"), ("b1", "b.c"),
+                                          ("x", "x.c")])
+        config = _modules(_config("a.c", "b.c", files=("a.c", "b.c", "x.c")),
+                          ("A", "a.c"), ("B", "b.c"))
+        modules = {m["name"]: m for m in
+                   _schedule(graph, inventory, config=config)["modules"]}
+        self.assertEqual(modules["A"]["depends_on"]["scheduled"],
+                         [{"module": "B", "unique_edges": 1, "total_edges": 1,
+                           "via_dependency": [{"name": "x", "defined_in": "x.c"}]}])
+        self.assertLess(modules["B"]["layer"], modules["A"]["layer"])
+
+    def test_a_narrow_schedule_names_only_the_modules_it_holds(self) -> None:
+        # a1 is the seed; a9, which A also holds, is the only user of B.
+        graph = {"layers": [[_rec("b1", "b.c"), _rec("a1", "a.c")],
+                            [_rec("a9", "a.c", syms=[("b1", "b.c")])]]}
+        inventory = _inventory(functions=[("a1", "a.c"), ("a9", "a.c"),
+                                          ("b1", "b.c")])
+        config = _modules(_config(files=("a.c", "b.c")), ("A", "a.c"), ("B", "b.c"))
+        whole = {m["name"]: m for m in _schedule(graph, inventory, config=config)
+                 ["modules"]}
+        self.assertEqual(whole["A"]["depends_on"]["scheduled"],
+                         [{"module": "B", "unique_edges": 1, "total_edges": 1,
+                           "via_dependency": []}])
+        config["schedule_seeds"] = [
+            {"path": "a.c", "items": {"included": [{"name": "a1", "kind": "symbol"}]}}]
+        narrow = _schedule(graph, inventory, config=config)
+        self.assertEqual([m["name"] for m in narrow["modules"]], ["A"])
+        self.assertEqual(narrow["modules"][0]["depends_on"],
+                         {"scheduled": [], "cut": []})
+        # Its layer is still the whole closure's.
+        self.assertEqual(narrow["modules"][0]["layer"], whole["A"]["layer"])
+
+    def test_a_shared_header_is_split_item_by_item(self) -> None:
+        # h.h defines S and U; a.c implements S, b.c U.
+        graph = {"layers": [[_rec("S", "h.h", kind="type"), _rec("U", "h.h", kind="type")],
+                            [_rec("a1", "a.c", types=[("S", "h.h")]),
+                             _rec("b1", "b.c", types=[("U", "h.h")])]]}
+        inventory = _inventory(functions=[("a1", "a.c"), ("b1", "b.c")],
+                               types=[("S", "h.h", "h.h"), ("U", "h.h", "h.h")])
+
+        def only(name):
+            return {"path": "h.h", "items": {"included": [{"name": name, "kind": "type"}]}}
+        config = _modules(_config(), ("A", "a.c", only("S")), ("B", "b.c", only("U")))
+        self.assertEqual(_waves(_schedule(graph, inventory, config=config)), [
+            ("A", ["S"], [], 0), ("B", ["U"], [], 0),
+            ("A", ["a1"], [0], 1), ("B", ["b1"], [1], 1)])
+
+    def test_a_tu_is_split_between_two_modules(self) -> None:
+        # a.c's allocator and releaser are foundational; f uses them.
+        graph = {"layers": [[_rec("alloc", "a.c"), _rec("release", "a.c")],
+                            [_rec("f", "a.c", syms=[("alloc", "a.c"),
+                                                    ("release", "a.c")])]]}
+        inventory = _inventory(functions=[("alloc", "a.c"), ("release", "a.c"),
+                                          ("f", "a.c")])
+        lifecycle = [{"name": "alloc", "kind": "symbol"},
+                     {"name": "release", "kind": "symbol"}]
+        config = _modules(_config(),
+                          ("F", {"path": "a.c", "items": {"included": lifecycle}}),
+                          ("A", {"path": "a.c", "items": {"excluded": lifecycle}}))
+        schedule = _schedule(graph, inventory, config=config)
+        self.assertEqual(_waves(schedule), [("F", ["alloc", "release"], [], 0),
+                                            ("A", ["f"], [0], 0)])
+        self.assertEqual([m["layer"] for m in schedule["modules"]], [0, 1])
+
+    def test_an_item_its_file_only_declares_is_an_error(self) -> None:
+        # h.h declares b1, which b.c defines: H would claim nothing.
+        b1 = {"path": "h.h", "items": {"included": [{"name": "b1", "kind": "symbol"}]}}
+        config = _modules(_config(), ("H", b1), ("A", "a.c"))
+        with self.assertRaisesRegex(SystemExit, r"H: h\.h items\.included: "
+                                                r"symbol b1 is homed in b\.c"):
+            _schedule(GRAPH, INVENTORY, config=config)
+        # As a seed it still selects b1 by its declaration.
+        self.assertEqual(_names(_schedule(GRAPH, INVENTORY, config=_config(b1))),
+                         [["b1"]])
+
+    def test_a_module_that_claims_no_unit_is_warned_of(self) -> None:
+        # e.h is a closure file that defines no unit.
+        config = _modules(_config(files=("a.c", "b.c", "h.h", "e.h")),
+                          ("A", "a.c"), ("E", "e.h"))
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            _schedule(GRAPH, INVENTORY, config=config)
+        self.assertIn("warning: 1 module(s) claim no unit: E", err.getvalue())
+
+    def test_a_module_outside_the_api_graph_is_no_warning(self) -> None:
+        # Only a2 is published: the API graph reaches a1 and b1, not T, which
+        # H still claims in the closure.
+        inventory = {**INVENTORY, "api": {**INVENTORY["api"], "functions": [
+            {"name": "a2", "defined_in": "a.c", "declared_in": ["a.c"]}]}}
+        config = _modules(_config(), ("A", "a.c"), ("B", "b.c"), ("H", "h.h"))
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            schedule = _schedule(GRAPH, inventory, config=config,
+                                 api_headers_only=True)
+        self.assertEqual(_names(schedule), [["b1"], ["a1"], ["a2"]])
+        self.assertNotIn("claim no unit", err.getvalue())
+
+    def test_a_module_cycle_is_cut_where_it_leaves_fewest_dependencies(self) -> None:
+        # A's a1, a2 and a3 all use b1; B's b2 and b3 use a1 and a2. Cutting
+        # A's edges leaves one unit behind, b1; cutting B's, two.
+        graph = {"layers": [
+            [_rec("a1", "a.c", fallback=[("b1", "b.c")]),
+             _rec("a2", "a.c", fallback=[("b1", "b.c")]),
+             _rec("a3", "a.c", fallback=[("b1", "b.c")])],
+            [_rec("b1", "b.c"), _rec("b2", "b.c", syms=[("a1", "a.c")]),
+             _rec("b3", "b.c", syms=[("a2", "a.c")])]]}
+        inventory = _inventory(functions=[(n, f"{n[0]}.c") for n in
+                                          ("a1", "a2", "a3", "b1", "b2", "b3")])
+        config = _modules(_config(files=("a.c", "b.c")), ("A", "a.c"), ("B", "b.c"))
+        schedule = _schedule(graph, inventory, config=config)
+        modules = {m["name"]: m for m in schedule["modules"]}
+        self.assertEqual((modules["A"]["layer"], modules["B"]["layer"]), (0, 1))
+        cut = modules["A"]["depends_on"]["cut"][0]
+        self.assertEqual((cut["module"], cut["unique_edges"], cut["total_edges"]),
+                         ("B", 1, 3))
+        self.assertEqual(modules["B"]["depends_on"]["scheduled"],
+                         [{"module": "A", "unique_edges": 2, "total_edges": 2,
+                           "via_dependency": []}])
+
+    def test_dependencies_before_a_module_s_first_wave_lead_it(self) -> None:
+        # x1 <- x2 <- x3, which no module claims, lead to a1, A's first wave;
+        # a2 also uses x1.
+        graph = {"layers": [
+            [_rec("b1", "b.c"), _rec("x1", "x.c")],
+            [_rec("x2", "x.c", syms=[("x1", "x.c")])],
+            [_rec("x3", "x.c", syms=[("x2", "x.c")])],
+            [_rec("a1", "a.c", syms=[("x3", "x.c"), ("b1", "b.c")])],
+            [_rec("a2", "a.c", syms=[("a1", "a.c"), ("x1", "x.c")])]]}
+        inventory = _inventory(functions=[(n, f"{n[0]}.c") for n in
+                                          ("a1", "a2", "b1", "x1", "x2", "x3")])
+        config = _modules(_config("a.c", files=("a.c", "b.c", "x.c")),
+                          ("A", "a.c"), ("B", "b.c"))
+        schedule = _schedule(graph, inventory, config=config)
+        self.assertEqual(_waves(schedule), [
+            ("B", ["b1"], [], 0),
+            ("A", ["x1"], [], 0),
+            ("A", ["x2"], [1], 1),
+            ("A", ["x3"], [2], 2),
+            ("A", ["a1"], [0, 3], 3),
+            ("A", ["a2"], [1, 4], 4),
+        ])
+        items = {i["name"]: i for i in _scheduled_items(schedule)}
+        self.assertIsNone(items["x1"]["module"])
+        modules = {m["name"]: m for m in schedule["modules"]}
+        self.assertEqual((modules["A"]["unit_count"], modules["A"]["waves"]),
+                         (2, [1, 2, 3, 4, 5]))
+
+    def test_a_unit_two_modules_claim_is_an_error(self) -> None:
+        config = _modules(_config(), ("A", "a.c", "h.h"), ("H", "h.h"))
+        with self.assertRaisesRegex(SystemExit, "belong to several modules"):
+            _schedule(GRAPH, INVENTORY, config=config)
 
 
 class KindTests(unittest.TestCase):
@@ -169,7 +442,7 @@ class KindTests(unittest.TestCase):
     def test_enums_and_macros_are_dependencies_by_default(self) -> None:
         schedule = _schedule(self.GRAPH, self.INVENTORY, config=_config())
         self.assertEqual(_names(schedule), [["f"]])
-        self.assertEqual(_scheduled_items(schedule)[0]["layer"], 0)
+        self.assertEqual(schedule["waves"][0]["layer"], 0)
         f = _scheduled_items(schedule)[0]
         self.assertEqual([r["scope"] for r in f["deps"]["types"] + f["deps"]["symbols"]],
                          ["closure", "closure"])
@@ -182,6 +455,23 @@ class KindTests(unittest.TestCase):
                          with_enums=True, with_macros=True)
         self.assertEqual(_names(both), [["E", "M"], ["f"]])
         self.assertEqual((both["with_enums"], both["with_macros"]), (True, True))
+
+    def test_a_generator_is_a_type_dependency(self) -> None:
+        # GEN mints T, which uses it: T lists GEN among its types, as GEN's
+        # own item is a type.
+        graph = {"layers": [
+            [{**_rec("GEN", "a.c"), "subkind": "macro_function",
+              "type_generator_for": ["T"]}],
+            [_rec("T", "a.c", kind="type", syms=[("GEN", "a.c")])]]}
+        inventory = _inventory(types=[("T", "a.c")])
+        inventory["targeted"]["macros"] = [
+            {"name": "GEN", "defined_in": "a.c", "declared_in": []}]
+        items = {i["name"]: i for i in
+                 _scheduled_items(_schedule(graph, inventory, config=_config()))}
+        self.assertEqual(items["GEN"]["kind"], "type")
+        self.assertEqual(items["T"]["deps"],
+                         {"types": [{"name": "GEN", "defined_in": "a.c",
+                                     "scope": "scheduled"}], "symbols": []})
 
 
 class CapTests(unittest.TestCase):

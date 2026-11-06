@@ -22,7 +22,7 @@ CAPS = ("max_syms", "max_loc", "max_types", "min_fields")
 def is_generator(node: Node) -> bool:
     return (node.node_kind == "symbol"
             and (node.subkind or "").startswith("macro")
-            and bool(node.generates))
+            and bool(node.type_generator_for))
 
 
 @dataclass
@@ -177,7 +177,7 @@ def build_schedule(layout, target: Path, *, api_headers_only: bool = False,
     from compose import scope as compose_scope
     from compose.scope_manifest import targeted_candidates
     from wavefront import dag as dag_mod, manifests, scope
-    from wavefront import selection
+    from wavefront import modules, selection
     from wavefront.order import _cut, _full_edges, _layers, _sort_key
     from wavefront.stats import Stats
 
@@ -189,6 +189,7 @@ def build_schedule(layout, target: Path, *, api_headers_only: bool = False,
 
     config = json.loads(layout.config(target).read_text())
     entries = selection.load(config, layout.repo_root)
+    mods = modules.load(config, layout.repo_root)
     closure_files = set(targeted_candidates(config, layout.repo_root))
 
     inventory = scope.build(layout, target, stage="schedule")
@@ -196,7 +197,7 @@ def build_schedule(layout, target: Path, *, api_headers_only: bool = False,
     graph = dag_mod.build(layout, target, stage="schedule",
                           api_headers_only=api_headers_only)
     by_key, _ = load_nodes(graph)
-    edges, weights = _full_edges(graph)
+    edges = _full_edges(graph)
 
     def entities(section):
         out = set()
@@ -223,9 +224,23 @@ def build_schedule(layout, target: Path, *, api_headers_only: bool = False,
         return (not api_headers_only
                 or bool({(node.id, node.defined_in or ""), (node.id, "")} & api))
 
+    unit_keys = {k for k, n in by_key.items() if is_unit(n)}
     if entries is not None:
-        selection.check(entries, decls,
-                        {k for k, n in by_key.items() if is_unit(n)})
+        selection.check(entries, decls, unit_keys)
+    if mods:
+        selection.check([e for m in mods for e in m.entries], decls, unit_keys)
+        modules.check(mods, decls, unit_keys)
+        # Claimed over every unit of the closure, whatever the graph: a module
+        # that claims none of them is a config error, not an API-mode gap.
+        claimed = modules.owners(mods, unit_keys)
+        busy = set(claimed.values())
+        idle = [m.name for i, m in enumerate(mods) if i not in busy]
+        if idle:
+            print(f"warning: {len(idle)} module(s) claim no unit: "
+                  + ", ".join(idle[:20]) + (" ..." if len(idle) > 20 else ""),
+                  file=sys.stderr)
+    else:
+        claimed = {}
 
     # The units: every targeted node, or in API mode what the published
     # declarations reach of it, closed over the graph's edges.
@@ -239,15 +254,49 @@ def build_schedule(layout, target: Path, *, api_headers_only: bool = False,
         pending.extend(d for d in edges.get(key, ())
                        if d in by_key and d not in units and is_unit(by_key[d]))
 
-    # The order, over every unit; a schedule keeps its units in it.
-    def weight(u: NodeKey, v: NodeKey) -> int:
-        return weights.get((u, v), 1)
+    # The order, over every unit; a schedule keeps its units in it. Units
+    # are ordered in groups: each module's, and each unit no module claims
+    # alone. The groups' cycles are cut and the groups layered into stages;
+    # each module's units are then ordered within it. A cut costs a binding
+    # of each dependency it leaves behind: a unit edge weighs 1, and an edge
+    # between two groups the distinct units it depends on.
+    def unit_weight(u: NodeKey, v: NodeKey) -> int:
+        return 1
 
     ordered = sorted(units, key=_sort_key)
     adj = {k: {d for d in edges.get(k, ()) if d in units} for k in ordered}
-    cut = _cut(ordered, adj, weight)
-    layer = _layers(ordered, {k: {d for d in ds if (k, d) not in cut}
-                              for k, ds in adj.items()})
+    owner = {k: claimed[k] for k in ordered if k in claimed}
+
+    def group(k: NodeKey) -> tuple:
+        return ("module", owner[k]) if k in owner else ("unit", k)
+
+    crossing: dict[tuple, list] = defaultdict(list)
+    group_adj: dict[tuple, set] = defaultdict(set)
+    for u in ordered:
+        for v in sorted(adj[u], key=_sort_key):
+            gu, gv = group(u), group(v)
+            if gu != gv:
+                crossing[(gu, gv)].append((u, v))
+                group_adj[gu].add(gv)
+    groups = sorted({group(k) for k in ordered}, key=_sort_key)
+    group_cut = _cut(groups, group_adj,
+                     lambda a, b: len({v for _, v in crossing[(a, b)]}))
+    stage = _layers(groups, {g: {d for d in group_adj[g] if (g, d) not in group_cut}
+                             for g in groups})
+    cut: set[tuple[NodeKey, NodeKey]] = set()
+    for e in group_cut:
+        cut.update(crossing[e])
+    members: dict[int, list[NodeKey]] = defaultdict(list)
+    for k in ordered:
+        if k in owner:
+            members[owner[k]].append(k)
+    layer: dict[NodeKey, int] = {k: 0 for k in ordered if k not in owner}
+    for i, keys in members.items():
+        inner = {k: {d for d in adj[k] if owner.get(d) == i} for k in keys}
+        inner_cut = _cut(keys, inner, unit_weight)
+        cut |= inner_cut
+        layer.update(_layers(keys, {k: {d for d in ds if (k, d) not in inner_cut}
+                                    for k, ds in inner.items()}))
     lower: dict[NodeKey, set[NodeKey]] = defaultdict(set)
     for u, v in cut:
         lower[v].add(u)
@@ -264,6 +313,17 @@ def build_schedule(layout, target: Path, *, api_headers_only: bool = False,
         if key not in chosen:
             chosen.add(key)
             pending.extend(d for d in adj[key] if d not in chosen)
+    # With modules, every unit a schedule holds is the closure's, and needs
+    # one: what a schedule does not reach needs none.
+    loose = sorted((k for k in chosen if k not in owner),
+                   key=lambda k: (k not in seeds, _sort_key(k)))
+    if mods and loose:
+        n_seeds = sum(1 for k in loose if k in seeds)
+        print(f"warning: {len(loose)} scheduled unit(s) belong to no module "
+              f"({n_seeds} seed(s), {len(loose) - n_seeds} dependenc(ies)), and "
+              f"are ordered alone: "
+              + ", ".join(f"{k[2]} {k[0]} ({k[1] or '?'})" for k in loose[:20])
+              + (" ..." if len(loose) > 20 else ""), file=sys.stderr)
 
     stats = Stats(layout.t1, layout.t2, closure_files)
     pair = (manifests.entries(layout, target, "types", stage="schedule"),
@@ -282,9 +342,15 @@ def build_schedule(layout, target: Path, *, api_headers_only: bool = False,
     def ref(key: NodeKey) -> dict:
         return {"name": key[0], "defined_in": key[1], "scope": scope_of(key)}
 
+    def route(key: NodeKey) -> str:
+        """A key's side of ``deps``: a generator macro is a type, as its item
+        is."""
+        node = by_key.get(key)
+        return "type" if node is not None and is_generator(node) else key[2]
+
     def refs(keys, kind=None):
         return [ref(k) for k in sorted(keys, key=_sort_key)
-                if kind is None or k[2] == kind]
+                if kind is None or route(k) == kind]
 
     def doc(key: NodeKey) -> dict:
         node = by_key[key]
@@ -298,14 +364,14 @@ def build_schedule(layout, target: Path, *, api_headers_only: bool = False,
                      else "callback" if node.subkind == "callback" else "symbol"),
             "source_kind": node.subkind,
             "seeded": key in seeds,
-            "layer": layer[key],
+            "module": mods[owner[key]].name if key in owner else None,
             "loc": node.loc,
             "stats": stats.of(node.id, node.defined_in, node.node_kind,
                               node.subkind),
             "deps": {"types": refs(deps, "type"), "symbols": refs(deps, "symbol")},
             "higher_cuts": refs(higher),
             "lower_cuts": refs(lower.get(key, ())),
-            "generates": list(node.generates),
+            "type_generator_for": list(node.type_generator_for),
             "used_fields": used.get(key, []),
         }
 
@@ -327,21 +393,154 @@ def build_schedule(layout, target: Path, *, api_headers_only: bool = False,
                  "items": [doc(u.node.key) for u in b.units]}
                 for b in _pack([unit(k) for k in keys], **budgets)]
 
-    by_layer: dict[int, list[NodeKey]] = defaultdict(list)
+    # One wave per layer of a module; with caps, a module's adjacent layers
+    # fold. Without modules, the waves are the stages of the units' order.
+    slots: dict[tuple, list[NodeKey]] = defaultdict(list)
     for k in sorted(chosen, key=_sort_key):
-        by_layer[layer[k]].append(k)
-    layers = sorted(by_layer)
-    if budgets is None:
-        groups = [[n] for n in layers]
-    else:
-        groups = _coalesce({n: [unit(k) for k in by_layer[n]] for n in layers},
-                           layers, budgets=budgets)
-    waves = []
-    for group in groups:
-        keys = [k for n in group for k in by_layer[n]]
-        waves.append({"index": len(waves), "layers": group,
-                      "unit_count": len(keys), "batches": batches_of(keys)})
+        if k in owner:
+            slots[(owner[k], layer[k])].append(k)
+    held_by: dict[tuple, list[NodeKey]] = {}
+    for i in sorted({sl[0] for sl in slots}):
+        held = sorted(n for m, n in slots if m == i)
+        if budgets is None:
+            runs = [[n] for n in held]
+        else:
+            runs = _coalesce({n: [unit(k) for k in slots[(i, n)]] for n in held},
+                             held, budgets=budgets)
+        for r, run in enumerate(runs):
+            held_by[("module", i, r)] = [k for n in run for k in slots[(i, n)]]
+    loose = sorted((k for k in chosen if k not in owner), key=_sort_key)
 
+    def kept(k: NodeKey) -> list[NodeKey]:
+        return [d for d in adj[k] if (k, d) not in cut and d in chosen]
+
+    consumers: dict[NodeKey, list[NodeKey]] = defaultdict(list)
+    for k in chosen:
+        for d in kept(k):
+            consumers[d].append(k)
+
+    # Where each wave goes: its slot's key orders the listing, a dependency
+    # before every wave that needs it. A module's wave is keyed by its
+    # module's layer and its rank among the module's waves. A unit no module
+    # claims is a seed, keyed by its place in the order and listed before
+    # that layer's module waves, or a dependency, which goes in the wave
+    # right before the first one listed that needs it: that module's
+    # previous wave, a new one ahead of its first when there is none; the
+    # previous layer's without modules; or, before a seed's wave, a wave of
+    # its own.
+    slot: dict[NodeKey, tuple] = {}
+    for sl, keys in held_by.items():
+        for k in keys:
+            slot[k] = sl
+
+    def key(sl: tuple) -> tuple:
+        if sl[0] == "module":
+            _, i, r = sl
+            return (stage[("module", i)], r, 1, 0, mods[i].name)
+        return sl[1] + ("",)
+
+    for k in sorted(loose, key=lambda k: (-stage[group(k)], _sort_key(k))):
+        users = [slot[c] for c in consumers[k]]
+        if k in seeds or not users:
+            slot[k] = ("loose", (stage[group(k)], -1, 0, 0))
+            continue
+        first = min(users, key=key)
+        if not mods:
+            slot[k] = ("loose", (key(first)[0] - 1, -1, 0, 0))
+        elif first[0] == "module":
+            slot[k] = ("module", first[1], first[2] - 1)
+        else:
+            layer_, sub, _, r = first[1]
+            slot[k] = ("loose", (layer_, sub, 0, r - 1))
+
+    plan: dict[tuple, list[NodeKey]] = {sl: list(keys) for sl, keys in held_by.items()}
+    for k in loose:
+        plan.setdefault(slot[k], []).append(k)
+    order = sorted(plan, key=key)
+    index_of = {sl: n for n, sl in enumerate(order)}
+    waves = []
+    previous: dict[int, int] = {}
+    sublayer: dict[int, int] = defaultdict(int)
+    for sl in order:
+        keys = sorted(plan[sl], key=_sort_key)
+        n = index_of[sl]
+        module = sl[1] if sl[0] == "module" else None
+        ds = {index_of[slot[d]] for k in keys for d in kept(k)} - {n}
+        wave = {"index": n, "module": mods[module].name if module is not None else None}
+        if module is not None:
+            if module in previous:
+                ds.add(previous[module])
+            previous[module] = n
+            wave["sublayer"] = sublayer[module]
+            sublayer[module] += 1
+        else:
+            wave["layer"] = sl[1][0]
+        wave.update({
+            "depends_on": sorted(ds),
+            "unit_count": len(keys),
+            "batches": batches_of(keys),
+        })
+        assert all(d < n for d in wave["depends_on"]), n
+        waves.append(wave)
+
+    # A module's dependencies are those of its scheduled units, which every
+    # unit they reach is too: a narrow schedule names no module it leaves out.
+    # They pass through the units no module claims, over kept edges, to the
+    # module they reach; such a module is ordered before it.
+    def module_doc(i: int) -> dict:
+        edges_to: dict[int, list] = defaultdict(list)
+        for g, es in crossing.items():
+            if g[0] == ("module", i) and g[1][0] == "module":
+                edges_to[g[1][1]] = [(u, v) for u, v in es if u in chosen]
+        through: dict[int, list] = defaultdict(list)
+        seen: set[NodeKey] = set()
+        pending = [d for u in members[i] if u in chosen for d in kept(u)
+                   if d not in owner]
+        while pending:
+            k = pending.pop()
+            if k in seen:
+                continue
+            seen.add(k)
+            for d in kept(k):
+                if d not in owner:
+                    pending.append(d)
+                elif owner[d] != i:
+                    through[owner[d]].append((k, d))
+
+        def dep(j: int, is_cut: bool) -> dict:
+            es = edges_to[j] + sorted(through[j], key=_sort_key)
+            out = {"module": mods[j].name,
+                   "unique_edges": len({v for _, v in es}), "total_edges": len(es)}
+            if is_cut:
+                out["items"] = [{"from": {"name": u[0], "defined_in": u[1]},
+                                 "to": {"name": v[0], "defined_in": v[1]},
+                                 "kind": route(v)} for u, v in es]
+            else:
+                out["via_dependency"] = [{"name": k[0], "defined_in": k[1]} for k in
+                              sorted({u for u, _ in through[j]}, key=_sort_key)]
+            return out
+        out_deps = sorted((j for j in set(edges_to) | set(through)
+                           if edges_to[j] or through[j]),
+                          key=lambda j: mods[j].name)
+        # A kept path orders the module it reaches before this one, so no cut
+        # separates them.
+        assert not any(through[j] and (("module", i), ("module", j)) in group_cut
+                       for j in out_deps), mods[i].name
+        return {
+            "name": mods[i].name,
+            "layer": stage[("module", i)],
+            "unit_count": sum(1 for k in members[i] if k in chosen),
+            "waves": [w["index"] for w in waves if w["module"] == mods[i].name],
+            "depends_on": {
+                "scheduled": [dep(j, False) for j in out_deps
+                              if (("module", i), ("module", j)) not in group_cut],
+                "cut": [dep(j, True) for j in out_deps
+                        if (("module", i), ("module", j)) in group_cut],
+            },
+        }
+
+    listed = sorted({owner[k] for k in chosen if k in owner},
+                    key=lambda i: (stage[("module", i)], mods[i].name))
     return {
         "schema_version": 4,
         "oracle_config": layout.config_provenance(),
@@ -352,10 +551,12 @@ def build_schedule(layout, target: Path, *, api_headers_only: bool = False,
         "summary": {
             "unit_count": len(chosen),
             "seeded_count": len(seeds),
+            "module_count": len(listed),
             "wave_count": len(waves),
             "batch_count": sum(len(w["batches"]) for w in waves),
             "cut_count": sum(1 for u, v in cut if u in chosen or v in chosen),
         },
+        "modules": [module_doc(i) for i in listed],
         "waves": waves,
     }
 

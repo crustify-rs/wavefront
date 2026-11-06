@@ -51,7 +51,7 @@ class Node:
     loc: int = 0
     #: Types this macro mints, when it is a template generator (else empty).
     #: Non-empty is what exempts it from the wrap stage's macro exclusion.
-    generates: list[str] = field(default_factory=list)
+    type_generator_for: list[str] = field(default_factory=list)
 
     @property
     def key(self) -> NodeKey:
@@ -123,7 +123,7 @@ def load_nodes(dag: dict) -> tuple[dict[SymKey, Node], dict[str, list[SymKey]]]:
             fallback=keys(rec.get("fallback"), "types"),
             back_fill=keys(rec.get("back_fill"), "types"),
             loc=int(rec.get("loc") or 0),
-            generates=list(rec.get("generates") or ()),
+            type_generator_for=list(rec.get("type_generator_for") or ()),
         )
         by_key[n.key] = n
         by_name.setdefault(n.id, []).append(n.key)

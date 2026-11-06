@@ -23,6 +23,24 @@ of a schedule's items ([`artifacts/schedule.md`](artifacts/schedule.md#statistic
 read it, whatever part of it a schedule covers. Code the closure leaves out,
 such as a test suite, is no use of the program's entities.
 
+## Modules
+
+`modules`, optional, groups the closure's units for `wavefront schedule`
+([`batching.md`](batching.md#order)). It lists module records,
+`{"name": ..., "files": [...]}`: a unique name and file entries, each as
+[`schedule_seeds`](#schedule-seeds) writes one. A module claims the units
+whose home is one of its files, its defining file or, without one, its
+declaration, as its items narrow them. A shared header is split this way,
+each module naming the items it defines that the module takes, and a TU
+between two modules, one `included` and the other `excluded` the same items.
+An item names an entity its file is home to: one its file only declares, its
+definition elsewhere, is an error, since the module would not claim it. A
+unit two modules claim is an error, and a module that claims no unit of the
+closure is warned of. `modules` may cover only part of the closure: the
+modules of what a schedule holds, its seeds and every unit they depend on. A
+unit the schedule holds that no module claims is ordered alone, and warned
+of; one it does not reach needs no module.
+
 ## Schedule seeds
 
 `schedule_seeds`, optional, names the units `wavefront schedule` starts from
@@ -43,7 +61,8 @@ share a name in one file, as `static const struct typelen {...} typelen[]`
 does; the kind tells them apart. `included` seeds only the entities it names
 of its file, `excluded` none of those it names; an item that names no such
 entity, or that both lists name, is an error, as is a file outside the
-closure. A directory takes no items.
+closure. A directory names the closure's files under it, and takes no items;
+one that holds none is an error.
 
 The seeds never change the order: a schedule orders every unit of the
 closure and keeps the ones it holds in it, so that schedules of several seeds

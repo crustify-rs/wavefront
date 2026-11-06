@@ -66,11 +66,40 @@ def _items(value, where: str) -> tuple[set, set]:
     return out[0], out[1]
 
 
+def file_entry(rec, where: str, repo_root: Path, closure: set[str]) -> list[Entry]:
+    """One file entry, validated, as an entry per file it names: a path, a
+    directory with a trailing slash, or ``{"path", "items"}``. A file lies
+    within the closure; a directory names the closure's files under it, and
+    at least one."""
+    if isinstance(rec, str):
+        path, items = rec, None
+    elif (isinstance(rec, dict) and set(rec) <= {"path", "items"}
+            and isinstance(rec.get("path"), str)):
+        path, items = rec["path"], rec.get("items")
+    else:
+        _fail(f"{where}: {rec!r} is no file entry. {_HINT}")
+    if not path:
+        _fail(f"{where}: a file entry needs a path")
+    if items is not None and path.endswith("/"):
+        _fail(f"{where}: {path} is a directory; items narrow one file")
+    included, excluded = (_items(items, f"{where} {path}")
+                          if items is not None else (set(), set()))
+    if path.endswith("/"):
+        paths = sorted(f for f in closure if f.startswith(path))
+        if not paths:
+            _fail(f"{where}: {path} holds no file of the closure")
+    elif path not in closure:
+        _fail(f"{where}: {path} is no file of the closure")
+    else:
+        paths = [path]
+    return [Entry(p, set(included), set(excluded)) for p in paths]
+
+
 def load(config: dict, repo_root: Path) -> list[Entry] | None:
     """The config's ``schedule_seeds`` as file entries, validated: every file lies
     within the closure. ``None`` when the config lists none: every unit is a
     seed."""
-    from compose.scope_manifest import enumerate_files, targeted_candidates
+    from compose.scope_manifest import targeted_candidates
 
     if SCHEDULE not in config:
         return None
@@ -80,26 +109,7 @@ def load(config: dict, repo_root: Path) -> list[Entry] | None:
     closure = set(targeted_candidates(config, repo_root))
     out: list[Entry] = []
     for i, rec in enumerate(records):
-        where = f"schedule_seeds[{i}]"
-        if isinstance(rec, str):
-            path, items = rec, None
-        elif (isinstance(rec, dict) and set(rec) <= {"path", "items"}
-                and isinstance(rec.get("path"), str)):
-            path, items = rec["path"], rec.get("items")
-        else:
-            _fail(f"{where}: {rec!r} is no file entry. {_HINT}")
-        if not path:
-            _fail(f"{where}: a file entry needs a path")
-        if items is not None and path.endswith("/"):
-            _fail(f"{where}: {path} is a directory; items narrow one file")
-        included, excluded = (_items(items, f"{where} {path}")
-                              if items is not None else (set(), set()))
-        paths = enumerate_files({"files": {"included": [path]}}, repo_root, "files")
-        stray = sorted(set(paths) - closure)
-        if not paths or stray:
-            _fail(f"{where}: {path} names files the closure does not: "
-                  f"{', '.join(stray[:20]) or path}")
-        out.extend(Entry(p, set(included), set(excluded)) for p in paths)
+        out.extend(file_entry(rec, f"schedule_seeds[{i}]", repo_root, closure))
     return out
 
 

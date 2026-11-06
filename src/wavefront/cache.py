@@ -56,7 +56,10 @@ from pathlib import Path
 #:      1 as `weights`.
 #: 21 — the config's file sets move under `closure`, and its `items` are
 #:      gone: no entity of the config's files is narrowed out to imported.
-_VERSION = 21
+#: 22 — cycles are cut counting each edge once, without the type edges'
+#:      reference multiplicity, and nodes list no `weights`; a generator
+#:      macro lists its instances as `type_generator_for`.
+_VERSION = 22
 
 
 def fingerprint(layout, target) -> dict:

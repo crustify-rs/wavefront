@@ -7,25 +7,20 @@ from collections import defaultdict
 from wavefront.dag import NodeKey
 
 
-def _full_edges(dag: dict) -> tuple[dict[NodeKey, set[NodeKey]],
-                                    dict[tuple[NodeKey, NodeKey], int]]:
-    """Every dependency edge of the composed graph, the cut ones included,
-    with the weight of each edge heavier than 1."""
+def _full_edges(dag: dict) -> dict[NodeKey, set[NodeKey]]:
+    """Every dependency edge of the composed graph, the cut ones included."""
     def keys(group, side):
         kind = "type" if side == "types" else "symbol"
         return [(d["name"], d.get("defined_in"), kind)
                 for d in (group or {}).get(side) or []]
 
     edges: dict[NodeKey, set[NodeKey]] = defaultdict(set)
-    weights: dict[tuple[NodeKey, NodeKey], int] = {}
 
     def add(rec, deps):
         key = (rec["id"], rec.get("defined_in"), rec["node_kind"])
         for group in (deps, rec.get("fallback")):
             for side in ("types", "syms"):
                 edges[key].update(keys(group, side))
-        for w in rec.get("weights") or []:
-            weights[(key, (w["name"], w.get("defined_in"), "type"))] = w["w"]
 
     for layer in dag.get("layers", []):
         for rec in layer:
@@ -34,7 +29,7 @@ def _full_edges(dag: dict) -> tuple[dict[NodeKey, set[NodeKey]],
                     add(member, member.get("deps") or rec.get("deps"))
             else:
                 add(rec, rec.get("deps"))
-    return edges, weights
+    return edges
 
 
 def _sccs(nodes: list, adj: dict) -> list[list]:
@@ -112,9 +107,15 @@ def _cut(nodes: list, adj: dict, weight) -> set[tuple]:
 
 
 def _sort_key(x):
+    """A total order over node keys and group keys: ``None`` as the empty
+    string, and an index by its value, so that module 10 sorts after 2."""
+    def part(p):
+        if p is None:
+            return ""
+        return f"{p:020d}" if isinstance(p, int) else str(p)
     if isinstance(x, tuple):
-        return tuple("" if part is None else str(part) for part in x)
-    return (str(x),)
+        return tuple(part(p) for p in x)
+    return (part(x),)
 
 
 def _layers(nodes: list, adj: dict) -> dict:
