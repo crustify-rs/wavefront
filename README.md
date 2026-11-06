@@ -179,7 +179,7 @@ changing the order. Each unit carries its module, its `defined_in` and
 | `--output PATH` | | Required. Output file; its directory must exist. |
 | `--api-headers-only` | | Schedule the public API from the public-signature graph. |
 | `--with-enums` | | Schedule enums, which are otherwise dependencies only. |
-| `--with-macros` | | Schedule every macro the closure's files define; otherwise only the type generators its `.c` files define. |
+| `--with-macros` | | Schedule every macro the closure's files define; otherwise only the type generators it defines. |
 | `--max-types N` | none | Types per type batch. |
 | `--min-fields N` | none | Declared fields that close a type batch. |
 | `--max-syms N` | none | Symbols per symbol batch. |

@@ -25,6 +25,34 @@ def is_generator(node: Node) -> bool:
             and bool(node.type_generator_for))
 
 
+def is_unit(node: Node, *, owned: set, closure_files: set[str],
+            with_enums: bool = False, with_macros: bool = False) -> bool:
+    """Whether a node of the graph is a unit of a schedule.
+
+    An enum is one only ``with_enums``. A type generator, which mints types and
+    is routed as one, is one wherever the closure defines it, a header
+    included. Any other macro is one only ``with_macros``, then every one the
+    closure's files define. Everything else is one when the target owns it
+    (``owned``: the closure's entities, a header macro aside), or, for an
+    entity defined nowhere, when its node sits at a declaration in the
+    closure."""
+    if node.node_kind == "type" and node.subkind == "enum":
+        if not with_enums:
+            return False
+    elif is_generator(node):
+        return (node.defined_in or "") in closure_files
+    elif (node.subkind or "").startswith("macro") and node.node_kind == "symbol":
+        return with_macros and (node.defined_in or "") in closure_files
+    if (node.id, node.defined_in or "") in owned:
+        return True
+    # The declaration-only key stands for an entity defined nowhere, whose
+    # node sits at a declaration in the closure. A node defined outside the
+    # closure, which a closure header only forward-declares (`struct tm;`),
+    # stays an external leaf.
+    return ((node.id, "") in owned
+            and (not node.defined_in or node.defined_in in closure_files))
+
+
 @dataclass
 class Unit:
     node: Node
@@ -168,8 +196,9 @@ def build_schedule(layout, target: Path, *, api_headers_only: bool = False,
 
     The units are the closure's owned nodes, or with ``api_headers_only``
     what the published declarations reach of them over the API graph; an
-    enum only ``with_enums``, and a macro, a type generator aside, only
-    ``with_macros``, then every macro the closure's files define. Their
+    enum only ``with_enums``, a type generator wherever the closure defines
+    it, and any other macro only ``with_macros``, then every macro the
+    closure's files define. Their
     cycles are cut and they are layered over all of them, so that a narrow
     selection keeps the order and the cuts of the whole closure. Without caps
     a wave holds one batch per route; with any, each layer is packed, and
@@ -203,38 +232,24 @@ def build_schedule(layout, target: Path, *, api_headers_only: bool = False,
     # The closure's entities the target owns: a macro a closure header
     # defines is in the `closure` section, but a header `#define` cannot be
     # re-exported Rust->C, so only a closure `.c` file's TU-local macro is the
-    # target's own (`compose.scope.owned_macro`): only it is a unit as a type
-    # generator.
+    # target's own (`compose.scope.owned_macro`). A type generator is a unit
+    # wherever the closure defines it (`is_unit`).
     owned = set().union(*(compose_scope.owned_entities(inventory, kind)
                           for kind in kinds))
     api = set().union(*(compose_scope.load_entities(inventory, compose_scope.API,
                                                     kind) for kind in kinds))
 
-    def is_unit(node: Node) -> bool:
-        if node.node_kind == "type" and node.subkind == "enum":
-            if not with_enums:
-                return False
-        elif ((node.subkind or "").startswith("macro")
-                and node.node_kind == "symbol" and not is_generator(node)):
-            # A macro is a unit only with macros, then every one the
-            # closure's files define, a header's included.
-            return with_macros and (node.defined_in or "") in closure_files
-        if (node.id, node.defined_in or "") in owned:
-            return True
-        # The declaration-only key stands for an entity defined nowhere, whose
-        # node sits at a declaration in the closure. A node defined outside
-        # the closure, which a closure header only forward-declares (`struct
-        # tm;`), stays an external leaf.
-        return ((node.id, "") in owned
-                and (not node.defined_in or node.defined_in in closure_files))
+    def unit_node(node: Node) -> bool:
+        return is_unit(node, owned=owned, closure_files=closure_files,
+                       with_enums=with_enums, with_macros=with_macros)
 
     def is_seed(node: Node) -> bool:
-        if not is_unit(node):
+        if not unit_node(node):
             return False
         return (not api_headers_only
                 or bool({(node.id, node.defined_in or ""), (node.id, "")} & api))
 
-    unit_keys = {k for k, n in by_key.items() if is_unit(n)}
+    unit_keys = {k for k, n in by_key.items() if unit_node(n)}
     if entries is not None:
         selection.check(entries, decls, unit_keys)
     if mods:
@@ -262,7 +277,7 @@ def build_schedule(layout, target: Path, *, api_headers_only: bool = False,
             continue
         units.add(key)
         pending.extend(d for d in edges.get(key, ())
-                       if d in by_key and d not in units and is_unit(by_key[d]))
+                       if d in by_key and d not in units and unit_node(by_key[d]))
 
     # The order, over every unit; a schedule keeps its units in it. Units
     # are ordered in groups: each module's, and each unit no module claims

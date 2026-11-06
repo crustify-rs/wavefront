@@ -16,8 +16,8 @@ publishes, closed over the public-signature graph: a private type a public
 signature names is a unit too. External nodes are never units; they stay
 dependencies of the units that reach them.
 
-Enums and macros are no units either, but for a type generator a closure
-`.c` file defines, which mints types and is one: an enum has no fields or
+Enums and macros are no units either, but for a type generator, which mints
+types and is one wherever the closure defines it, a header included: an enum has no fields or
 lifecycle to process, and a macro is expanded where it is used.
 `--with-enums` makes the enums units, and `--with-macros` every macro the
 closure's files define, a header's included.
