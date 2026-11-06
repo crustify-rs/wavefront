@@ -18,12 +18,6 @@ import os
 import sys
 from pathlib import Path
 
-from wavefront.schedule import (
-    DEFAULT_MAX_LOC,
-    DEFAULT_MAX_SYMS,
-    DEFAULT_MAX_TYPES,
-    DEFAULT_MIN_FIELDS,
-)
 
 
 def _pin_hash_seed() -> None:
@@ -68,40 +62,37 @@ def build_parser() -> argparse.ArgumentParser:
     )
     schedule = sub.add_parser(
         "schedule",
-        help="Build an objective-neutral schedule with sequential waves.",
+        help="Order every unit of the config's closure and schedule its "
+             "`schedule_seeds` with what they depend on, one wave per layer.",
     )
     schedule.add_argument(
         "--output", type=Path, required=True, metavar="PATH",
         help="Write the schedule to this exact free-form path. Its parent "
              "directory must already exist.",
     )
-    schedule.add_argument("--name", nargs="+", action="extend", default=None)
-    schedule.add_argument("--lifetime-for", choices=("void", "string"), default=None)
-    schedule.add_argument("--file", nargs="+", dest="files", default=None)
-    schedule.add_argument("--dag-layer", type=int, default=None)
-    schedule.add_argument(
-        "--skip", nargs="+", action="extend", default=None, metavar="NAME",
-        help="Remove named units: NAME removes every node of the name, "
-             "type:NAME or symbol:NAME only its type or its symbol nodes.")
-    schedule.add_argument("--transitive", action="store_true")
     schedule.add_argument(
         "--api-headers-only", action="store_true",
         help="Seed from published declarations and stop symbol traversal at signatures.",
     )
     schedule.add_argument(
-        "--max-syms", type=int, default=DEFAULT_MAX_SYMS,
-        help=f"Maximum symbols per batch (default: {DEFAULT_MAX_SYMS}).")
+        "--with-enums", action="store_true",
+        help="Schedule enums, which are skipped by default.")
     schedule.add_argument(
-        "--max-loc", type=int, default=DEFAULT_MAX_LOC,
-        help="Maximum summed symbol body LoC per batch "
-             f"(default: {DEFAULT_MAX_LOC}).")
+        "--with-macros", action="store_true",
+        help="Schedule every macro the closure's files define; by default only "
+             "type generators are.")
     schedule.add_argument(
-        "--max-types", type=int, default=DEFAULT_MAX_TYPES,
-        help=f"Maximum types per type batch (default: {DEFAULT_MAX_TYPES}).")
+        "--max-syms", type=int, default=None,
+        help="Maximum symbols per batch (default: no cap).")
     schedule.add_argument(
-        "--min-fields", type=int, default=DEFAULT_MIN_FIELDS,
-        help="Close a type batch at this declared-field floor "
-             f"(default: {DEFAULT_MIN_FIELDS}).")
+        "--max-loc", type=int, default=None,
+        help="Maximum summed symbol body LoC per batch (default: no cap).")
+    schedule.add_argument(
+        "--max-types", type=int, default=None,
+        help="Maximum types per type batch (default: no cap).")
+    schedule.add_argument(
+        "--min-fields", type=int, default=None,
+        help="Close a type batch at this declared-field floor (default: no cap).")
     _add_query_command(sub)
     return p
 
@@ -529,28 +520,18 @@ def _main() -> None:
 
     if args.command == "schedule":
         from wavefront.layout import Layout
-        from wavefront.schedule import (
-            build_raw_lifetime_wave, build_wave, write_wave,
-        )
+        from wavefront.schedule import build_schedule, write_wave
         layout = Layout.discover(scope)
-        if args.lifetime_for:
-            if args.name or args.files or args.dag_layer is not None:
-                raise SystemExit("schedule: --lifetime-for is its own selection")
-            wave = build_raw_lifetime_wave(
-                layout, scope, args.lifetime_for)
-        else:
-            wave = build_wave(
-                layout, scope,
-                names=args.name, files=args.files, dag_layer=args.dag_layer,
-                skip=args.skip, transitive=args.transitive,
-                api_headers_only=args.api_headers_only,
-                max_syms=args.max_syms, max_loc=args.max_loc,
-                max_types=args.max_types, min_fields=args.min_fields,
-            )
-        write_wave(args.output, wave)
-        print(f"[wavefront schedule] {wave['summary']['unit_count']} "
-              f"unit(s), {wave['summary']['batch_count']} batch(es) -> "
-              f"{args.output}")
+        schedule = build_schedule(
+            layout, scope, api_headers_only=args.api_headers_only,
+            with_enums=args.with_enums, with_macros=args.with_macros,
+            caps={"max_syms": args.max_syms, "max_loc": args.max_loc,
+                  "max_types": args.max_types, "min_fields": args.min_fields})
+        write_wave(args.output, schedule)
+        s = schedule["summary"]
+        print(f"[wavefront schedule] {s['unit_count']} unit(s), "
+              f"{s['wave_count']} wave(s), {s['batch_count']} batch(es), "
+              f"{s['cut_count']} cut(s) -> {args.output}")
         return
     if args.command == "query":
         _dispatch_query(args, scope)

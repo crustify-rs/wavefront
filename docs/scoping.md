@@ -1,63 +1,60 @@
 # Scoping
 
-A config names the files a project owns. Wavefront composes from them, in
-memory, an inventory with two sections and one view; nothing is written to
-disk. Field meaning of the config itself is in the
+A config names the program Wavefront analyzes, its `closure`, and what
+`wavefront schedule` orders, its `schedule_seeds`. From the closure Wavefront
+composes, in memory, an inventory with two sections and one view; nothing is
+written to disk. Field meaning of the config itself is in the
 [README](../README.md#inputs).
 
 ## Files
 
-`impl_files` names the sources and private headers that implement the
-library, and `api_headers` the headers that publish it, each as two lists:
-`included` names files and directories, and the optional `excluded` removes
-what they would otherwise select. An entry ending in `/` expands to every C
-or C++ source and header beneath it, in either list; a file an `included`
-entry selects is removed when it matches its key's `excluded` list. The resulting candidates are then
-anchored on the T1 tables: a file the traced build never compiled, or whose
-body an `#ifdef` elides, contributes no entities.
+`closure.impl_files` names the sources and private headers that implement the
+program, and `closure.api_headers` the headers that publish it, each as two
+lists: `included` names files and directories, and the optional `excluded`
+removes what they would otherwise select. An entry ending in `/` expands to
+every C or C++ source and header beneath it, in either list; a file an
+`included` entry selects is removed when it matches its key's `excluded` list.
+The resulting candidates are then anchored on the T1 tables: a file the traced
+build never compiled, or whose body an `#ifdef` elides, contributes no
+entities.
 
-## Items
+The closure is the whole program: the graph, every query and the usage counts
+of a schedule's items ([`artifacts/schedule.md`](artifacts/schedule.md#statistics))
+read it, whatever part of it a schedule covers. Code the closure leaves out,
+such as a test suite, is no use of the program's entities.
 
-A config owns its files whole by default. `items` narrows it to entities, so that two
-configs can share a file and split what it defines, with two optional lists:
+## Schedule seeds
 
-- `items.included` names the only entities the config owns: its targeted section holds
-  those of its files' entities that the list names, and nothing else; an empty list
-  narrows nothing;
-- `items.excluded` names entities the config never owns, although its files define or
-  publish them.
+`schedule_seeds`, optional, names the units `wavefront schedule` starts from
+([`batching.md`](batching.md)). It lists file entries, each a path, a
+directory written with a trailing slash, or
+`{"path": ..., "items": {"included": [...], "excluded": [...]}}`. A file
+seeds the targeted entities it defines or declares: `src/libgit2/repository.c`
+the functions it defines, and `include/git2/repository.h` those it declares,
+wherever they are defined. A schedule holds its seeds and every unit they
+depend on, so that it is complete on its own. A config without
+`schedule_seeds` seeds every targeted entity.
 
-Each entry is `{"name": ..., "defined_in": ..., "kind": ...}`: the entity's name, the
-repo-relative file of its definition, or of its declarations when the database holds no
-definition, and its kind, `type` for a struct, union or enum tag or a typedef, `symbol`
-for a function, global, macro or callback typedef. C keeps tags apart from ordinary
-identifiers, so a struct and a function or global may share a name in one file, as
-`static const struct typelen {...} typelen[]` does; the kind tells them apart. A typedef follows the type it names, so naming a struct or its typedef
-selects both. A header macro is imported in every config, as the Targeted section
-describes, so an entry cannot select one.
+Each item is `{"name": ..., "kind": ...}`, an entity its file defines or
+declares: its name, and its kind, `type` for a struct, union or enum tag or a
+typedef, `symbol` for a function, global, macro or callback typedef. C keeps
+tags apart from ordinary identifiers, so a struct and a function or global may
+share a name in one file, as `static const struct typelen {...} typelen[]`
+does; the kind tells them apart. `included` seeds only the entities it names
+of its file, `excluded` none of those it names; an item that names no such
+entity, or that both lists name, is an error, as is a file outside the
+closure. A directory takes no items.
 
-Only a targeted entity can be named: an entry that matches none, because the config's
-files do not define it or because it is a header macro, is an error, as is an entity
-both lists name. An entity either list leaves out is not dropped: it is filed as
-imported, another config's work, so it stays a node and a dependency of whatever reaches
-it, but is never a unit of this config. Its body seeds no walk here, so what only it
-reaches is not imported on its account.
-
-The file lists and the item lists act at two grains: `excluded` file entries drop files a
-directory entry expands to, before anything is classified; `items` drops entities from
-the targeted section, after.
-
-The item lists are the counterparts of one another across configs. A config narrowed by
-`items.included` shares its files with the config that owns the rest of them, which names
-the same entities in `items.excluded`, so that each entity is targeted by exactly one config
-and scheduled once. A project-wide config, whose files are the union of every config's,
-sets neither list and owns everything.
+The seeds never change the order: a schedule orders every unit of the
+closure and keeps the ones it holds in it, so that schedules of several seeds
+are parts of one order, and the selections a consumer makes, by file, module
+or any other grouping, of a schedule are too. Two schedules hold
+the dependencies they share both; each item's key tells them apart.
 
 ## Targeted
 
-The **targeted** section is what the config owns: every entity whose
-definition sits in `impl_files` or `api_headers`, narrowed by its
-[items](#items). An entity with no
+The **targeted** section is what the closure owns: every entity whose
+definition sits in `impl_files` or `api_headers`. An entity with no
 definition in the database is targeted when all of its declarations sit in
 those files. A typedef takes the section of the type it finally names, so a
 typedef and its struct never fall on opposite sides. A macro defined in a
@@ -99,9 +96,8 @@ The default graph and schedule are body-deep:
   imported function contributes its signature only;
 - a struct defined in a targeted file keeps every field edge; an imported
   struct only the fields targeted code accesses;
-- a schedule seeds from targeted and imported nodes, and `--transitive`
-  adds the imported items the closure reaches. They are scheduled with the
-  rest, in symbol batches of their own section.
+- a schedule orders every targeted node; an imported node is a dependency
+  of the units that reach it, never a unit.
 
 ## API mode
 
@@ -112,20 +108,19 @@ The default graph and schedule are body-deep:
   is an opaque handle;
 - only a generator macro the `api_headers` define mints instances: one
   defined elsewhere orders no API type;
-- the **API closure** is what the public signatures and fields reach from
+- the **API reach** is what the public signatures and fields reach from
   the api view, walked before any cast edge exists. Cast edges are added
   only between its nodes ([`graph.md`](graph.md#type-erasure)), so a cast
-  never pulls a type into the closure;
-- a schedule seeds only from the api view, and holds only items the config
-  owns, after its [items](#items) narrow it. An imported item is a node of the graph and a dependency of the
-  items that reach it, but not a unit: the config whose `api_headers` own it
-  schedules it, after its own fields. `query dag --name X --imported-only`
-  lists X's imported dependencies.
+  never pulls a type into the reach;
+- a schedule seeds only from the api view, and holds what those seeds reach
+  of the targeted nodes. An imported item is a node of the
+  graph and a dependency of the items that reach it, but not a unit.
+  `query dag --name X --imported-only` lists X's imported dependencies.
 
-A library split into several configs is therefore scheduled once per
-config, each schedule holding its own items. The relations between configs,
-including cast edges whose two ends two configs own, show in the graph of a
-project-wide config whose `api_headers` are their union.
+A library is scheduled from a config whose closure covers it, so that the
+relations between its parts, cast edges included, are in the one graph its
+schedules order them on; a [`schedule_seeds`](#schedule-seeds) selects the part each one
+holds.
 
 ## Queries
 

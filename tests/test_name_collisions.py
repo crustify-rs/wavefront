@@ -5,8 +5,14 @@ from __future__ import annotations
 
 import unittest
 
+import contextlib
+import io
+import tempfile
+from pathlib import Path
+
+from compose import deps_dag
+from test_t3 import TYPE_COLS, _type, _write
 from wavefront.dag import ambiguous, load_nodes, select
-from wavefront.schedule import _resolve, _skips
 
 
 def _rec(name, kind, home, *, types=(), syms=()):
@@ -59,15 +65,40 @@ class NameCollisionTests(unittest.TestCase):
             ambiguous(keys, stage="t")
         self.assertIn("src/tree.c", str(cm.exception))
 
-    def test_schedule_selects_both_kinds_of_one_file(self) -> None:
-        out = _resolve(["typelen"], self.by_key, self.by_name, lambda n: True)
-        self.assertEqual(sorted(n.node_kind for n in out), ["symbol", "type"])
 
-    def test_skip_by_kind(self) -> None:
-        self.assertEqual(_skips(["a", "type:b", "symbol:c"]),
-                         {None: {"a"}, "type": {"b"}, "symbol": {"c"}})
-        with self.assertRaises(SystemExit):
-            _skips(["field:x"])
+class ForwardDeclarationTests(unittest.TestCase):
+    """A forward declaration names no definition in C: each unit that
+    includes it sees whichever one it includes. Folding it into a tag with
+    several definitions is a guess, so it is reported."""
+
+    def _meta(self, types: list[dict]) -> tuple[dict, str]:
+        with tempfile.TemporaryDirectory() as td:
+            codeql = Path(td) / "codeql"
+            _write(codeql / "t1" / "types.csv", TYPE_COLS, types)
+            for name, cols in (("casts.csv", ["from_tag", "to_tag"]),
+                               ("field_type_uses.csv",
+                                ["struct_name", "struct_def_file", "field_name",
+                                 "type_name", "type_kind", "type_def_file"])):
+                _write(codeql / "t2" / name, cols, [])
+            err = io.StringIO()
+            with contextlib.redirect_stderr(err):
+                meta = deps_dag.collect_types_csv(codeql)[0]
+            return meta, err.getvalue()
+
+    def test_a_forward_declaration_of_one_definition_folds_silently(self) -> None:
+        meta, err = self._meta([_type("repo", "src/repo.h"),
+                                _type("repo", "", "include/types.h")])
+        self.assertEqual(meta[("repo", "src/repo.h")]["decls"],
+                         {"src/repo.h", "include/types.h"})
+        self.assertEqual(err, "")
+
+    def test_a_forward_declaration_of_several_definitions_warns(self) -> None:
+        meta, err = self._meta([_type("entry", "a.c"), _type("entry", "b.c"),
+                                _type("entry", "", "include/entry.h")])
+        self.assertIn("include/entry.h", meta[("entry", "a.c")]["decls"])
+        self.assertIn("include/entry.h", meta[("entry", "b.c")]["decls"])
+        self.assertIn("forward declaration of `entry` (include/entry.h)", err)
+        self.assertIn("2 definitions (a.c, b.c)", err)
 
 
 if __name__ == "__main__":

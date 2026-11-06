@@ -19,15 +19,15 @@ def _long_options(parser: argparse.ArgumentParser) -> set[str]:
 
 
 class ReadmeTests(unittest.TestCase):
-    def test_schedule_defaults_match_documented_campaign_caps(self) -> None:
+    def test_schedule_caps_default_to_none(self) -> None:
         args = build_parser().parse_args([
             "/repo", "--config", "wavefront.json", "schedule",
-            "--output", "wave.json", "--name", "item",
+            "--output", "wave.json",
         ])
 
         self.assertEqual(
             (args.max_types, args.min_fields, args.max_syms, args.max_loc),
-            (2, 20, 25, 500),
+            (None, None, None, None),
         )
 
     def test_readme_mentions_every_cli_flag(self) -> None:

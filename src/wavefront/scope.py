@@ -84,8 +84,8 @@ def build(layout: Layout, target: Path, *, stage: str) -> dict:
     # "nothing to do".
     if not target_paths:
         raise SystemExit(
-            f"{stage}: {config_path} selects no files. `{_sm.IMPL_FILES}` and "
-            f"`{_sm.API_HEADERS}` are both empty, or name paths that nothing "
+            f"{stage}: {config_path} selects no files. `{_sm.CLOSURE}.{_sm.IMPL_FILES}` "
+            f"and `{_sm.API_HEADERS}` are both empty, or name paths that nothing "
             f"under {layout.repo_root} matches, or name only files this build "
             f"never compiled (the sets are anchored on the T1 tables).")
     # The imported half needs the targeted half, and only that — it reads
@@ -97,7 +97,6 @@ def build(layout: Layout, target: Path, *, stage: str) -> dict:
         _scope.load_csv(t1 / "types.csv"),
         _scope.load_csv(t2 / "field_type_uses.csv"),
     )
-    _sm.file_narrowed(manifest)
     _CACHE[ck] = manifest
     return manifest
 

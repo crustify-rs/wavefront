@@ -54,7 +54,9 @@ from pathlib import Path
 #: 20 — the feedback-arc-set reads each type edge's reference multiplicity
 #:      (it read 1 for every edge), and each node lists its edges heavier than
 #:      1 as `weights`.
-_VERSION = 20
+#: 21 — the config's file sets move under `closure`, and its `items` are
+#:      gone: no entity of the config's files is narrowed out to imported.
+_VERSION = 21
 
 
 def fingerprint(layout, target) -> dict:

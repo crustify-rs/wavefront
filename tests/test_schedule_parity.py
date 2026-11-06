@@ -8,8 +8,7 @@ from unittest.mock import patch
 
 from wavefront.dag import Node
 from wavefront.schedule import (
-    Unit, _coalesce, _field_anchors, _node_doc, _pack, _resolve,
-    build_raw_lifetime_wave, build_wave, write_wave,
+    Unit, _coalesce, _used_fields, _pack, build_schedule, write_wave,
 )
 
 
@@ -25,6 +24,43 @@ def _node(name: str, *, kind: str = "symbol", home: str = "src/a.c",
         dep_syms=[],
         loc=loc,
     )
+
+
+class _Layout:
+    """A layout over an empty state dir, whose config is written to a
+    temporary file."""
+
+    def __init__(self, directory: Path, config: dict | None = None) -> None:
+        self.repo_root = directory
+        self.t1 = directory / "t1"
+        self.t2 = directory / "t2"
+        self._config = directory / "wavefront-config.json"
+        self._config.write_text(json.dumps(config or {}))
+
+    def config(self, _target=None) -> Path:
+        return self._config
+
+    @staticmethod
+    def config_provenance():
+        return {"path": "wavefront-config.json", "sha256": "0" * 64}
+
+
+def _whole(inventory: dict) -> dict:
+    """A config whose closure is the inventory's files, scheduling all."""
+    files = sorted({e["defined_in"] for bucket in ("functions", "globals", "types")
+                    for e in inventory["targeted"].get(bucket, [])})
+    return {"closure": {"impl_files": {"included": files}}}
+
+
+def _schedule(graph: dict, inventory: dict, *, config: dict | None = None,
+              **kwargs) -> dict:
+    config = config or _whole(inventory)
+    with TemporaryDirectory() as directory, \
+            patch("wavefront.scope.build", return_value=inventory), \
+            patch("wavefront.dag.build", return_value=graph), \
+            patch("wavefront.manifests.entries", return_value=[]), \
+            patch("wavefront.schedule._used_fields", return_value={}):
+        return build_schedule(_Layout(Path(directory), config), None, **kwargs)
 
 
 def _scheduled_items(schedule: dict) -> list[dict]:
@@ -55,33 +91,29 @@ class SchedulePackingParityTests(unittest.TestCase):
         budgets["max_syms"] = 1
         self.assertEqual(_coalesce(by_layer, [0, 1], budgets=budgets), [[0], [1]])
 
-    def test_documented_wave_example_is_structurally_consistent(self) -> None:
+    def test_documented_schedule_example_is_structurally_consistent(self) -> None:
         root = Path(__file__).resolve().parents[1]
-        wave = json.loads((root / "examples" / "schedule.json").read_text())
+        schedule = json.loads((root / "examples" / "schedule.json").read_text())
 
-        self.assertEqual(wave["schema_version"], 3)
-        items = _scheduled_items(wave)
-        self.assertEqual(wave["summary"]["unit_count"], len(items))
-        self.assertEqual(wave["summary"]["layer_count"],
-                         len({item["layer"] for item in items}))
-
-        batches = [batch for scheduled_wave in wave["waves"]
-                   for batch in scheduled_wave["batches"]]
-        self.assertEqual(wave["summary"]["batch_count"], len(batches))
-        self.assertEqual(
-            wave["summary"]["file_count"],
-            len({batch["source_file"] for batch in batches}),
-        )
-
-        planned = [(item["name"], item["defined_in"]) for item in items]
-        scheduled = [(item["name"], item["defined_in"])
-                     for batch in batches for item in batch["items"]]
-        self.assertCountEqual(scheduled, planned)
-        # Every item has exactly the keys the scheduler writes.
-        keys = set(_node_doc(_node("x"))) | {"field_anchors"}
-        for batch in batches:
-            for item in batch["items"]:
-                self.assertEqual(set(item), keys)
+        self.assertEqual(schedule["schema_version"], 4)
+        items = _scheduled_items(schedule)
+        waves = schedule["waves"]
+        summary = schedule["summary"]
+        self.assertEqual(summary["unit_count"], len(items))
+        self.assertEqual(summary["wave_count"], len(waves))
+        self.assertEqual(summary["batch_count"],
+                         sum(len(wave["batches"]) for wave in waves))
+        for index, wave in enumerate(waves):
+            self.assertEqual(wave["index"], index)
+            self.assertEqual(wave["unit_count"], sum(
+                len(batch["items"]) for batch in wave["batches"]))
+            self.assertEqual({i["layer"] for b in wave["batches"]
+                              for i in b["items"]}, set(wave["layers"]))
+        keys = {"name", "defined_in", "declared_in", "kind", "source_kind",
+                "seeded", "layer", "loc", "stats", "deps", "higher_cuts", "lower_cuts",
+                "generates", "used_fields"}
+        for item in items:
+            self.assertEqual(set(item), keys)
 
     def test_write_wave_requires_an_existing_output_directory(self) -> None:
         with TemporaryDirectory() as directory:
@@ -101,19 +133,7 @@ class SchedulePackingParityTests(unittest.TestCase):
             self.assertEqual(output.read_text(),
                              '{\n  "schema_version": 3,\n  "waves": []\n}\n')
 
-    def test_raw_lifetime_schedule_uses_v3_waves(self) -> None:
-        class Layout:
-            @staticmethod
-            def config_provenance():
-                return {"path": "scope.json", "sha256": "0" * 64}
-
-        wave = build_raw_lifetime_wave(Layout(), None, "void")
-        self.assertEqual(wave["schema_version"], 3)
-        self.assertEqual(wave["waves"][0]["batches"][0]["kind"],
-                         "raw-lifetime")
-        self.assertNotIn("steps", wave)
-
-    def test_api_field_anchors_keep_only_public_definitions(self) -> None:
+    def test_api_used_fields_keep_only_public_definitions(self) -> None:
         inventory = {
             "api": {"files": ["include/public.h"]},
             "targeted": {},
@@ -140,17 +160,17 @@ class SchedulePackingParityTests(unittest.TestCase):
         with patch("wavefront.scope.build", return_value=inventory), \
                 patch("wavefront.manifests.entries",
                       return_value=entries):
-            anchors = _field_anchors(
+            used = _used_fields(
                 object(), None, api_headers_only=True)
 
-        self.assertEqual(anchors[("opaque_st", "src/private.c", "type")], [])
+        self.assertEqual(used[("opaque_st", "src/private.c", "type")], [])
         self.assertEqual(
-            anchors[("visible_st", "include/public.h", "type")],
+            used[("visible_st", "include/public.h", "type")],
             ["public_field"],
         )
-        self.assertEqual(anchors[("collision_st", "src/one.c", "type")], [])
+        self.assertEqual(used[("collision_st", "src/one.c", "type")], [])
         self.assertEqual(
-            anchors[("collision_st", "include/public.h", "type")],
+            used[("collision_st", "include/public.h", "type")],
             ["public_collision"],
         )
 
@@ -240,36 +260,17 @@ class SchedulePackingParityTests(unittest.TestCase):
             },
         }
 
-        class Layout:
-            @staticmethod
-            def config_provenance():
-                return {"path": "scope.json", "sha256": "0" * 64}
+        wave = _schedule(graph, inventory, api_headers_only=True)
 
-        with patch("wavefront.scope.build", return_value=inventory), \
-                patch("wavefront.dag.build", return_value=graph), \
-                patch("wavefront.manifests.entries", return_value=[]), \
-                patch("wavefront.schedule._field_anchors",
-                      return_value={}):
-            wave = build_wave(
-                Layout(), None, names=[public.id], transitive=True,
-                skip=[macro.id],
-                api_headers_only=True, max_syms=50, max_loc=1000,
-                max_types=5, min_fields=10,
-            )
-
-        self.assertEqual(wave["schema_version"], 3)
-        self.assertIn("waves", wave)
-        self.assertNotIn("steps", wave)
-        self.assertEqual(len(wave["waves"]), 1)
-        self.assertNotIn("layers", wave["waves"][0])
-        self.assertEqual(
-            sorted({item["layer"] for item in _scheduled_items(wave)}),
-            [0, 1],
-        )
+        self.assertEqual(wave["schema_version"], 4)
+        self.assertEqual([w["layers"] for w in wave["waves"]], [[0], [1]])
         self.assertEqual(
             [item["name"] for item in _scheduled_items(wave)],
             [dependency.id, public.id],
         )
+        folded = _schedule(graph, inventory, api_headers_only=True,
+                           caps={"max_syms": 50})
+        self.assertEqual([w["layers"] for w in folded["waves"]], [[0, 1]])
         public_item = next(
             item for item in _scheduled_items(wave) if item["name"] == public.id
         )
@@ -280,14 +281,13 @@ class SchedulePackingParityTests(unittest.TestCase):
         }
         self.assertEqual(
             dependencies,
-            {macro.id: "port"},
+            {macro.id: "external"},
         )
 
-    def test_api_schedule_leaves_imported_items_to_their_owner(self) -> None:
+    def test_imported_items_are_left_to_their_owner(self) -> None:
         # The public Holder (this config's api_headers) reaches the imported
-        # Option (another config's). An API schedule holds Holder alone, and
-        # Holder still lists Option among its deps; the body-deep schedule
-        # holds both.
+        # Option (another library's). Either schedule holds Holder alone, and
+        # Holder still lists Option among its deps, outside the closure.
         option = {"id": "Option", "node_kind": "type", "subkind": "struct",
                   "defined_in": "include/opt.h", "loc": 0,
                   "deps": {"types": [], "syms": []}}
@@ -307,179 +307,14 @@ class SchedulePackingParityTests(unittest.TestCase):
                 {"name": "Holder", "defined_in": "include/holder.h"}]},
         }
 
-        class Layout:
-            @staticmethod
-            def config_provenance():
-                return {"path": "scope.json", "sha256": "0" * 64}
-
-        def schedule(api: bool) -> list[dict]:
-            with patch("wavefront.scope.build", return_value=inventory), \
-                    patch("wavefront.dag.build", return_value=graph), \
-                    patch("wavefront.manifests.entries", return_value=[]), \
-                    patch("wavefront.schedule._field_anchors", return_value={}):
-                return _scheduled_items(build_wave(
-                    Layout(), None, names=["Holder"], transitive=True,
-                    api_headers_only=api, max_syms=50, max_loc=1000,
-                    max_types=5, min_fields=10))
-
-        api = schedule(True)
-        self.assertEqual([item["name"] for item in api], ["Holder"])
-        self.assertEqual([dep["name"] for dep in api[0]["deps"]["types"]], ["Option"])
-        self.assertCountEqual([item["name"] for item in schedule(False)],
-                              ["Option", "Holder"])
-
-    def test_file_surface_is_the_seed_not_the_dependency_filter(self) -> None:
-        dependency = _node("shared_dependency", home="src/shared.c", loc=3)
-        selected = _node("selected_function", home="src/selected.c", loc=4)
-        selected.layer = 1
-        selected.dep_syms = [dependency.key]
-        graph = {
-            "layers": [
-                [{
-                    "id": dependency.id, "node_kind": dependency.node_kind,
-                    "subkind": dependency.subkind,
-                    "defined_in": dependency.defined_in, "loc": dependency.loc,
-                    "deps": {"types": [], "syms": []},
-                }],
-                [{
-                    "id": selected.id, "node_kind": selected.node_kind,
-                    "subkind": selected.subkind,
-                    "defined_in": selected.defined_in, "loc": selected.loc,
-                    "deps": {"types": [], "syms": [{
-                        "name": dependency.id,
-                        "defined_in": dependency.defined_in,
-                    }]},
-                }],
-            ],
-        }
-        inventory = {
-            "targeted": {
-                "files": ["src/shared.c", "src/selected.c"],
-                "functions": [
-                    {"name": dependency.id,
-                     "defined_in": dependency.defined_in},
-                    {"name": selected.id, "defined_in": selected.defined_in},
-                ],
-                "globals": [], "macros": [], "types": [],
-            },
-            "imported": {
-                "files": [], "functions": [], "globals": [],
-                "macros": [], "types": [],
-            },
-            "api": {
-                "files": [], "functions": [], "globals": [],
-                "macros": [], "types": [],
-            },
-        }
-
-        class Layout:
-            @staticmethod
-            def config_provenance():
-                return {"path": "scope.json", "sha256": "0" * 64}
-
-        with patch("wavefront.scope.build", return_value=inventory), \
-                patch("wavefront.dag.build", return_value=graph), \
-                patch("wavefront.manifests.entries", return_value=[]), \
-                patch("wavefront.schedule._field_anchors",
-                      return_value={}):
-            wave = build_wave(
-                Layout(), None, names=None, files=[selected.defined_in],
-                transitive=True, max_syms=50, max_loc=1000,
-                max_types=5, min_fields=10,
-            )
-
-        self.assertCountEqual(
-            [item["name"] for item in _scheduled_items(wave)],
-            [dependency.id, selected.id],
-        )
-
-    def test_file_surface_keeps_same_named_nodes_distinct(self) -> None:
-        first = _node("command", home="src/first.c", loc=3)
-        second = _node("command", home="src/second.c", loc=4)
-        graph = {
-            "layers": [[{
-                "id": node.id, "node_kind": node.node_kind,
-                "subkind": node.subkind, "defined_in": node.defined_in,
-                "loc": node.loc, "deps": {"types": [], "syms": []},
-            } for node in (first, second)]],
-        }
-        inventory = {
-            "targeted": {
-                "files": [first.defined_in, second.defined_in],
-                "functions": [
-                    {"name": first.id, "defined_in": first.defined_in},
-                    {"name": second.id, "defined_in": second.defined_in},
-                ],
-                "globals": [], "macros": [], "types": [],
-            },
-            "imported": {
-                "files": [], "functions": [], "globals": [],
-                "macros": [], "types": [],
-            },
-            "api": {
-                "files": [], "functions": [], "globals": [],
-                "macros": [], "types": [],
-            },
-        }
-
-        class Layout:
-            @staticmethod
-            def config_provenance():
-                return {"path": "scope.json", "sha256": "0" * 64}
-
-        with patch("wavefront.scope.build", return_value=inventory), \
-                patch("wavefront.dag.build", return_value=graph), \
-                patch("wavefront.manifests.entries", return_value=[]), \
-                patch("wavefront.schedule._field_anchors",
-                      return_value={}):
-            wave = build_wave(
-                Layout(), None, names=None,
-                files=[first.defined_in, second.defined_in],
-                max_syms=50, max_loc=1000, max_types=5, min_fields=10,
-            )
-
-        self.assertEqual(len(_scheduled_items(wave)), 2)
+        for api in (True, False):
+            items = _scheduled_items(
+                _schedule(graph, inventory, api_headers_only=api))
+            self.assertEqual([item["name"] for item in items], ["Holder"])
+            self.assertEqual(items[0]["deps"]["types"], [
+                {"name": "Option", "defined_in": "include/opt.h",
+                 "scope": "external"}])
 
 
 if __name__ == "__main__":
     unittest.main()
-
-
-class ResolveTwinTests(unittest.TestCase):
-    """A closure name must resolve to the node the walk reached.
-
-    `ossl_provider_st` is defined both by the library and by
-    `test/property_test.c`. Both pass scope, so resolving the closure by bare
-    name used to schedule the test double as if it were the library struct.
-    """
-
-    def _pair(self):
-        real = _node("ossl_provider_st", kind="type",
-                     home="crypto/provider_core.c")
-        twin = _node("ossl_provider_st", kind="type",
-                     home="test/property_test.c")
-        by_key = {real.key: real, twin.key: twin}
-        by_name = {"ossl_provider_st": [real.key, twin.key]}
-        return real, twin, by_key, by_name
-
-    def test_prefer_keys_narrows_to_the_walked_node(self) -> None:
-        real, twin, by_key, by_name = self._pair()
-        out = _resolve(["ossl_provider_st"], by_key, by_name, lambda n: True,
-                       require_unambiguous=False,
-                       prefer_keys={real.key})
-        self.assertEqual([n.defined_in for n in out], ["crypto/provider_core.c"])
-        self.assertNotIn(twin.key, {n.key for n in out})
-
-    def test_without_prefer_keys_both_twins_survive(self) -> None:
-        _real, _twin, by_key, by_name = self._pair()
-        out = _resolve(["ossl_provider_st"], by_key, by_name, lambda n: True,
-                       require_unambiguous=False)
-        self.assertEqual(len(out), 2)
-
-    def test_prefer_keys_is_ignored_when_the_walk_reached_neither(self) -> None:
-        # An unrelated preference must not silently empty the selection.
-        _real, _twin, by_key, by_name = self._pair()
-        out = _resolve(["ossl_provider_st"], by_key, by_name, lambda n: True,
-                       require_unambiguous=False,
-                       prefer_keys={("something_else", "x.c")})
-        self.assertEqual(len(out), 2)

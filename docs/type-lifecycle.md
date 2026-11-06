@@ -44,9 +44,10 @@ known.
 
 Two lifecycles belong to no type. The `void` lifecycle covers untyped
 memory (`void *`): the allocators, releasers and copiers of raw bytes. The
-`string` lifecycle covers NUL-terminated strings. `schedule --lifetime-for
-void|string` emits one unit for each, and type lifecycles build on them,
-since a type's routines release its memory through the raw ones.
+`string` lifecycle covers NUL-terminated strings. Neither is a node of the
+graph, so no schedule holds them: a consumer that binds them schedules them
+itself, before the types whose lifecycles build on them, since a type's
+routines release its memory through the raw ones.
 
 ## How to discover lifecycle routines
 

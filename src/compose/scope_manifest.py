@@ -111,14 +111,15 @@ def _walk_dir(rel_dir: str, repo_root: Path, excluded: list[str]) -> list[str]:
     return files
 
 
-#: The two top-level file-set keys of `wavefront-config.json`.
+#: The section of `wavefront-config.json` that names the program Wavefront
+#: analyzes: the files of its graph, queries and usage counts.
+CLOSURE = "closure"
+#: The section that seeds what `wavefront schedule` holds.
+SCHEDULE = "schedule_seeds"
+#: The two file-set keys of :data:`CLOSURE`.
 IMPL_FILES = "impl_files"
 API_HEADERS = "api_headers"
-#: The entity lists that narrow a config's ownership: ``items.included`` and
-#: ``items.excluded``.
-ITEMS = "items"
-#: The two lists of each of :data:`IMPL_FILES`, :data:`API_HEADERS` and
-#: :data:`ITEMS`.
+#: The two lists of each file-set key, and of a schedule entry's ``items``.
 INCLUDED, EXCLUDED = "included", "excluded"
 #: An item's kind: a type (struct, union or enum tag, or typedef) or a symbol
 #: (function, global, macro or callback typedef), the two kinds of dag node. C
@@ -126,22 +127,34 @@ INCLUDED, EXCLUDED = "included", "excluded"
 #: global may share a name in one file; nothing else can.
 ITEM_KINDS = ("type", "symbol")
 
+_TOP_LEVEL = {"_comment", "state_dir", "t3_dir", CLOSURE, SCHEDULE}
 _SCHEMA_HINT = (
-    'Each of `impl_files`, `api_headers` and `items` is '
-    '{"included": [...], "excluded": [...]}, `excluded` optional; an item is '
-    '{"name": ..., "defined_in": ..., "kind": "type"|"symbol"}. '
-    '`out_of_scope` is gone: its `paths` go to the `excluded` lists of the '
-    'file keys whose directories expand to them, its `items` to '
-    '`items.excluded`.')
+    '`closure` holds `impl_files` and `api_headers`, each '
+    '{"included": [...], "excluded": [...]}, `excluded` optional; `schedule_seeds` '
+    'lists what `wavefront schedule` orders, and a schedule entry\'s `items` '
+    'excludes what it does not. The top-level `impl_files`, `api_headers`, '
+    '`items` and `out_of_scope` are gone.')
 
 
-def _lists(config: dict, key: str) -> tuple[list, list]:
-    """``(included, excluded)`` of one key, validated; both empty when the key
-    is absent."""
-    if "out_of_scope" in config:
+def closure(config: dict) -> dict:
+    """The config's :data:`CLOSURE` section, its top level validated."""
+    unknown = sorted(set(config) - _TOP_LEVEL)
+    if unknown:
         raise SystemExit(
-            f"wavefront-config.json: `out_of_scope` is no longer read. {_SCHEMA_HINT}")
-    value = config.get(key)
+            f"wavefront-config.json: unknown top-level keys {unknown}. "
+            f"{_SCHEMA_HINT}")
+    value = config.get(CLOSURE)
+    if not isinstance(value, dict) or not set(value) <= {IMPL_FILES, API_HEADERS}:
+        raise SystemExit(
+            f"wavefront-config.json: `{CLOSURE}` must be an object of "
+            f"`{IMPL_FILES}` and `{API_HEADERS}`. {_SCHEMA_HINT}")
+    return value
+
+
+def _lists(holder: dict, key: str) -> tuple[list, list]:
+    """``(included, excluded)`` of one file-set key of ``holder``, validated;
+    both empty when the key is absent."""
+    value = holder.get(key)
     if value is None:
         return [], []
     if not isinstance(value, dict) or not set(value) <= {INCLUDED, EXCLUDED}:
@@ -155,14 +168,13 @@ def _lists(config: dict, key: str) -> tuple[list, list]:
             raise SystemExit(f"wavefront-config.json: `{key}.{part}` must be a list")
         out.append(entries)
     return out[0], out[1]
-#: Where the composed manifest keeps the targeted entities a config's items
-#: narrowed out, until `wavefront.scope.build` files them as imported.
-NARROWED = "narrowed"
 
-def enumerate_files(config: dict, repo_root: Path, key: str) -> list[str]:
-    """Return the repo-root-relative candidate file paths ``config[key]`` names
-    (:data:`IMPL_FILES` | :data:`API_HEADERS`): its ``included`` entries,
-    less what its ``excluded`` entries match.
+
+def enumerate_files(holder: dict, repo_root: Path, key: str) -> list[str]:
+    """Return the repo-root-relative candidate file paths ``holder[key]``
+    names (the closure's :data:`IMPL_FILES` | :data:`API_HEADERS`, or any
+    file set of that shape): its ``included`` entries, less what its
+    ``excluded`` entries match.
 
     Always an explicit list — there is no implicit directory walk, so the key
     must name everything it covers. Entries are repo-root-relative
@@ -183,7 +195,7 @@ def enumerate_files(config: dict, repo_root: Path, key: str) -> list[str]:
     these actually compiled under the build configuration — so naming a
     file that the build never compiled is harmless, not an error.
     """
-    entries, excluded = _lists(config, key)
+    entries, excluded = _lists(holder, key)
 
     files: list[str] = []
     for entry in entries:
@@ -200,14 +212,15 @@ def targeted_candidates(config: dict, repo_root: Path) -> list[str]:
 
     Objective-neutral: coverage is a property of the files it names.
     """
-    return sorted(set(enumerate_files(config, repo_root, IMPL_FILES))
-                  | set(enumerate_files(config, repo_root, API_HEADERS)))
+    files = closure(config)
+    return sorted(set(enumerate_files(files, repo_root, IMPL_FILES))
+                  | set(enumerate_files(files, repo_root, API_HEADERS)))
 
 
 def api_candidates(config: dict, repo_root: Path) -> list[str]:
     """The candidate file set the ``api`` view is composed against:
     ``api_headers`` alone."""
-    return enumerate_files(config, repo_root, API_HEADERS)
+    return enumerate_files(closure(config), repo_root, API_HEADERS)
 
 
 def _target_entities(t1_dir: Path, candidate_files: set[str]) -> dict[str, list[dict]]:
@@ -336,106 +349,6 @@ def _api_entities(t1_dir: Path, api_files: set[str]) -> dict[str, list[dict]]:
     return {k: sorted(v, key=keyf) for k, v in out.items()}
 
 
-def _item_entries(where: str, entries: list) -> list[tuple[str, str, str]]:
-    """The ``(name, defined_in, kind)`` triples of one entity list, validated."""
-    out = []
-    for i, e in enumerate(entries):
-        if (not isinstance(e, dict) or set(e) != {"name", "defined_in", "kind"}
-                or not all(isinstance(e[k], str) and e[k] for k in e)
-                or e["kind"] not in ITEM_KINDS):
-            raise SystemExit(
-                f"wavefront-config.json: `{where}[{i}]` must be "
-                f'{{"name": ..., "defined_in": ..., "kind": "type"|"symbol"}} '
-                f"with non-empty strings")
-        out.append((e["name"], e["defined_in"], e["kind"]))
-    if len(set(out)) != len(out):
-        raise SystemExit(f"wavefront-config.json: `{where}` repeats an entity")
-    return out
-
-
-def _narrow(entities: dict[str, list[dict]], config: dict,
-            types_rows: list[dict]) -> tuple[dict, dict]:
-    """Split the targeted ``entities`` into those the config owns and those
-    its ``items.included`` / ``items.excluded`` narrow out.
-
-    An entry matches an entity of its name and kind defined in its
-    ``defined_in``, or, for an entity with no definition in the database,
-    declared there. A typedef and the type it finally names are one group, so
-    an entry selects both. A non-empty ``included`` keeps only what it names;
-    ``excluded`` drops what it names. Only targeted entities can be named: an
-    entry that matches none -- a header macro, which is never targeted, or an
-    entity the config's files do not define -- is an error, as is an entity
-    both lists name.
-    """
-    include_raw, exclude_raw = _lists(config, ITEMS)
-    include = _item_entries(f"{ITEMS}.{INCLUDED}", include_raw)
-    exclude = _item_entries(f"{ITEMS}.{EXCLUDED}", exclude_raw)
-    if not include and not exclude:
-        return entities, {k: [] for k in entities}
-    both = sorted(set(include) & set(exclude))
-    if both:
-        raise SystemExit(
-            f"wavefront-config.json: `{ITEMS}.{INCLUDED}` and "
-            f"`{ITEMS}.{EXCLUDED}` both name "
-            + ", ".join(f"{n} ({d}, {k})" for n, d, k in both))
-
-    by_name = _scope.build_types_index(types_rows)
-
-    def group(kind: str, e: dict) -> tuple[str, str, str]:
-        if kind == "types" and e.get("kind") == "typedef":
-            base = _scope.resolve_typedef(e["name"], by_name)
-            if base is not None and base["kind"] != "typedef":
-                return ("types", base["name"], base["def_file"])
-        return (kind, e["name"], e["defined_in"])
-
-    def matches(entry: tuple[str, str, str], bucket: str, e: dict) -> bool:
-        name, file, kind = entry
-        return (e["name"] == name
-                and (bucket == "types") == (kind == "type")
-                and (e["defined_in"] == file
-                     or (not e["defined_in"] and file in e.get("declared_in", []))))
-
-    def groups_of(entries: list[tuple[str, str, str]], where: str) -> set:
-        out = set()
-        for entry in entries:
-            hit = {group(bucket, e) for bucket, es in entities.items()
-                   for e in es if matches(entry, bucket, e)}
-            if not hit:
-                raise SystemExit(
-                    f"wavefront-config.json: `{where}` names the {entry[2]} "
-                    f"{entry[0]} ({entry[1]}), which the config's files do not "
-                    f"define: only a targeted entity can be named, and a header "
-                    f"macro never is")
-            out |= hit
-        return out
-
-    selected = groups_of(include, f"{ITEMS}.{INCLUDED}") if include else None
-    excluded = groups_of(exclude, f"{ITEMS}.{EXCLUDED}")
-    owned, narrowed = {}, {}
-    for kind, es in entities.items():
-        owned[kind], narrowed[kind] = [], []
-        for e in es:
-            g = group(kind, e)
-            keep = (selected is None or g in selected) and g not in excluded
-            (owned if keep else narrowed)[kind].append(e)
-    return owned, narrowed
-
-
-def file_narrowed(manifest: dict) -> None:
-    """File what the config's items narrowed out under ``imported``, once the
-    imported section is composed.
-
-    Narrowed-out entities are another config's work: imports here, nodes and
-    dependencies of what reaches them, never units of this config.
-    """
-    imported = manifest[_scope.IMPORTED]
-    for kind, entries in manifest.pop(NARROWED, {}).items():
-        have = {(e["name"], e["defined_in"]) for e in imported.get(kind, [])}
-        imported.setdefault(kind, []).extend(
-            e for e in entries if (e["name"], e["defined_in"]) not in have)
-        imported[kind].sort(key=lambda r: (r["name"], r["defined_in"]))
-
-
 def _contributing_files(
     t1_dir: Path, entities: dict[str, list[dict]], candidate_files: set[str]
 ) -> list[str]:
@@ -487,8 +400,7 @@ def compose(config_path: Path, t1_dir: Path, repo_root: Path | None = None) -> d
     else:
         repo_root = Path(repo_root).resolve()
     candidate_files = set(targeted_candidates(config, repo_root))
-    entities, narrowed = _narrow(_target_entities(t1_dir, candidate_files), config,
-                                 _scope.load_csv(t1_dir / "types.csv"))
+    entities = _target_entities(t1_dir, candidate_files)
     files = _contributing_files(t1_dir, entities, candidate_files)
     api_files = set(api_candidates(config, repo_root))
     api = _api_entities(t1_dir, api_files)
@@ -510,5 +422,4 @@ def compose(config_path: Path, t1_dir: Path, repo_root: Path | None = None) -> d
             "macros": entities["macros"],
             "types": entities["types"],
         },
-        NARROWED: narrowed,
     }

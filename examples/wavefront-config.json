@@ -3,24 +3,41 @@
     "Example wavefront-config.json, passed with --config.",
     "Paths are relative to the repository root. A trailing slash selects a directory recursively.",
     "state_dir holds the CodeQL tables, ownership findings, and caches.",
-    "impl_files names the sources and private headers that implement the library: included, less excluded.",
-    "api_headers names the headers that publish its API, the same way.",
+    "closure names the program Wavefront analyzes, for its graph, queries and usage counts:",
+    "impl_files the sources and private headers that implement it, api_headers the headers that publish its API, each included less excluded.",
+    "schedule_seeds, optional, seeds what `wavefront schedule` holds: each entry a file, which seeds what it defines or declares, as its items narrow it; a schedule holds its seeds and every unit they depend on. The order is always computed over the whole closure.",
     "t3_dir, relative to state_dir, holds the authored T3 tables."
   ],
   "state_dir": ".wavefront",
-  "impl_files": {
-    "included": [
-      "src/",
-      "include/internal/widget_local.h"
-    ],
-    "excluded": [
-      "src/tests/"
-    ]
+  "closure": {
+    "impl_files": {
+      "included": [
+        "src/",
+        "include/internal/widget_local.h"
+      ],
+      "excluded": [
+        "src/tests/"
+      ]
+    },
+    "api_headers": {
+      "included": [
+        "include/widget.h"
+      ]
+    }
   },
-  "api_headers": {
-    "included": [
-      "include/widget.h"
-    ]
-  },
+  "schedule_seeds": [
+    "src/mem.c",
+    {
+      "path": "include/widget.h",
+      "items": {
+        "excluded": [
+          {
+            "name": "widget_debug_dump",
+            "kind": "symbol"
+          }
+        ]
+      }
+    }
+  ],
   "t3_dir": "t3"
 }

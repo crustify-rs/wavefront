@@ -1,45 +1,62 @@
 {
-  "schema_version": 3,
+  "schema_version": 4,
   "oracle_config": {
     "path": "examples/wavefront-config.json",
     "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
   },
-  "api_headers_only": true,
-  "budgets": {
-    "max_syms": 25,
-    "max_loc": 500,
-    "max_types": 2,
-    "min_fields": 20
+  "api_headers_only": false,
+  "with_enums": false,
+  "with_macros": false,
+  "caps": {
+    "max_syms": null,
+    "max_loc": null,
+    "max_types": null,
+    "min_fields": null
   },
   "summary": {
-    "unit_count": 3,
-    "layer_count": 2,
-    "batch_count": 2,
-    "file_count": 2
+    "unit_count": 4,
+    "seeded_count": 4,
+    "wave_count": 2,
+    "batch_count": 3,
+    "cut_count": 0
   },
   "waves": [
     {
-      "unit_count": 1,
+      "index": 0,
+      "layers": [
+        0
+      ],
+      "unit_count": 2,
       "batches": [
         {
           "kind": "type",
-          "source_file": "include/widget.h",
           "items": [
             {
               "name": "widget_st",
               "defined_in": "include/widget.h",
+              "declared_in": [
+                "include/widget.h"
+              ],
               "kind": "type",
               "source_kind": "struct",
+              "seeded": true,
               "layer": 0,
               "loc": 5,
+              "stats": {
+                "fields": 5,
+                "pointer_fields": 2,
+                "erased_fields": 0,
+                "field_touchers": 2,
+                "field_accesses": 9
+              },
               "deps": {
                 "types": [],
                 "symbols": []
               },
-              "fallback": [],
-              "back_fill": [],
+              "higher_cuts": [],
+              "lower_cuts": [],
               "generates": [],
-              "field_anchors": [
+              "used_fields": [
                 "buf",
                 "len",
                 "refs",
@@ -48,65 +65,148 @@
               ]
             }
           ]
+        },
+        {
+          "kind": "symbol",
+          "items": [
+            {
+              "name": "widget_alloc",
+              "defined_in": "src/mem.c",
+              "declared_in": [
+                "src/mem.c",
+                "src/mem.h"
+              ],
+              "kind": "symbol",
+              "source_kind": "function_exported",
+              "seeded": true,
+              "layer": 0,
+              "loc": 9,
+              "stats": {
+                "loc": 9,
+                "params": 1,
+                "pointer_params": 0,
+                "erased_params": 0,
+                "returns_pointer": true,
+                "variadic": false,
+                "callers": 1,
+                "callees": 1,
+                "field_accesses": 0
+              },
+              "deps": {
+                "types": [],
+                "symbols": [
+                  {
+                    "name": "malloc",
+                    "defined_in": "/usr/include/stdlib.h",
+                    "scope": "external"
+                  }
+                ]
+              },
+              "higher_cuts": [],
+              "lower_cuts": [],
+              "generates": [],
+              "used_fields": []
+            }
+          ]
         }
       ]
     },
     {
+      "index": 1,
+      "layers": [
+        1
+      ],
       "unit_count": 2,
       "batches": [
         {
           "kind": "symbol",
-          "source_file": null,
           "items": [
             {
               "name": "widget_new",
               "defined_in": "src/widget.c",
+              "declared_in": [
+                "include/widget.h",
+                "src/widget.c"
+              ],
               "kind": "symbol",
               "source_kind": "function_exported",
+              "seeded": true,
               "layer": 1,
               "loc": 36,
+              "stats": {
+                "loc": 36,
+                "params": 2,
+                "pointer_params": 1,
+                "erased_params": 0,
+                "returns_pointer": true,
+                "variadic": false,
+                "callers": 0,
+                "callees": 2,
+                "field_accesses": 6
+              },
               "deps": {
                 "types": [
                   {
                     "name": "widget_st",
                     "defined_in": "include/widget.h",
-                    "scope": "wrap"
+                    "scope": "scheduled"
                   }
                 ],
                 "symbols": [
                   {
                     "name": "WIDGET_INIT",
                     "defined_in": "include/widget.h",
-                    "scope": "port"
+                    "scope": "closure"
+                  },
+                  {
+                    "name": "widget_alloc",
+                    "defined_in": "src/mem.c",
+                    "scope": "scheduled"
                   }
                 ]
               },
-              "fallback": [],
-              "back_fill": [],
+              "higher_cuts": [],
+              "lower_cuts": [],
               "generates": [],
-              "field_anchors": []
+              "used_fields": []
             },
             {
               "name": "widget_free",
               "defined_in": "src/widget.c",
+              "declared_in": [
+                "include/widget.h",
+                "src/widget.c"
+              ],
               "kind": "symbol",
               "source_kind": "function_exported",
+              "seeded": true,
               "layer": 1,
               "loc": 14,
+              "stats": {
+                "loc": 14,
+                "params": 1,
+                "pointer_params": 1,
+                "erased_params": 0,
+                "returns_pointer": false,
+                "variadic": false,
+                "callers": 0,
+                "callees": 1,
+                "field_accesses": 3
+              },
               "deps": {
                 "types": [
                   {
                     "name": "widget_st",
                     "defined_in": "include/widget.h",
-                    "scope": "wrap"
+                    "scope": "scheduled"
                   }
                 ],
                 "symbols": []
               },
-              "fallback": [],
-              "back_fill": [],
+              "higher_cuts": [],
+              "lower_cuts": [],
               "generates": [],
-              "field_anchors": []
+              "used_fields": []
             }
           ]
         }

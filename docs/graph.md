@@ -36,6 +36,11 @@ defines locally, recur across translation units.
   aggregate is an alias resolved onto its tag, not a node of its own; a
   typedef of a primitive is no node at all, nor is an anonymous aggregate
   (it cannot be named). Only types in the config's inventory are nodes.
+  C gives a tag no identity across translation units, so a forward
+  declaration is matched to a definition by its tag: the database may record
+  it as an entity of its own, which folds into the definition of its tag.
+  When the tag has several definitions, as file-local structs of one tag
+  have, it folds into each, and Wavefront warns.
 - **Symbols**: functions, globals, macros and callbacks (function-pointer
   typedefs), keyed by defining file, or the canonical declaration file for
   one that is declared but never defined. A symbol whose name is also a
@@ -104,10 +109,10 @@ a reused slot). An `erased_arg` row is a parameter read, an `erased_field`
 row a variant, a `base_derived` row a cast pair.
 
 Cast edges come from function bodies, which can reach any type. In the API
-graph they are therefore added in a second phase: the API closure is built
+graph they are therefore added in a second phase: the API reach is built
 first, over field and signature edges only, from the items the
 `api_headers` publish, and a cast edge is then added only when both of its
-ends are in that closure. A cast to an internal type (`Codec -> CodecInternal`)
+ends are in that reach. A cast to an internal type (`Codec -> CodecInternal`)
 thus neither pulls the type in nor reorders around it, while one to a public
 type another library owns (`Decoder -> ObjClass`) is kept. The slot
 that witnesses a cast is evidence, not a node, and need not be public.
@@ -127,11 +132,14 @@ flattens each one by a weighted feedback arc set:
    is cut.
 
 The rest is acyclic and layered by longest path. The cut edges stay
-recorded on both ends: the user lists the dependency in `fallback` (its
-wrapper refers to the type raw, as `ffi::T`, since it is not yet wrapped),
-and the dependency lists the user in `back_fill` (once wrapped, those users
-switch to the wrapper). `query dag --name X --scc hi-deps|lo-deps` reads the
-two lists. The greedy order is deterministic but not a minimum cut.
+recorded on both ends: the user lists the dependency in `fallback`, since it
+is processed before the dependency it refers to, and the dependency lists the
+user in `back_fill`, the units that already refer to it.
+`query dag --name X --scc hi-deps|lo-deps` reads the
+two lists. The greedy order is deterministic but not a minimum cut. A
+schedule cuts its units' cycles the same way, over the units alone, and
+records its cuts as `higher_cuts` and `lower_cuts`
+([`batching.md`](batching.md#order)).
 
 ### Polymorphism
 
@@ -149,7 +157,7 @@ is cast to or from strictly more types than X. A polymorphic base or a
 generic engine is a hub, cast to and from by many types; an instance or a
 derived type by few, so the edges run from the instances up to the hub, and
 no cast cycle survives. In the API graph a type's degree counts only casts
-to types in the API closure.
+to types in the API reach.
 
 Field variants need no centrality: they are directed by construction, from
 the variant to its owner. They can still close a cycle with field edges. A

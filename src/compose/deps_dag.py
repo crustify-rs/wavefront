@@ -659,6 +659,16 @@ def collect_types_csv(codeql_dir: Path, api_paths: set[str] | None = None):
     for n, df in meta:
         defs[n].append(df)
     for n, rows in floating.items():
+        if len(defs.get(n) or ()) > 1:
+            # C gives a tag no identity across translation units: a forward
+            # declaration names whichever definition each unit that includes
+            # it sees. With several definitions of the tag, folding it into
+            # each is a guess the user should check.
+            decls = sorted({d for row in rows for d in row[0]})
+            print(f"warning: the forward declaration of `{n}` "
+                  f"({', '.join(decls)}) folds into each of its "
+                  f"{len(defs[n])} definitions ({', '.join(sorted(defs[n]))})",
+                  file=sys.stderr)
         for df in defs.get(n) or [""]:
             m = meta.setdefault((n, df), {"kind": "", "uak": "", "decls": set()})
             for row in rows:
