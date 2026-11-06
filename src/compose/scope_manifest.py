@@ -5,8 +5,9 @@
   `impl_files`   the sources (and private headers) that IMPLEMENT the library
   `api_headers`  the headers that PUBLISH its API
 
-`targeted` is `impl_files` ∪ `api_headers`, `imported` is its derived external
-closure, and the `api` view is what `api_headers` declares.
+The `closure` section holds every entity defined in `impl_files` ∪
+`api_headers`, `external` is its derived external closure, and the `api` view
+is what `api_headers` declares.
 
 Rules:
 
@@ -17,21 +18,21 @@ Rules:
   2. A candidate survives iff its repo-root-relative path does not match
      any entry of the same key's `excluded` list (entries ending with `/`
      match recursively; otherwise exact-file match).
-  3. Everything an in-scope entity REACHES but that neither key names is
-     imported, derived by `import_closure.py` into the sibling `imported`
+  3. Everything an entity of the closure REACHES but that neither key names
+     is external, derived by `import_closure.py` into the sibling `external`
      section — the campaign's EXTERNAL dependencies.
 
 Alongside them, the `api` view: what `api_headers` PUBLISHES, selected on
 DECLARATION sites. Not a section — it overlaps both, because publication and
-ownership are independent questions.
+location are independent questions.
 
 Inventory shape:
 
     {
       "_comment": "...",
       "api":      {"files": [...], "functions": [...], ...},
-      "targeted": {"files": [...], "functions": [...], ...},
-      "imported": {"files": [...], "functions": [...], ...}
+      "closure":  {"files": [...], "functions": [...], ...},
+      "external": {"files": [...], "functions": [...], ...}
     }
 """
 from __future__ import annotations
@@ -49,7 +50,7 @@ _HEADER_EXTS = {".h", ".hpp"}
 _ALL_EXTS = _SOURCE_EXTS | _HEADER_EXTS
 
 _COMMENT = (
-    "The TARGETED section: every entity whose home file `wavefront-config.json` "
+    "The CLOSURE section: every entity whose home file `wavefront-config.json` "
     "names. The candidate file universe is the `included` lists of "
     "`impl_files` + `api_headers` expanded (trailing-slash entries walked) "
     "minus their `excluded` lists; the ENTITY sets (functions/globals/macros/types) and the derived "
@@ -58,12 +59,13 @@ _COMMENT = (
     "compiled — a file whose body is elided by a disabled feature contributes "
     "no entities and therefore does not appear in `files`. Entities are keyed "
     "by (name, defined_in) because bare names collide (file-local statics). "
-    "Classification (`classify`/`entry_scope`/`classify_type`, including the "
-    "header-macro carve-out) runs ONCE here; downstream composers read these "
-    "sets via `scope.load_entities` instead of re-deriving scope from the "
-    "CSVs. Build-config-dependent by construction. Everything an entity here "
-    "reaches that the config does not "
-    "name is IMPORTED, in the sibling section. Paths are repo-root-relative."
+    "Classification (`classify`/`classify_type`, by location alone) runs "
+    "ONCE here; downstream composers read these sets via "
+    "`scope.load_entities` instead of re-deriving scope from the CSVs, and "
+    "`scope.owned_entities` for the target's own (a header macro is in this "
+    "section but not owned). Build-config-dependent by construction. "
+    "Everything an entity here reaches that the config does not "
+    "name is EXTERNAL, in the sibling section. Paths are repo-root-relative."
 )
 
 
@@ -72,9 +74,9 @@ _API_COMMENT = (
     "DECLARATION-site membership (or definition, for something a header "
     "defines outright -- an inline function, a macro, a value struct). NOT a "
     "section: it cuts the PUBLICATION axis, orthogonal to the "
-    "targeted/imported OWNERSHIP split, so an entity appears here AND in "
-    "whichever of those two owns it. A re-exported symbol declared here but "
-    "defined outside `impl_files` is `api` and `imported` at once, which is "
+    "closure/external LOCATION split, so an entity appears here AND in "
+    "whichever of those two holds it. A re-exported symbol declared here but "
+    "defined outside the closure is `api` and `external` at once, which is "
     "exactly what a re-export is. Entries carry the same identity shape as "
     "every other set, so they collide with the dag nodes on (name, "
     "defined_in). This is what a `wrap` campaign schedules on, and what its "
@@ -112,8 +114,10 @@ def _walk_dir(rel_dir: str, repo_root: Path, excluded: list[str]) -> list[str]:
 
 
 #: The section of `wavefront-config.json` that names the program Wavefront
-#: analyzes: the files of its graph, queries and usage counts.
-CLOSURE = "closure"
+#: analyzes: the files of its graph, queries and usage counts. The inventory's
+#: section of the entities those files define bears the same name, the same
+#: constant: it is what this config section holds.
+CLOSURE = _scope.CLOSURE
 #: The section that seeds what `wavefront schedule` holds.
 SCHEDULE = "schedule_seeds"
 #: The two file-set keys of :data:`CLOSURE`.
@@ -209,8 +213,8 @@ def enumerate_files(holder: dict, repo_root: Path, key: str) -> list[str]:
     return sorted(set(files))
 
 
-def targeted_candidates(config: dict, repo_root: Path) -> list[str]:
-    """The candidate file set the ``targeted`` section is composed against:
+def closure_candidates(config: dict, repo_root: Path) -> list[str]:
+    """The candidate file set the ``closure`` section is composed against:
     ``impl_files`` ∪ ``api_headers``.
 
     Objective-neutral: coverage is a property of the files it names.
@@ -228,7 +232,7 @@ def api_candidates(config: dict, repo_root: Path) -> list[str]:
 
 def _target_entities(t1_dir: Path, candidate_files: set[str]) -> dict[str, list[dict]]:
     """Classify every T1 entity against the candidate (config-named) file set
-    and return the TARGET subset per kind.
+    and return the CLOSURE subset per kind.
 
     Reuses the single load-bearing classifier in `scope.py` — this is
     the ONE place section classification runs; downstream composers
@@ -237,9 +241,10 @@ def _target_entities(t1_dir: Path, candidate_files: set[str]) -> dict[str, list[
 
       - functions / globals → `classify` (definition-anchored, decl
         fallback).
-      - macros → `entry_scope` with the header-macro carve-out: a
-        `#define` belongs to the target only when its home is a target
-        `.c` TU.
+      - macros → `classify` on their defining file, a header's included:
+        the section is location alone. Which of them are the target's own (a
+        `.c` TU's, not a header's) is `scope.owned_macro`, applied by the
+        consumers that need it.
       - types → `classify_type` (typedef alias-chain resolution).
 
     Entities are keyed by (name, defined_in); `defined_in` may be empty for
@@ -254,7 +259,7 @@ def _target_entities(t1_dir: Path, candidate_files: set[str]) -> dict[str, list[
     def _cls(r: dict) -> bool:
         return _scope.classify(
             r["def_file"], _scope.parse_decl_files(r["decl_files"]), candidate_files
-        ) == _scope.TARGETED
+        ) == _scope.CLOSURE
 
     # Every entry carries BOTH `defined_in` and `declared_in` (the latter the
     # def_file-empty complement: a null-def callback/extern/typedef is keyed by
@@ -269,14 +274,14 @@ def _target_entities(t1_dir: Path, candidate_files: set[str]) -> dict[str, list[
     tgt_macros = []
     for r in macros:
         df = r["def_file"] or ""
-        if _scope.entry_scope("macro", df, [df] if df else [], candidate_files) == _scope.TARGETED:
+        if _scope.classify(df, [df] if df else [], candidate_files) == _scope.CLOSURE:
             tgt_macros.append(_ent(r))
     # Types split: a callback is a function-pointer typedef — symbol-shaped, not
     # a layout type — so it is bucketed with `functions` (untagged), matching how
-    # import_closure emits import-side callbacks. Everything else is a real type.
+    # import_closure emits external callbacks. Everything else is a real type.
     tgt_types = []
     for r in types_rows:
-        if _scope.classify_type(r, by_name, candidate_files) != _scope.TARGETED:
+        if _scope.classify_type(r, by_name, candidate_files) != _scope.CLOSURE:
             continue
         # An ANONYMOUS tag (`(unnamed enum)`, `(unnamed class/struct/union)`) is
         # a synthetic placeholder CodeQL reuses for every anonymous definition in
@@ -303,8 +308,8 @@ def _target_entities(t1_dir: Path, candidate_files: set[str]) -> dict[str, list[
 def _api_entities(t1_dir: Path, api_files: set[str]) -> dict[str, list[dict]]:
     """Every T1 entity the ``api_headers`` set PUBLISHES, per kind.
 
-    DECLARATION-anchored, and that is the whole point of the view. `targeted`
-    asks "whose body is this" and answers with the defining file; the API asks
+    DECLARATION-anchored, and that is the whole point of the view. `closure`
+    asks "where is this defined" and answers with the defining file; the API asks
     "what does this library publish", and a public header publishes exactly
     what it DECLARES — the bodies live in the `.c` files behind it. Anchoring
     this set on definitions instead would admit only what the headers happen to
@@ -315,7 +320,7 @@ def _api_entities(t1_dir: Path, api_files: set[str]) -> dict[str, list[dict]]:
     its definition site (an inline function or a struct defined in the header
     publishes itself). Entries carry the same ``{name, defined_in,
     declared_in}`` shape every other section uses, so ``origin_key`` still
-    collides with the dag nodes and with the ownership sections: selection is by
+    collides with the dag nodes and with the location sections: selection is by
     DECLARATION, identity stays by DEFINITION, and conflating the two is the
     bug this split exists to remove.
     """
@@ -341,7 +346,7 @@ def _api_entities(t1_dir: Path, api_files: set[str]) -> dict[str, list[dict]]:
     for r in _scope.load_csv(t1_dir / "types.csv"):
         if not _published(r) or str(r.get("name") or "").startswith("("):
             continue
-        # Same callback carve-out the targeted section applies: a
+        # Same callback carve-out the closure section applies: a
         # function-pointer typedef is signature-shaped, so it buckets with
         # `functions` rather than `types`.
         if r.get("unaliased_kind") == "callback":
@@ -355,11 +360,11 @@ def _api_entities(t1_dir: Path, api_files: set[str]) -> dict[str, list[dict]]:
 def _contributing_files(
     t1_dir: Path, entities: dict[str, list[dict]], candidate_files: set[str]
 ) -> list[str]:
-    """Derive the port `files` list: every candidate file that is the
-    definition site OR a declaration site of at least one port entity.
+    """Derive the section's `files` list: every candidate file that is the
+    definition site OR a declaration site of at least one of its entities.
 
     Drops `#ifdef`-elided files (zero entities → never a def/decl site)
-    while keeping declaration-only port headers. decl sites are pulled
+    while keeping declaration-only headers. decl sites are pulled
     from the raw CSVs since the slim entity records omit decl_files.
     """
     files: set[str] = set()
@@ -384,7 +389,7 @@ def _contributing_files(
 
 
 def compose(config_path: Path, t1_dir: Path, repo_root: Path | None = None) -> dict:
-    """Emit the manifest's `targeted` section and its `api` view.
+    """Emit the manifest's `closure` section and its `api` view.
 
     `t1_dir` is `<state_dir>/codeql/t1` — the entity tables
     produced by `analyze extract-ql`. Expanding `files` gives the
@@ -402,7 +407,7 @@ def compose(config_path: Path, t1_dir: Path, repo_root: Path | None = None) -> d
         repo_root = t1_dir.resolve().parents[3]
     else:
         repo_root = Path(repo_root).resolve()
-    candidate_files = set(targeted_candidates(config, repo_root))
+    candidate_files = set(closure_candidates(config, repo_root))
     entities = _target_entities(t1_dir, candidate_files)
     files = _contributing_files(t1_dir, entities, candidate_files)
     api_files = set(api_candidates(config, repo_root))
@@ -418,7 +423,7 @@ def compose(config_path: Path, t1_dir: Path, repo_root: Path | None = None) -> d
             "macros": api["macros"],
             "types": api["types"],
         },
-        _scope.TARGETED: {
+        _scope.CLOSURE: {
             "files": files,
             "functions": entities["functions"],
             "globals": entities["globals"],

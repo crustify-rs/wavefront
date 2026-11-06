@@ -48,7 +48,7 @@ class _Layout:
 def _whole(inventory: dict) -> dict:
     """A config whose closure is the inventory's files, scheduling all."""
     files = sorted({e["defined_in"] for bucket in ("functions", "globals", "types")
-                    for e in inventory["targeted"].get(bucket, [])})
+                    for e in inventory["closure"].get(bucket, [])})
     return {"closure": {"impl_files": {"included": files}}}
 
 
@@ -78,8 +78,8 @@ class SchedulePackingParityTests(unittest.TestCase):
         consumer = _node("consumer")
         consumer.layer = 1
         by_layer = {
-            0: [Unit(producer, scope="targeted")],
-            1: [Unit(consumer, scope="targeted")],
+            0: [Unit(producer, scope="closure")],
+            1: [Unit(consumer, scope="closure")],
         }
         budgets = {
             "max_syms": 2, "max_loc": 1000,
@@ -145,8 +145,8 @@ class SchedulePackingParityTests(unittest.TestCase):
     def test_api_used_fields_keep_only_public_definitions(self) -> None:
         inventory = {
             "api": {"files": ["include/public.h"]},
-            "targeted": {},
-            "imported": {},
+            "closure": {},
+            "external": {},
         }
         entries = [{
             "name": "opaque_st",
@@ -189,9 +189,9 @@ class SchedulePackingParityTests(unittest.TestCase):
             Unit(_node("opaque_b", kind="type", home="include/b.h"), []),
             Unit(_node("wide", kind="type", home="include/wide.h"),
                  ["x", "y", "z"]),
-            Unit(_node("target_a", loc=4), scope="targeted"),
-            Unit(_node("target_b", loc=7), scope="targeted"),
-            Unit(_node("import_a", home="dep/a.c", loc=1), scope="imported"),
+            Unit(_node("target_a", loc=4), scope="closure"),
+            Unit(_node("target_b", loc=7), scope="closure"),
+            Unit(_node("import_a", home="dep/a.c", loc=1), scope="external"),
         ]
 
         batches = _pack(
@@ -247,7 +247,7 @@ class SchedulePackingParityTests(unittest.TestCase):
             ],
         }
         inventory = {
-            "targeted": {
+            "closure": {
                 "files": ["src/private.c", "src/public.c"],
                 "functions": [
                     {"name": dependency.id,
@@ -256,7 +256,7 @@ class SchedulePackingParityTests(unittest.TestCase):
                 ],
                 "globals": [], "macros": [], "types": [],
             },
-            "imported": {
+            "external": {
                 "files": [], "functions": [], "globals": [],
                 "macros": [], "types": [],
             },
@@ -293,8 +293,8 @@ class SchedulePackingParityTests(unittest.TestCase):
             {macro.id: "external"},
         )
 
-    def test_imported_items_are_left_to_their_owner(self) -> None:
-        # The public Holder (this config's api_headers) reaches the imported
+    def test_external_items_are_left_to_their_owner(self) -> None:
+        # The public Holder (this config's api_headers) reaches the external
         # Option (another library's). Either schedule holds Holder alone, and
         # Holder still lists Option among its deps, outside the closure.
         option = {"id": "Option", "node_kind": "type", "subkind": "struct",
@@ -308,9 +308,9 @@ class SchedulePackingParityTests(unittest.TestCase):
         graph = {"layers": [[option], [holder]]}
         none = {"files": [], "functions": [], "globals": [], "macros": [], "types": []}
         inventory = {
-            "targeted": {**none, "files": ["include/holder.h"], "types": [
+            "closure": {**none, "files": ["include/holder.h"], "types": [
                 {"name": "Holder", "defined_in": "include/holder.h"}]},
-            "imported": {**none, "files": ["include/opt.h"], "types": [
+            "external": {**none, "files": ["include/opt.h"], "types": [
                 {"name": "Option", "defined_in": "include/opt.h"}]},
             "api": {**none, "files": ["include/holder.h"], "types": [
                 {"name": "Holder", "defined_in": "include/holder.h"}]},

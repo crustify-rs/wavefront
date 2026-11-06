@@ -11,8 +11,8 @@ a node in layer N depends only on nodes in layers below N.
 The graph is a pure function of the extracted CodeQL facts (T1, T2), the
 authored T3 tables and the config's inventory. Ownership findings a user
 submits never move a node, so the same inputs always give the same layers.
-[`scoping.md`](scoping.md) describes which entities a config owns and
-imports, and [`batching.md`](batching.md) how a schedule cuts the layers into
+[`scoping.md`](scoping.md) describes which entities a config's closure
+holds and owns and which it reaches outside, and [`batching.md`](batching.md) how a schedule cuts the layers into
 waves and batches.
 
 There are two graphs per config:
@@ -62,19 +62,21 @@ users judge droppers or cloners.
 |---|---|---|---|
 | field | a struct | each non-scalar field type; the types in a function-pointer field's signature; a callback typedef a field has | both |
 | signature | a function or callback | the types of its parameters and return | both |
-| body | a function the config owns | the functions, globals and macros it references; the types its body uses | default |
+| body | a function, global or `.c` macro the config owns | the functions, globals and macros it references; the types its body uses | default |
 | generator | a type a T3 generator mints | the generator macro | both |
 | cast | see [Type erasure](#type-erasure) and [Polymorphism](#polymorphism) | | both |
 
 A struct's field edges are narrowed to the layout that matters to the
-config. A struct defined in a layout file (any targeted file in the default
+config. A struct defined in a layout file (any closure file in the default
 graph; an `api_headers` file in the API graph) keeps every field edge: its
 layout is the config's own. Any other struct keeps only the fields the
 config's own functions access, which in the API graph is none, so an
 opaque handle orders no work.
 
-An imported function contributes its signature only: it is bound, not
-translated. In the API graph every function does.
+An external function contributes its signature only: it is bound, not
+translated. So does a macro a closure header defines, which stays C's
+([`scoping.md`](scoping.md#default-mode)). In the API graph every function
+does.
 
 Field edges carry their multiplicity (how many fields of A have type B),
 which weighs them when a cycle is cut.

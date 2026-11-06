@@ -1,5 +1,5 @@
 """A tag a closure header only forward-declares, and a system header defines,
-is no targeted entity: its declaration-only row folds into the external
+is no closure entity: its declaration-only row folds into the external
 definition, so the tag stays an external leaf rather than a unit of the
 schedule. The declaration fallback is for a tag defined nowhere."""
 from __future__ import annotations
@@ -31,15 +31,15 @@ class ExternalTagTests(unittest.TestCase):
     def setUp(self) -> None:
         self.by_name = scope.build_types_index(ROWS)
 
-    def test_forward_declaration_of_an_external_tag_is_imported(self) -> None:
+    def test_forward_declaration_of_an_external_tag_is_external(self) -> None:
         self.assertEqual(
-            scope.classify_type(ROWS[0], self.by_name, TARGET), scope.IMPORTED)
+            scope.classify_type(ROWS[0], self.by_name, TARGET), scope.EXTERNAL)
         self.assertEqual(
-            scope.classify_type(ROWS[1], self.by_name, TARGET), scope.IMPORTED)
+            scope.classify_type(ROWS[1], self.by_name, TARGET), scope.EXTERNAL)
 
-    def test_tag_defined_nowhere_is_targeted_by_its_declarations(self) -> None:
+    def test_tag_defined_nowhere_is_in_the_closure_by_its_declarations(self) -> None:
         self.assertEqual(
-            scope.classify_type(ROWS[2], self.by_name, TARGET), scope.TARGETED)
+            scope.classify_type(ROWS[2], self.by_name, TARGET), scope.CLOSURE)
 
 
 if __name__ == "__main__":

@@ -545,7 +545,7 @@ def compose(
 
       - ``entries_by_dir``: ``{manifest_dir: [entries]}`` ready for the
         merge primitive.
-      - ``dir_scope``: ``{manifest_dir: TARGETED | IMPORTED}`` parallel
+      - ``dir_scope``: ``{manifest_dir: CLOSURE | EXTERNAL}`` parallel
         map. Orchestrator consumers (the type wrapper's manifests-list
         input contract) read this to tag each manifest with its scope
         without persisting the tag to disk. Assumes a stem-group
@@ -558,7 +558,7 @@ def compose(
     if filter_spec is None:
         filter_spec = FilterSpec()
     target_paths = (
-        scope.load_targeted_paths(filter_spec.scope_json_path)
+        scope.load_closure_paths(filter_spec.scope_json_path)
         if filter_spec.scope_json_path is not None else set()
     )
     scope_enabled = filter_spec.scope_json_path is not None
@@ -569,10 +569,10 @@ def compose(
     # per-row classify()/classify_type() pass. target_paths (files) still
     # drives wrap-side reachability.
     tgt_types = (
-        scope.load_entities(filter_spec.scope_json_path, scope.TARGETED, "types")
+        scope.load_entities(filter_spec.scope_json_path, scope.CLOSURE, "types")
         if filter_spec.scope_json_path is not None else set()
     )
-    # The composed IMPORTED surface, as an admission floor. `_import_reachable`
+    # The composed EXTERNAL surface, as an admission floor. `_import_reachable`
     # asks its seven questions of the CodeQL edges directly; the closure ALSO
     # admits a type through the transitive field-walk (a target struct's field
     # whose type is private), which no scenario there covers. A in-memory inventory
@@ -580,7 +580,7 @@ def compose(
     # authoritative: whatever it lists gets a record. Empty when in-memory inventory is
     # absent.
     imtgt_types = (
-        scope.load_entities(filter_spec.scope_json_path, scope.IMPORTED, "types")
+        scope.load_entities(filter_spec.scope_json_path, scope.EXTERNAL, "types")
         if filter_spec.scope_json_path is not None else set()
     )
 
@@ -760,9 +760,9 @@ def compose(
             elif _in_import_surface(c):
                 emit_keys.add(c["key"])
 
-    # ---- Pass 4: emit, applying --targeted-only / --imported-only ----
-    # Per-dir section is tracked alongside emission: a dir is TARGETED if
-    # any of its emitted entries belongs to it, else IMPORTED. This
+    # ---- Pass 4: emit, applying --closure-only / --external-only ----
+    # Per-dir section is tracked alongside emission: a dir is CLOSURE if
+    # any of its emitted entries belongs to it, else EXTERNAL. This
     # mirrors the convention used by syms_manifest.compose() and is
     # subject to the mixed-scope-in-one-dir limitation tracked in
     # docs/TODO.md.
@@ -784,9 +784,9 @@ def compose(
             continue
         entries_by_dir[rel_dir].append(c["entry"])
         if c["in_target"]:
-            dir_scope[rel_dir] = scope.TARGETED
+            dir_scope[rel_dir] = scope.CLOSURE
         else:
-            dir_scope.setdefault(rel_dir, scope.IMPORTED)
+            dir_scope.setdefault(rel_dir, scope.EXTERNAL)
         if c.get("touched") is not None:
             focus_by_key[(scope.entry_tag(c["entry"]), c["entry"].get("defined_in") or "")] = \
                 c["touched"]
@@ -883,7 +883,7 @@ def main() -> None:
     wrap_dirs = 0
     for rel_dir, entries in sorted(entries_by_dir.items()):
         total += len(entries)
-        if dir_scope.get(rel_dir) == scope.TARGETED:
+        if dir_scope.get(rel_dir) == scope.CLOSURE:
             port_dirs += 1
         else:
             wrap_dirs += 1

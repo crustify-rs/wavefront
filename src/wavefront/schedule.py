@@ -137,7 +137,7 @@ def _used_fields(layout, target: Path, *,
         inventory = scope.build(layout, target, stage="schedule fields")
         api_paths = compose_scope.load_api_paths(inventory)
     else:
-        touched = scope_touched_index(layout, target, compose_scope.TARGETED)
+        touched = scope_touched_index(layout, target, compose_scope.CLOSURE)
         touched = {tag: {name for names in by_file.values() for name in names}
                    for tag, by_file in touched.items()} or None
 
@@ -166,7 +166,7 @@ def build_schedule(layout, target: Path, *, api_headers_only: bool = False,
     ``schedule_seeds`` names with every unit they depend on, one wave per layer
     of the order.
 
-    The units are the closure's targeted nodes, or with ``api_headers_only``
+    The units are the closure's owned nodes, or with ``api_headers_only``
     what the published declarations reach of them over the API graph; an
     enum only ``with_enums``, and a macro, a type generator aside, only
     ``with_macros``, then every macro the closure's files define. Their
@@ -175,7 +175,7 @@ def build_schedule(layout, target: Path, *, api_headers_only: bool = False,
     a wave holds one batch per route; with any, each layer is packed, and
     adjacent layers fold into one wave while they fit one batch."""
     from compose import scope as compose_scope
-    from compose.scope_manifest import targeted_candidates
+    from compose.scope_manifest import closure_candidates
     from wavefront import dag as dag_mod, manifests, scope
     from wavefront import modules, selection
     from wavefront.order import _cut, _full_edges, _layers, _sort_key
@@ -190,7 +190,7 @@ def build_schedule(layout, target: Path, *, api_headers_only: bool = False,
     config = json.loads(layout.config(target).read_text())
     entries = selection.load(config, layout.repo_root)
     mods = modules.load(config, layout.repo_root)
-    closure_files = set(targeted_candidates(config, layout.repo_root))
+    closure_files = set(closure_candidates(config, layout.repo_root))
 
     inventory = scope.build(layout, target, stage="schedule")
     decls = selection.declarations(inventory)
@@ -199,13 +199,16 @@ def build_schedule(layout, target: Path, *, api_headers_only: bool = False,
     by_key, _ = load_nodes(graph)
     edges = _full_edges(graph)
 
-    def entities(section):
-        out = set()
-        for kind in ("functions", "globals", "macros", "types"):
-            out |= compose_scope.load_entities(inventory, section, kind)
-        return out
-    targeted = entities(compose_scope.TARGETED)
-    api = entities(compose_scope.API)
+    kinds = ("functions", "globals", "macros", "types")
+    # The closure's entities the target owns: a macro a closure header
+    # defines is in the `closure` section, but a header `#define` cannot be
+    # re-exported Rust->C, so only a closure `.c` file's TU-local macro is the
+    # target's own (`compose.scope.owned_macro`): only it is a unit as a type
+    # generator.
+    owned = set().union(*(compose_scope.owned_entities(inventory, kind)
+                          for kind in kinds))
+    api = set().union(*(compose_scope.load_entities(inventory, compose_scope.API,
+                                                    kind) for kind in kinds))
 
     def is_unit(node: Node) -> bool:
         if node.node_kind == "type" and node.subkind == "enum":
@@ -213,16 +216,16 @@ def build_schedule(layout, target: Path, *, api_headers_only: bool = False,
                 return False
         elif ((node.subkind or "").startswith("macro")
                 and node.node_kind == "symbol" and not is_generator(node)):
-            # A header macro is imported, whatever file defines it: with
-            # macros, every one the closure's files define is a unit.
+            # A macro is a unit only with macros, then every one the
+            # closure's files define, a header's included.
             return with_macros and (node.defined_in or "") in closure_files
-        if (node.id, node.defined_in or "") in targeted:
+        if (node.id, node.defined_in or "") in owned:
             return True
         # The declaration-only key stands for an entity defined nowhere, whose
         # node sits at a declaration in the closure. A node defined outside
         # the closure, which a closure header only forward-declares (`struct
         # tm;`), stays an external leaf.
-        return ((node.id, "") in targeted
+        return ((node.id, "") in owned
                 and (not node.defined_in or node.defined_in in closure_files))
 
     def is_seed(node: Node) -> bool:
@@ -249,7 +252,7 @@ def build_schedule(layout, target: Path, *, api_headers_only: bool = False,
     else:
         claimed = {}
 
-    # The units: every targeted node, or in API mode what the published
+    # The units: every owned node, or in API mode what the published
     # declarations reach of it, closed over the graph's edges.
     pending = sorted((k for k, n in by_key.items() if is_seed(n)), key=_sort_key)
     units: set[NodeKey] = set()
@@ -387,7 +390,7 @@ def build_schedule(layout, target: Path, *, api_headers_only: bool = False,
     def unit(key: NodeKey) -> Unit:
         node = by_key[key]
         return Unit(node, list(declared.get((node.id, node.defined_in),
-                                            ([], set()))[0]), "targeted")
+                                            ([], set()))[0]), "closure")
 
     def batches_of(keys: list[NodeKey]) -> list[dict]:
         if budgets is None:

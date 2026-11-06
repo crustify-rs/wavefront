@@ -1,24 +1,29 @@
 """Scope classification — the load-bearing composer every other
 composer imports.
 
-The classification rule is definition-anchored:
+The classification rule is LOCATION, definition-anchored:
 
-  An entity is TARGETED iff EITHER:
+  An entity is in the CLOSURE section iff EITHER:
     1. (Primary path) It has a definition in the CodeQL database AND
-       that definition's file is in `in-memory inventory`'s `targeted.files`, OR
+       that definition's file is one of the closure files (the config's
+       `impl_files` ∪ `api_headers`), OR
     2. (Fallback for entities with no definition in the DB) It has
        no definition in the database AND all its declarations live
-       in target files.
+       in closure files.
 
-  Otherwise the entity is IMPORTED — reached, not named.
+  Otherwise the entity is EXTERNAL — reached, not named.
 
 For typedefs an additional rule applies: a typedef inherits the
 scope of its terminal underlying user type, walking the `aliases`
 chain emitted by `entities/types.ql`. This avoids the typedef ↔
 struct scope-split that would otherwise classify e.g.
-`SSL_CONNECTION` (typedef in a target header) and `ssl_connection_st`
+`SSL_CONNECTION` (typedef in a closure header) and `ssl_connection_st`
 (struct in a reached header) on opposite sides of the boundary even
 though they represent the same conceptual type.
+
+The sections say where an entity lives, nothing more. Which of the
+closure's macros are the target's OWN (:func:`owned_macro`) is a separate
+question, answered by the consumers that need it.
 
 This module exports the rule as a single classifier function plus
 a typedef-resolution helper. Higher-level orchestration —
@@ -35,8 +40,8 @@ from pathlib import Path
 
 # ---------------------------------------------------------------- core rule
 
-def classify(def_file: str, decl_files: list[str], target_paths: set[str]) -> str:
-    """Apply the definition-anchored rule.
+def classify(def_file: str, decl_files: list[str], closure_paths: set[str]) -> str:
+    """Apply the definition-anchored location rule.
 
     Args:
       def_file: repository-relative path of the entity's definition
@@ -44,49 +49,39 @@ def classify(def_file: str, decl_files: list[str], target_paths: set[str]) -> st
       decl_files: list of repository-relative paths of all
         declaration entries (typically the headers carrying
         `extern` / forward declarations). May be empty.
-      target_paths: the target's file set (`in-memory inventory`'s `targeted.files`).
+      closure_paths: the closure's file set (the inventory's `closure.files`).
 
-    Returns :data:`TARGETED` or :data:`IMPORTED`.
+    Returns :data:`CLOSURE` or :data:`EXTERNAL`.
     """
     if def_file:
-        return TARGETED if def_file in target_paths else IMPORTED
+        return CLOSURE if def_file in closure_paths else EXTERNAL
     # Fallback: no def in DB, classify by declarations.
     if not decl_files:
-        # No def AND no decls — treat as an import (unknown origin, safer
+        # No def AND no decls — treat as external (unknown origin, safer
         # to surface as a boundary entity than to silently claim it).
-        return IMPORTED
-    return TARGETED if all(d in target_paths for d in decl_files) else IMPORTED
+        return EXTERNAL
+    return CLOSURE if all(d in closure_paths for d in decl_files) else EXTERNAL
 
 
 _C_TU_SUFFIXES = (".c", ".cc", ".cpp", ".cxx", ".cu")
 
 
-def entry_scope(
-    kind: str,
-    def_file: str,
-    decl_files: list[str],
-    target_paths: set[str],
-) -> str:
-    """Per-entry section classification (the rule consumers apply).
+def owned_macro(def_file: str) -> bool:
+    """Whether a macro of the `closure` section is the target's OWN: one
+    defined in a `.c` translation unit (the section puts its file among the
+    closure's).
 
-    Identical to `classify` for ordinary entities, with one carve-out
-    for macros: a `#define` cannot be re-exported Rust->C, so a macro
-    whose home is a HEADER is *always* an import (kept as a C define and
-    read through bindgen) even when that header is the target's own —
-    anything still in C may `#include` it. Only a TU-local macro defined
-    in a `.c` that is itself in the target belongs to the target: it has
-    no external consumer, and it is inlined when that translation unit
-    is translated.
-
-    This is the single source of truth shared by the composer's macro
-    handling, bindgen's surface filter, and the deps-DAG section query.
+    Not a section rule: a macro defined in a closure HEADER is in the
+    `closure` section, since its definition sits there, but it is not the
+    target's own. A `#define` cannot be re-exported Rust->C, so a header
+    macro stays a C define (read through bindgen) for anything still in C
+    that may `#include` that header. Only a TU-local macro has no external
+    consumer, and is inlined when its translation unit is translated. The
+    consumers that walk or own the target's entities (the deps-DAG body walk,
+    the import closure, the symbol records, the schedule's units) apply this
+    test on top of the section, through :func:`owned_entities`.
     """
-    if (kind or "").startswith("macro"):
-        home = def_file or (decl_files[0] if decl_files else "")
-        if home.endswith(_C_TU_SUFFIXES) and home in target_paths:
-            return TARGETED
-        return IMPORTED
-    return classify(def_file, decl_files, target_paths)
+    return bool(def_file) and def_file.endswith(_C_TU_SUFFIXES)
 
 
 def parse_decl_files(decl_files_pipe: str) -> list[str]:
@@ -185,7 +180,7 @@ def resolve_typedef(
     return resolve_typedef(alias, by_name, seen)
 
 
-def classify_type(row: dict, by_name: dict[str, dict], target_paths: set[str]) -> str:
+def classify_type(row: dict, by_name: dict[str, dict], closure_paths: set[str]) -> str:
     """Classify a type row.
 
     Non-typedef rows classify by their own def_file / decl_files
@@ -201,18 +196,18 @@ def classify_type(row: dict, by_name: dict[str, dict], target_paths: set[str]) -
     if row["kind"] != "typedef":
         # A declaration-only tag row folds into the definition of its tag
         # (docs/graph.md, Nodes), so it takes the definition's section: a
-        # target header's forward `struct tm;` does not claim glibc's `tm`.
+        # closure header's forward `struct tm;` does not claim glibc's `tm`.
         # The declaration fallback is for a tag defined nowhere.
         if not row["def_file"] and row["kind"] in ("struct", "union", "enum"):
             d = by_name.get(row["name"])
             if d is not None and d["def_file"] and d["kind"] == row["kind"]:
-                return classify(d["def_file"], parse_decl_files(d["decl_files"]), target_paths)
-        return classify(row["def_file"], parse_decl_files(row["decl_files"]), target_paths)
+                return classify(d["def_file"], parse_decl_files(d["decl_files"]), closure_paths)
+        return classify(row["def_file"], parse_decl_files(row["decl_files"]), closure_paths)
     if row["aliases"] and row["aliases"] in by_name:
         base = resolve_typedef(row["aliases"], by_name)
         if base is not None:
-            return classify(base["def_file"], parse_decl_files(base["decl_files"]), target_paths)
-    return classify(row["def_file"], parse_decl_files(row["decl_files"]), target_paths)
+            return classify(base["def_file"], parse_decl_files(base["decl_files"]), closure_paths)
+    return classify(row["def_file"], parse_decl_files(row["decl_files"]), closure_paths)
 
 
 # ---------------------------------------------------------------- I/O helpers
@@ -231,30 +226,29 @@ def _doc(scope_src) -> dict:
     return json.loads(Path(scope_src).read_text())
 
 
-#: The two sections of a composed `in-memory inventory`, as constants rather than bare
-#: strings. The words are PARTICIPLES on purpose: `target` is the CLI positional
-#: and `build.json`'s output filename, and `import` shades into `#include`, so
-#: either bare noun is ambiguous at a glance — `targeted` / `imported` name what
-#: was DONE to an entity by the scope composer and collide with nothing. The
-#: pair before them was worse still: `"port"` and `"wrap"` are ALSO
-#: Historical section names also collided with translation objectives.
-TARGETED = "targeted"
-IMPORTED = "imported"
-SECTIONS = (TARGETED, IMPORTED)
+#: The two sections of a composed inventory, as constants rather than bare
+#: strings. They partition on LOCATION: `closure` holds every entity whose
+#: definition sits in the config's closure files (`impl_files` ∪
+#: `api_headers`), `external` everything else the closure reaches. The config
+#: section that names those files is `closure` too (`scope_manifest.CLOSURE`):
+#: the inventory's section is what the config's one holds.
+CLOSURE = "closure"
+EXTERNAL = "external"
+SECTIONS = (CLOSURE, EXTERNAL)
 
 #: The API view — NOT a section, and deliberately absent from :data:`SECTIONS`.
-#: `targeted` / `imported` partition on OWNERSHIP (whose body is it); `api`
+#: `closure` / `external` partition on LOCATION (where is it defined); `api`
 #: cuts the orthogonal PUBLICATION axis (does a named header declare it), the
 #: same way `--in-tree` / `--out-of-tree` cut the origin axis. The two are
 #: independent: a re-exported symbol declared in `api_headers` but defined
-#: outside `impl_files` is `api` AND `imported` at once, which is what a
+#: outside the closure is `api` AND `external` at once, which is what a
 #: re-export IS. Making `api` a third section would force that entity to pick
 #: a side and lose the fact.
 API = "api"
 
 
-def load_targeted_paths(scope_json) -> set[str]:
-    """The campaign's own file set — every file `wavefront-config.json`'s
+def load_closure_paths(scope_json) -> set[str]:
+    """The closure's file set — every file `wavefront-config.json`'s
     `impl_files` + `api_headers` named that the build actually compiled.
 
     Objective-neutral: coverage is a property of the file sets.
@@ -262,12 +256,12 @@ def load_targeted_paths(scope_json) -> set[str]:
     Composer-emitted by `compose.scope_manifest.compose()`; the `files` list is
     anchored on the CodeQL T1 tables, so an `#ifdef`-elided file is absent:
 
-        {"target": {"files": [...], "functions": [...], ...}}
+        {"closure": {"files": [...], "functions": [...], ...}}
 
-    Every other file an in-scope entity reaches is IMPORTED and lands in the
-    sibling section.
+    Every other file an entity of the closure reaches is EXTERNAL and lands in
+    the sibling section.
     """
-    return set(_doc(scope_json).get(TARGETED, {}).get("files", []))
+    return set(_doc(scope_json).get(CLOSURE, {}).get("files", []))
 
 
 def load_api_paths(scope_json) -> set[str]:
@@ -281,19 +275,29 @@ def load_api_paths(scope_json) -> set[str]:
 
 
 def load_entities(scope_json, section: str, kind: str) -> set[tuple[str, str]]:
-    """The entity set of `section` (:data:`TARGETED` | :data:`IMPORTED`) for `kind`
+    """The entity set of `section` (:data:`CLOSURE` | :data:`EXTERNAL`) for `kind`
     (``"functions"`` | ``"globals"`` | ``"macros"`` | ``"types"``), as
     ``(name, defined_in)`` keys.
 
-    Membership-lookup replacement for re-running `classify` / `entry_scope` /
+    Membership-lookup replacement for re-running `classify` /
     `classify_type` over the T1 CSVs: the scope composer classified every
-    entity once — including the header-macro carve-out — so a downstream
-    composer tests membership here instead of deriving scope a second time and
-    risking a different answer. The tag is read through :func:`entry_tag`, the
-    same accessor :func:`scope_membership` uses, so the two agree.
+    entity once, so a downstream composer tests membership here instead of
+    deriving scope a second time and risking a different answer. The tag is
+    read through :func:`entry_tag`, the same accessor :func:`scope_membership`
+    uses, so the two agree.
     """
     return {(entry_tag(e), e.get("defined_in") or "")
             for e in _doc(scope_json).get(section, {}).get(kind, [])}
+
+
+def owned_entities(scope_json, kind: str) -> set[tuple[str, str]]:
+    """The closure's entities of `kind` that are the target's OWN, as
+    ``(name, defined_in)`` keys: every one but a macro defined in a header,
+    which stays C's (:func:`owned_macro`)."""
+    keys = load_entities(scope_json, CLOSURE, kind)
+    if kind != "macros":
+        return keys
+    return {k for k in keys if owned_macro(k[1])}
 
 
 _SCOPE_KINDS = ("functions", "globals", "macros", "types")
@@ -316,8 +320,8 @@ def scope_membership(
     scope_json, section: str, *,
     kinds: tuple[str, ...] = _SCOPE_KINDS,
 ) -> set[tuple[str, str]]:
-    """Unified membership key set for ``section`` (:data:`TARGETED` |
-    :data:`IMPORTED`):
+    """Unified membership key set for ``section`` (:data:`CLOSURE` |
+    :data:`EXTERNAL`):
     ``{(name, origin)}`` via :func:`origin_key`, so a candidate is in scope iff
     its own ``origin_key`` is in the set. Needs both ``defined_in`` and
     ``declared_in`` on every scope entry (the latter is the def_file-empty
@@ -562,25 +566,25 @@ def _selftest(csv_dir: Path, scope_json: Path) -> None:
     for sanity-checking against a known database while developing
     downstream composers.
     """
-    tgt = load_targeted_paths(scope_json)
-    print(f"target paths: {len(tgt)}")
+    tgt = load_closure_paths(scope_json)
+    print(f"closure paths: {len(tgt)}")
 
     fns = load_csv(csv_dir / "functions.csv")
-    pf = sum(1 for r in fns if classify(r["def_file"], parse_decl_files(r["decl_files"]), tgt) == TARGETED)
-    print(f"functions: total={len(fns)}  target={pf}  import={len(fns) - pf}")
+    pf = sum(1 for r in fns if classify(r["def_file"], parse_decl_files(r["decl_files"]), tgt) == CLOSURE)
+    print(f"functions: total={len(fns)}  closure={pf}  external={len(fns) - pf}")
 
     macs = load_csv(csv_dir / "macros.csv")
     pm = sum(1 for r in macs if r["def_file"] in tgt)
-    print(f"macros:    total={len(macs)}  target={pm}  import={len(macs) - pm}")
+    print(f"macros:    total={len(macs)}  closure={pm}  external={len(macs) - pm}")
 
     gls = load_csv(csv_dir / "globals.csv")
-    pg = sum(1 for r in gls if classify(r["def_file"], parse_decl_files(r["decl_files"]), tgt) == TARGETED)
-    print(f"globals:   total={len(gls)}  target={pg}  import={len(gls) - pg}")
+    pg = sum(1 for r in gls if classify(r["def_file"], parse_decl_files(r["decl_files"]), tgt) == CLOSURE)
+    print(f"globals:   total={len(gls)}  closure={pg}  external={len(gls) - pg}")
 
     types = load_csv(csv_dir / "types.csv")
     by_name = build_types_index(types)
-    pt = sum(1 for r in types if classify_type(r, by_name, tgt) == TARGETED)
-    print(f"types:     total={len(types)}  target={pt}  import={len(types) - pt}")
+    pt = sum(1 for r in types if classify_type(r, by_name, tgt) == CLOSURE)
+    print(f"types:     total={len(types)}  closure={pt}  external={len(types) - pt}")
 
 
 if __name__ == "__main__":
@@ -589,6 +593,6 @@ if __name__ == "__main__":
     ap.add_argument("--csv-dir", type=Path, required=True,
                     help="Directory containing T1 CSVs (functions.csv, macros.csv, globals.csv, types.csv).")
     ap.add_argument("--scope-json", type=Path, required=True,
-                    help="Path to the target's in-memory inventory (its `targeted.files`).")
+                    help="Path to the target's in-memory inventory (its `closure.files`).")
     args = ap.parse_args()
     _selftest(args.csv_dir, args.scope_json)

@@ -59,7 +59,10 @@ from pathlib import Path
 #: 22 — cycles are cut counting each edge once, without the type edges'
 #:      reference multiplicity, and nodes list no `weights`; a generator
 #:      macro lists its instances as `type_generator_for`.
-_VERSION = 22
+#: 23 — sections renamed targeted/imported -> closure/external, split by
+#:      location alone: a closure header's macro is in `closure`, and only a
+#:      closure `.c` file's macro is owned (body-walked, a unit).
+_VERSION = 23
 
 
 def fingerprint(layout, target) -> dict:

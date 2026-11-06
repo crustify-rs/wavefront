@@ -22,8 +22,8 @@ def query(
     subject: str,                       # "types" | "symbols"
     names: list[str] | None = None,
     files: list[str] | None = None,
-    imported_only: bool = False,
-    targeted_only: bool = False,
+    external_only: bool = False,
+    closure_only: bool = False,
     api_only: bool = False,
     out_of_tree: bool = False,
     in_tree: bool = False,
@@ -89,15 +89,15 @@ def query(
         raise SystemExit(
             "query symbols: --fields/--lifecycle-ops/--users/--field-touchers "
             "apply to types only.")
-    if imported_only and (fields or field_touchers):
+    if external_only and (fields or field_touchers):
         raise SystemExit(
-            "query types: --imported-only does not apply to --fields / "
+            "query types: --external-only does not apply to --fields / "
             "--field-touchers. The narrowing asks which of a type's fields "
-            "THIS CAMPAIGN's targeted code reaches, which is --targeted-only for either "
-            "kind of type. The import side is empty for a target type, and for "
-            "an import type reports what the foreign library touches "
+            "THIS CAMPAIGN's closure code reaches, which is --closure-only for either "
+            "kind of type. The external side is empty for a closure type, and for "
+            "an external type reports what the foreign library touches "
             "internally — true, and not what a wrapper is built from. Drop the "
-            "flag for every declared field, or use --targeted-only.")
+            "flag for every declared field, or use --closure-only.")
     if (type_facets or update is not None) and len(name_list) != 1:
         raise SystemExit(
             f"query {subject}: facets / --update need exactly one --name.")
@@ -107,10 +107,10 @@ def query(
                     fields=fields, lifecycle_ops=lifecycle_ops, users=users,
                     field_touchers=field_touchers,
                     update=update,
-                    imported_only=imported_only, targeted_only=targeted_only)
+                    external_only=external_only, closure_only=closure_only)
     else:
         _enumerate(target, kind=kind, files=files,
-                   imported_only=imported_only, targeted_only=targeted_only,
+                   external_only=external_only, closure_only=closure_only,
                    api_only=api_only,
                    out_of_tree=out_of_tree, in_tree=in_tree)
 
@@ -375,7 +375,7 @@ def _call_closure(target: Path, names: list[str], files, *,
 
     NOT the same answer as ``query dag --name F --depth N``, and the difference
     is the point. The dag's ``deps.syms`` are the ORDERING graph: narrowed by
-    scope (an imported symbol contributes no callees at all, by design) and
+    scope (an external symbol contributes no callees at all, by design) and
     carrying the layering the translate stage schedules on. This is the graph as
     the C actually wrote it — codebase-wide, unnarrowed, and available on a
     `wrap` campaign where the dag deliberately shows nothing.
@@ -533,7 +533,7 @@ def _lifetime_for(target: Path, type_name: str, array_only: bool = False) -> Non
 
 
 def _enumerate(
-    target: Path, *, kind: str, files, imported_only, targeted_only,
+    target: Path, *, kind: str, files, external_only, closure_only,
     api_only=False,
     out_of_tree: bool = False, in_tree: bool = False,
 ) -> None:
@@ -545,8 +545,8 @@ def _enumerate(
     scope: whether the entity's home is outside this repository. Wrap scope
     pools two populations a single flag cannot separate — a system or
     toolchain header that will never be portable, and first-party code that is
-    wrapped only because THIS target does not port it. ``--imported-only
-    --in-tree`` is the second, i.e. the remaining backlog; ``--imported-only
+    wrapped only because THIS target does not port it. ``--external-only
+    --in-tree`` is the second, i.e. the remaining backlog; ``--external-only
     --out-of-tree`` is the permanent FFI floor."""
     from compose import scope
     from wavefront.layout import Layout
@@ -562,7 +562,7 @@ def _enumerate(
     # classification over the whole analysis tree. Keyed by origin
     # (defined_in or canonical_decl(declared_in)). This excludes out-of-closure
     # files (test/) and collapses null-def extern twins (only the real def is in
-    # in-memory inventory). Empty when in-memory inventory is absent, so --targeted-only/--imported-only
+    # in-memory inventory). Empty when in-memory inventory is absent, so --closure-only/--external-only
     # yield nothing for a scope-less target (e.g. ".") rather than mislabeling.
     # Synthetic types (string/array clusters) are NOT in in-memory inventory — they are
     # *always* import-section, classified by kind here.
@@ -570,13 +570,13 @@ def _enumerate(
     # Composed only on the branch that needs it — an unfiltered enumeration
     # must not pay the wrap closure.
     sj = (_scope_mod.try_build(layout, target)
-          if (targeted_only or imported_only or api_only) else None)
-    target_keys = (scope.scope_membership(sj, scope.TARGETED, kinds=sub)
-                 if targeted_only and sj is not None else set())
-    import_keys = (scope.scope_membership(sj, scope.IMPORTED, kinds=sub)
-                 if imported_only and sj is not None else set())
+          if (closure_only or external_only or api_only) else None)
+    closure_keys = (scope.scope_membership(sj, scope.CLOSURE, kinds=sub)
+                 if closure_only and sj is not None else set())
+    external_keys = (scope.scope_membership(sj, scope.EXTERNAL, kinds=sub)
+                 if external_only and sj is not None else set())
     # `api` is an AXIS, not a section: it intersects rather than replaces, so
-    # `--api-only --imported-only` is the re-export query (published here,
+    # `--api-only --external-only` is the re-export query (published here,
     # owned elsewhere) and not a contradiction.
     api_keys = (scope.scope_membership(sj, scope.API, kinds=sub)
                 if api_only and sj is not None else set())
@@ -596,14 +596,14 @@ def _enumerate(
             # types have no placeable tag, are absent from the manifest, dropped.)
             cands = ((tag,) if kind != "type"
                      else (tag, *(e.get("typedef") or [])))
-            if imported_only and not any(
-                    scope.origin_key(c, d, decls) in import_keys for c in cands):
+            if external_only and not any(
+                    scope.origin_key(c, d, decls) in external_keys for c in cands):
                 continue
             if api_only and not any(
                     scope.origin_key(c, d, decls) in api_keys for c in cands):
                 continue
-            if targeted_only and not any(
-                    scope.origin_key(c, d, decls) in target_keys for c in cands):
+            if closure_only and not any(
+                    scope.origin_key(c, d, decls) in closure_keys for c in cands):
                 continue
             # Origin: the entity's home path. CodeQL emits an ABSOLUTE path for
             # anything outside the source root and a repo-relative one for
@@ -648,7 +648,7 @@ def _enumerate(
 
 def _introspect(
     target: Path, *, kind: str, names, files, fields, lifecycle_ops,
-    imported_only, targeted_only, api_only=False, users=False,
+    external_only, closure_only, api_only=False, users=False,
     field_touchers=False, update=None,
 ) -> None:
     """One named entity's record (summary / whole), or — for a single type —
@@ -673,7 +673,7 @@ def _introspect(
             # The type's COMPLETE footprint: opaque_in ∪ non_opaque_in — every
             # function tree-wide that touches the type (as a handle or a field).
             # Returned whole by default (the footprint spans the whole codebase,
-            # not just the target's scope). --targeted-only / --imported-only intersect
+            # not just the target's scope). --closure-only / --external-only intersect
             # with that scope's functions (in-memory inventory membership). Schema-agnostic
             # — the agent never opens the manifest.
             entry = _load_type_entry(layout, target, node.id, node.defined_in) or {}
@@ -681,14 +681,14 @@ def _introspect(
                     for syms in (entry.get(grp) or {}).values() for s in syms}
             from wavefront import scope as _scope_mod
             sj = (_scope_mod.try_build(layout, target)
-                  if (imported_only or targeted_only or api_only) else None)
+                  if (external_only or closure_only or api_only) else None)
             if sj is not None:
                 from compose import scope as _sc
                 # Each flag INTERSECTS. `api` is an axis, so
-                # `--users --api-only --imported-only` is "users of this type
+                # `--users --api-only --external-only` is "users of this type
                 # that the headers publish but the campaign does not own".
-                for flag, sec in ((imported_only, _sc.IMPORTED),
-                                  (targeted_only, _sc.TARGETED),
+                for flag, sec in ((external_only, _sc.EXTERNAL),
+                                  (closure_only, _sc.CLOSURE),
                                   (api_only, _sc.API)):
                     if not flag:
                         continue
@@ -699,24 +699,24 @@ def _introspect(
             return
         if field_touchers:
             # {field: [touchers]} — the type's fields (ALL declared by default;
-            # --targeted-only/--imported-only narrow to fields touched by that scope's
+            # --closure-only/--external-only narrow to fields touched by that scope's
             # code) mapped to the COMPLETE, UNfiltered set of functions that
             # touch each field (raw t2/field_accesses.csv). The toucher set is
             # never scope-filtered: a field touched in-scope via raw `obj->field`
             # while its real accessor is out of scope still surfaces here.
             _field_touchers(layout, target, node.id, node.defined_in,
-                       targeted_only=targeted_only)
+                       closure_only=closure_only)
             return
         meta = D.load_type_meta(_entry_pair(layout, target))
         flds, lifecycle = meta.get(node.id, ([], set()))
         if fields:
             entry = _load_type_entry(layout, target, node.id, node.defined_in)
             objs = (entry.get("fields") if entry else None) or [{"name": f} for f in flds]
-            # ALL declared fields by default; --targeted-only/--imported-only narrow to
+            # ALL declared fields by default; --closure-only/--external-only narrow to
             # fields touched by that scope's code (raw field_accesses ∩ in-memory inventory
             # membership).
             keep = _field_keep_set(layout, target, node.id, node.defined_in,
-                                   targeted_only=targeted_only)
+                                   closure_only=closure_only)
             if keep is not None:
                 objs = [o for o in objs if o.get("name") in keep]
             # Split like a whole record: the structure, then the slots a user
@@ -730,7 +730,7 @@ def _introspect(
         # --lifecycle-ops: names only, lifecycle-first, scope-filterable via in-memory inventory
         # membership (same oracle as enumeration / wrap / port).
         op_pred = lambda _n: True            # noqa: E731
-        if imported_only or targeted_only or api_only:
+        if external_only or closure_only or api_only:
             from compose import scope as _sc
             from wavefront import scope as _scope_mod
             sj = _scope_mod.try_build(layout, target)
@@ -738,8 +738,8 @@ def _introspect(
                 op_pred = lambda _n: False   # noqa: E731
             else:
                 preds = [_sc.in_scope_pred(sj, sec)
-                         for flag, sec in ((imported_only, _sc.IMPORTED),
-                                           (targeted_only, _sc.TARGETED),
+                         for flag, sec in ((external_only, _sc.EXTERNAL),
+                                           (closure_only, _sc.CLOSURE),
                                            (api_only, _sc.API)) if flag]
                 op_pred = lambda n: all(p(n) for p in preds)  # noqa: E731
         win = D.ordered_ops(node, by_key, lifecycle, op_pred)
@@ -748,7 +748,7 @@ def _introspect(
 
     # record(s): always the whole record.
     return _records(target, kind, names, files,
-                    imported_only=imported_only, targeted_only=targeted_only)
+                    external_only=external_only, closure_only=closure_only)
 
 
 _TOUCHED_CACHE: dict = {}
@@ -756,7 +756,7 @@ _TOUCHED_CACHE: dict = {}
 
 def scope_touched_index(layout, target, which: str) -> dict:
     """``{tag: {def_file|"": {field}}}`` — every field some `which`-scope
-    (port|wrap) function touches, in ONE pass. Cached per (target, which).
+    (closure|external) function touches, in ONE pass. Cached per (target, which).
 
     The UNION of both access edges, because they answer different questions and
     a type can owe an accessor under either:
@@ -790,7 +790,13 @@ def scope_touched_index(layout, target, which: str) -> dict:
     if sj is None:
         return {}
     funcs = {k[0] for k in _sc.scope_membership(
-        sj, which, kinds=("functions", "globals", "macros"))}
+        sj, which, kinds=("functions", "globals"))}
+    # The closure's code is what the target owns: of its macros, the TU-local
+    # ones (`compose.scope.owned_macro`). A closure header's macro is in the
+    # section but stays C's, a `#define` not being re-exportable Rust->C.
+    funcs |= {k[0] for k in (_sc.owned_entities(sj, "macros")
+                             if which == _sc.CLOSURE
+                             else _sc.load_entities(sj, which, "macros"))}
     out: dict = {}
 
     def add(tag, def_file, field):
@@ -816,8 +822,8 @@ def scope_touched_index(layout, target, which: str) -> dict:
 def _scope_touched_fields(layout, target, tag: str, defined_in: str | None,
                           which: str) -> set:
     """Field names of `tag` touched by some function in section `which`
-    (:data:`~compose.scope.TARGETED` | :data:`~compose.scope.IMPORTED`). Empty if no
-    in-memory inventory. Drives the --targeted-only/--imported-only narrowing for --fields
+    (:data:`~compose.scope.CLOSURE` | :data:`~compose.scope.EXTERNAL`). Empty if no
+    in-memory inventory. Drives the --closure-only/--external-only narrowing for --fields
     and --field-touchers, and — through `scope_touched_index` — which fields the
     scheduler-local anchors."""
     by_file = scope_touched_index(layout, target, which).get(tag) or {}
@@ -827,29 +833,29 @@ def _scope_touched_fields(layout, target, tag: str, defined_in: str | None,
 
 
 def _field_keep_set(layout, target, tag: str, defined_in: str | None, *,
-                    targeted_only: bool) -> set | None:
-    """Field-name keep-set for ``--targeted-only``, or None = keep ALL fields.
+                    closure_only: bool) -> set | None:
+    """Field-name keep-set for ``--closure-only``, or None = keep ALL fields.
 
-    TARGETED only, deliberately. The imported side answers a question nobody
-    asks: for a targeted struct it is empty (nothing outside the targeted set
-    reaches into its own layout), and for an imported struct it reports which fields
+    CLOSURE only, deliberately. The external side answers a question nobody
+    asks: for a closure struct it is empty (nothing outside the closure
+    reaches into its own layout), and for an external struct it reports which fields
     the FOREIGN library touches internally — true, and irrelevant to what this
     target must wrap. What a caller wants is always "which of this type's
     fields does MY code reach", which is the target side for either kind."""
-    if not targeted_only:
+    if not closure_only:
         return None
     from compose import scope as _sc
-    return _scope_touched_fields(layout, target, tag, defined_in, _sc.TARGETED)
+    return _scope_touched_fields(layout, target, tag, defined_in, _sc.CLOSURE)
 
 
 def _field_touchers(layout, target, tag: str, defined_in: str | None, *,
-               targeted_only: bool = False) -> None:
+               closure_only: bool = False) -> None:
     """``{field: [touchers]}`` for the type's fields.
 
-    ALL declared fields by default; --targeted-only/--imported-only narrow the FIELD set
+    ALL declared fields by default; --closure-only/--external-only narrow the FIELD set
     to the ones touched by that scope's code. Each field's toucher set is the
     COMPLETE, UNfiltered set of functions that access it — read straight from the
-    raw ``t2/field_accesses`` edge, NOT the targeted-section ``depends_on`` inversion.
+    raw ``t2/field_accesses`` edge, NOT the closure-section ``depends_on`` inversion.
     So a toucher that is itself out of scope (while the field is touched in-scope
     via raw ``obj->field``) still surfaces as a candidate.
 
@@ -883,7 +889,7 @@ def _field_touchers(layout, target, tag: str, defined_in: str | None, *,
                     complete[fld].add((fn, r.get("access_file") or ""))
 
     keep = _field_keep_set(layout, target, tag, defined_in,
-                                   targeted_only=targeted_only)
+                                   closure_only=closure_only)
     scoped = set(declared) if keep is None else {f for f in declared if f in keep}
 
     out = {f: [_node(k) for k in sorted(complete.get(f, set()))]
@@ -1838,8 +1844,8 @@ def _harvest_sym_agent(rec: dict, full: dict) -> None:
         rec["_comment_user"] = full["_comment_user"]
 
 
-def _records(target, kind, names, files, *, imported_only=False,
-             targeted_only=False) -> None:
+def _records(target, kind, names, files, *, external_only=False,
+             closure_only=False) -> None:
     # record(s): always the whole record.
     from wavefront import manifests as _m
 
@@ -1858,9 +1864,9 @@ def _records(target, kind, names, files, *, imported_only=False,
         # filter it must count the same fields `--fields` shows, or it reports
         # work the caller's scope never touches.
         keep = None
-        if kind == "type" and (imported_only or targeted_only):
+        if kind == "type" and (external_only or closure_only):
             keep = _field_keep_set(layout, target, node.id, node.defined_in,
-                                   targeted_only=targeted_only)
+                                   closure_only=closure_only)
             entry = dict(entry)
             entry["_analysis"] = _m.analysis_state(
                 entry, "types", entry.get("_analysis", {}).get("submitted", False),
@@ -2091,9 +2097,9 @@ def _dag_loc(by_key, by_name, names, files, layer, as_json, keep=None,
         print(f"{total}\tTOTAL")
 
 
-def _scope_predicate(layout, target, imported_only: bool, targeted_only: bool,
+def _scope_predicate(layout, target, external_only: bool, closure_only: bool,
                      api_only: bool = False, *, full: bool = False):
-    """A node-keeping predicate for `--imported-only` / `--targeted-only`, or None when
+    """A node-keeping predicate for `--external-only` / `--closure-only`, or None when
     neither is set. The dag is scope-agnostic; scope is read from in-memory inventory on
     demand. `origin_key(id, defined_in)` is exactly the node's serialized origin
     (`Node.origin()`), so dag nodes and scope entries collide on the same key.
@@ -2101,7 +2107,7 @@ def _scope_predicate(layout, target, imported_only: bool, targeted_only: bool,
     ``full`` is irrelevant here — scope does not depend on the campaign
     objective, so there is one scope to filter against whichever graph was
     built. Flags INTERSECT: `api` is an axis over the ownership sections."""
-    if not (imported_only or targeted_only or api_only):
+    if not (external_only or closure_only or api_only):
         return None
     from compose import scope as _sc
     from wavefront import scope as _scope_mod
@@ -2109,8 +2115,8 @@ def _scope_predicate(layout, target, imported_only: bool, targeted_only: bool,
     if sj is None:
         return lambda _n: False
     keysets = [_sc.scope_membership(sj, sec)
-               for flag, sec in ((imported_only, _sc.IMPORTED),
-                                 (targeted_only, _sc.TARGETED),
+               for flag, sec in ((external_only, _sc.EXTERNAL),
+                                 (closure_only, _sc.CLOSURE),
                                  (api_only, _sc.API)) if flag]
 
     def keep(n) -> bool:
@@ -2142,8 +2148,8 @@ def query_dag(
     scc: str | None = None,
     layer: int | None = None,
     loc: bool = False,
-    imported_only: bool = False,
-    targeted_only: bool = False,
+    external_only: bool = False,
+    closure_only: bool = False,
     api_only: bool = False,
     api_headers_only: bool = False,
     kind: str | None = None,
@@ -2176,7 +2182,7 @@ def query_dag(
     dag = D.build(layout, target, stage="query dag",
                   api_headers_only=api_headers_only)
     by_key, by_name = D.load_nodes(dag)
-    keep = _scope_predicate(layout, target, imported_only, targeted_only,
+    keep = _scope_predicate(layout, target, external_only, closure_only,
                             api_only, full=not api_headers_only)
 
     # ── mode: LoC view ─────────────────────────────────────────────────
@@ -2299,8 +2305,8 @@ def query_dag(
 def query_files(
     target: Path,
     *,
-    targeted_only: bool = False,
-    imported_only: bool = False,
+    closure_only: bool = False,
+    external_only: bool = False,
     api_only: bool = False,
 ) -> None:
     """Read-only oracle over the target's scope **files** (one path per line,
@@ -2308,11 +2314,11 @@ def query_files(
 
       - ``--api-only`` — the headers that PUBLISH the library
         (``in-memory inventory.api.files``).
-      - ``--targeted-only`` — the campaign's own file set
-        (``in-memory inventory.targeted.files``), under either objective.
-      - ``--imported-only`` — the derived closure: the EXTERNAL header surface
-        the targeted TUs reach through their ``depends_on`` edges. Read from
-        the cached ``in-memory inventory.imported`` section (the single source of truth,
+      - ``--closure-only`` — the campaign's own file set
+        (``in-memory inventory.closure.files``), under either objective.
+      - ``--external-only`` — the derived closure: the EXTERNAL header surface
+        the closure TUs reach through their ``depends_on`` edges. Read from
+        the cached ``in-memory inventory.external`` section (the single source of truth,
         written by the composer).
       - no flag — all three, labeled. The
         single-flag forms print a bare list (xargs-friendly).
@@ -2329,26 +2335,26 @@ def query_files(
             print(f)
         return
 
-    target_files = import_files = None
-    if targeted_only or not imported_only:
-        target_files = sorted(scope_mod.load_targeted_paths(doc))
-    if imported_only or not targeted_only:
-        import_files = sorted(set((doc.get(scope_mod.IMPORTED) or {}).get("files") or []))
+    closure_files = external_files = None
+    if closure_only or not external_only:
+        closure_files = sorted(scope_mod.load_closure_paths(doc))
+    if external_only or not closure_only:
+        external_files = sorted(set((doc.get(scope_mod.EXTERNAL) or {}).get("files") or []))
 
-    if targeted_only:
-        for f in target_files:
+    if closure_only:
+        for f in closure_files:
             print(f)
-    elif imported_only:
-        for f in import_files:
+    elif external_only:
+        for f in external_files:
             print(f)
     else:
         api_files = sorted(scope_mod.load_api_paths(doc))
         print(f"\n# api ({len(api_files)})")
         for f in api_files:
             print(f)
-        print(f"\n# targeted ({len(target_files)})")
-        for f in target_files:
+        print(f"\n# {scope_mod.CLOSURE} ({len(closure_files)})")
+        for f in closure_files:
             print(f)
-        print(f"\n# imported ({len(import_files)})")
-        for f in import_files:
+        print(f"\n# {scope_mod.EXTERNAL} ({len(external_files)})")
+        for f in external_files:
             print(f)

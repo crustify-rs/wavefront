@@ -8,16 +8,19 @@ reads the dependency graph of the closure ([`graph.md`](graph.md)) and its seeds
 
 ## Units
 
-The units are every targeted node of the closure, its header macros aside
-([`scoping.md`](scoping.md#targeted)). With `--api-headers-only`, they are the
-targeted nodes the api view publishes, closed over the public-signature
-graph: a private type a public signature names is a unit too. Imported nodes
-are never units; they stay dependencies of the units that reach them.
+The units are every node the closure owns
+([`scoping.md`](scoping.md#closure)): every node of the closure section but
+the macros its headers define, which C still built may include and which
+stay C's. With `--api-headers-only`, they are the owned nodes the api view
+publishes, closed over the public-signature graph: a private type a public
+signature names is a unit too. External nodes are never units; they stay
+dependencies of the units that reach them.
 
-Enums and macros are no units either, but for a type generator, which mints
-types and is one: an enum has no fields or lifecycle to process, and a macro
-is expanded where it is used. `--with-enums` makes the enums units, and
-`--with-macros` every macro the closure's files define, a header's included.
+Enums and macros are no units either, but for a type generator a closure
+`.c` file defines, which mints types and is one: an enum has no fields or
+lifecycle to process, and a macro is expanded where it is used.
+`--with-enums` makes the enums units, and `--with-macros` every macro the
+closure's files define, a header's included.
 They are leaves of the graph, so leaving them out cuts nothing, but it can
 lower the layer of what depends on them: two schedules agree on layers when
 they are made with the same flags, which each records.

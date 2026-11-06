@@ -4,7 +4,7 @@ Each stem group lists every symbol (function, macro, global, or callback — a
 function-pointer typedef) defined or declared in its file(s).
 
 **Scope gates EMISSION, never CONTENT.** Which records are emitted (and
-how they're tagged / post-filtered by `--targeted-only` / `--imported-only`) is a
+how they're tagged / post-filtered by `--closure-only` / `--external-only`) is a
 scope decision; every record that IS emitted carries its full
 codebase-wide composition. This mirrors the type manifest, whose
 `opaque_in` / `non_opaque_in` footprints are COMPLETE for port AND wrap.
@@ -725,7 +725,7 @@ def compose(
         repo-relative path (e.g. `Path("ssl/statem/statem")`). The
         caller writes one `syms.json` per dir under the analysis
         tree root.
-      - ``dir_scope``: ``{manifest_dir: TARGETED | IMPORTED}`` parallel
+      - ``dir_scope``: ``{manifest_dir: CLOSURE | EXTERNAL}`` parallel
         map. Orchestrator consumers (e.g. the symbol wrapper's
         manifests-list input contract) read this to tag each
         manifest with its scope without persisting the tag to disk.
@@ -752,7 +752,7 @@ def compose(
         seed flags): emit every reachable entry. Port-scope entries
         emit with port additions; import entries emit as base.
 
-    `--targeted-only` / `--imported-only` post-filters apply in every mode
+    `--closure-only` / `--external-only` post-filters apply in every mode
     (they're emitted-shape filters).
     """
     if filter_spec is None:
@@ -761,32 +761,44 @@ def compose(
     # DROP an out-of-scope entry. The default keeps the reachability gate.
     unscoped = filter_spec.unscoped
     target_paths = (
-        scope.load_targeted_paths(filter_spec.scope_json_path)
+        scope.load_closure_paths(filter_spec.scope_json_path)
         if filter_spec.scope_json_path is not None
         else set()
     )
     scope_enabled = bool(target_paths) or filter_spec.scope_json_path is not None
 
-    # v2: port/wrap classification is precomputed in in-memory inventory's entity
-    # sets (including the header-macro carve-out). Look up (name, def_file)
-    # membership instead of re-running classify()/entry_scope() per row.
-    # target_paths (the file list) is retained for Reach (file-level
-    # port-reachability).
+    # v2: section classification is precomputed in in-memory inventory's entity
+    # sets. Look up (name, def_file) membership instead of re-running
+    # classify() per row. target_paths (the file list) is retained for Reach
+    # (file-level port-reachability).
     _sj = filter_spec.scope_json_path
-    tgt_funcs = scope.load_entities(_sj, scope.TARGETED, "functions") if _sj else set()
-    tgt_globals = scope.load_entities(_sj, scope.TARGETED, "globals") if _sj else set()
-    tgt_macros = scope.load_entities(_sj, scope.TARGETED, "macros") if _sj else set()
-    # The composed IMPORTED surface, as an admission floor — the same role
+    tgt_funcs = scope.owned_entities(_sj, "functions") if _sj else set()
+    tgt_globals = scope.owned_entities(_sj, "globals") if _sj else set()
+    # A macro is the target's own only when a closure `.c` defines it
+    # (`scope.owned_macro`): a header `#define` cannot be re-exported Rust->C,
+    # so it stays C's even in a closure header, and is admitted, gated and
+    # walked as any macro the target does not own. Its `closure` section
+    # membership decides only the --closure-only / --external-only filters.
+    tgt_macros = scope.owned_entities(_sj, "macros") if _sj else set()
+    closure_macros = (scope.load_entities(_sj, scope.CLOSURE, "macros")
+                      if _sj else set())
+    # The composed EXTERNAL surface, as an admission floor — the same role
     # `_in_import_surface` plays on the type side. Scope composition already
     # applied the authoritative, objective-independent reach walk. A in-memory inventory
     # entry with no manifest record is unschedulable, so whatever that derived
     # section lists gets one even when the specialized gates below cannot
     # reproduce its admission path locally.
     imp_keys = (
-        (scope.load_entities(_sj, scope.IMPORTED, "functions")
-         | scope.load_entities(_sj, scope.IMPORTED, "globals")
-         | scope.load_entities(_sj, scope.IMPORTED, "macros"))
+        (scope.load_entities(_sj, scope.EXTERNAL, "functions")
+         | scope.load_entities(_sj, scope.EXTERNAL, "globals")
+         | scope.load_entities(_sj, scope.EXTERNAL, "macros"))
         if _sj else set())
+    # The generator macros of closure files the closure reaches stand on the
+    # same floor: they are no entry of the external section, being defined in
+    # the closure, yet no more the target's own than any header macro.
+    if _sj:
+        from .import_closure import closure_generators
+        imp_keys |= closure_generators(csv_dir_t1, _sj)
 
     def _in_import(r: dict) -> bool:
         return (r.get("name"), r.get("def_file") or "") in imp_keys
@@ -888,11 +900,12 @@ def compose(
     for r in macros:
         # Macros can't be re-exported Rust->C, so a macro defined in a HEADER
         # stays a C `#define` (wrap surface, read via bindgen) even when its
-        # header is in port scope — anything still in C may `#include` it.
+        # header is a closure file — anything still in C may `#include` it.
         # Only a TU-local `.c` macro is genuinely "ported": it has no external
         # consumer and bindgen can't see it, so it's inlined into its TU's
-        # Rust translation. Hence a macro is target-section iff it's defined in a
-        # `.c` (etc.) file that's in scope.
+        # Rust translation. Hence a macro is the target's own iff it's defined
+        # in a closure `.c` (etc.) file (`scope.owned_macro`), while its
+        # section, `closure` for a closure header's too, is location alone.
         in_target = scope_enabled and (r["name"], r["def_file"]) in tgt_macros
         if scope_enabled and not in_target and not seed_mode and not unscoped:
             if not _in_import(r) and not reach.is_macro_port_reachable(
@@ -906,6 +919,7 @@ def compose(
             "base": base,
             "port_add": port_add,
             "in_target": in_target,
+            "in_closure": scope_enabled and (r["name"], r["def_file"]) in closure_macros,
             "forward": fwd,
             "key": (base["name"], base.get("defined_in") or ""),
             "target_file": target_file,
@@ -923,7 +937,7 @@ def compose(
     # always wrap; inclusion is the wrap-reach gate (filter mode) or a direct
     # --name seed (seed mode). The same `_import_reachable` gate that admits
     # wrap structs admits a callback (it is keyed by type name). A callback the
-    # in-memory inventory already classifies TARGETED -- its declaring header is
+    # in-memory inventory already classifies CLOSURE -- its declaring header is
     # one of the target's own (`api_headers`) -- is admitted outright: the target
     # publishes it, so it needs a record even when no target body touches it
     # (a callback published by one subsystem and invoked only by another).
@@ -1012,8 +1026,8 @@ def compose(
     #
     # Per-dir scope is tracked alongside the entry emission. The
     # contract assumes a stem-group manifest dir carries entries of
-    # a single section only — TARGETED if any emitted entry belongs to
-    # it, otherwise IMPORTED. This holds for stem-grouped manifest
+    # a single section only — CLOSURE if any emitted entry belongs to
+    # it, otherwise EXTERNAL. This holds for stem-grouped manifest
     # dirs whose files all sit on one side of in-memory inventory. The
     # mixed-scope-in-one-dir case (a stem-group split by
     # an `excluded` list of the config) is a known limitation tracked in
@@ -1026,21 +1040,22 @@ def compose(
             is_closure_entry = (not is_seed_entry) and (c["key"] in closure_keys)
             if not (is_seed_entry or is_closure_entry):
                 continue
-            emit_port_shape = is_seed_entry and c["in_target"]
+            in_closure = is_seed_entry and c.get("in_closure", c["in_target"])
         else:
             # Filter mode: emit all candidates passing wrap-reach.
-            emit_port_shape = c["in_target"]
+            in_closure = c.get("in_closure", c["in_target"])
 
-        # --targeted-only / --imported-only post-filters.
-        if filter_spec.port_only and not emit_port_shape:
+        # --closure-only / --external-only post-filters, by section: an owned
+        # entity is in the closure, and so is a closure header's macro.
+        if filter_spec.port_only and not in_closure:
             continue
-        if filter_spec.wrap_only and emit_port_shape:
+        if filter_spec.wrap_only and in_closure:
             continue
 
         entry = dict(c["base"])
         # No port/wrap shape fork: an emitted record always carries its
-        # codebase-wide composition. `emit_port_shape` below survives only as
-        # the SCOPE classification -- it drives the --targeted-only/--imported-only
+        # codebase-wide composition. `in_closure` below survives only as
+        # the SCOPE classification -- it drives the --closure-only/--external-only
         # post-filters and the dir_scope tag, never the content.
         if c["port_add"] is not None:
             entry.update(c["port_add"])
@@ -1048,12 +1063,12 @@ def compose(
         if rel_dir is None:
             continue
         entries_by_dir[rel_dir].append(entry)
-        # Promote dir to TARGETED the first time we see a targeted entry
-        # under it; default to IMPORTED otherwise.
-        if emit_port_shape:
-            dir_scope[rel_dir] = scope.TARGETED
+        # Promote dir to CLOSURE the first time we see a closure entry
+        # under it; default to EXTERNAL otherwise.
+        if in_closure:
+            dir_scope[rel_dir] = scope.CLOSURE
         else:
-            dir_scope.setdefault(rel_dir, scope.IMPORTED)
+            dir_scope.setdefault(rel_dir, scope.EXTERNAL)
 
     # Stable sort by (kind, name) per dir.
     def _sort_key(e: dict[str, Any]) -> tuple[str, str]:
@@ -1117,7 +1132,7 @@ def main() -> None:
     for rel_dir, entries in sorted(entries_by_dir.items()):
         after = len(entries)
         total += after
-        if dir_scope.get(rel_dir) == scope.TARGETED:
+        if dir_scope.get(rel_dir) == scope.CLOSURE:
             port_dirs += 1
         else:
             wrap_dirs += 1

@@ -32,14 +32,14 @@ def _inventory(functions=(), types=()):
     none = {"files": [], "functions": [], "globals": [], "macros": [],
             "types": []}
     return {
-        "targeted": {**none,
+        "closure": {**none,
                      "functions": [{"name": n, "defined_in": h,
                                     "declared_in": list(d)}
                                    for n, h, *d in functions],
                      "types": [{"name": n, "defined_in": h,
                                 "declared_in": list(d)}
                                for n, h, *d in types]},
-        "imported": dict(none), "api": dict(none),
+        "external": dict(none), "api": dict(none),
     }
 
 
@@ -155,9 +155,9 @@ class SelectionTests(unittest.TestCase):
 
     def test_errors(self) -> None:
         cases = {
-            "no targeted entity": _config(
+            "no owned entity": _config(
                 {"path": "h.h", "items": {"included": [{"name": "V", "kind": "type"}]}}),
-            "no targeted entity ": _config(
+            "no owned entity ": _config(
                 {"path": "h.h", "items": {"included": [{"name": "T", "kind": "symbol"}]}}),
             "both lists name": _config({"path": "h.h", "items": {
                 "included": [{"name": "T", "kind": "type"}],
@@ -464,7 +464,7 @@ class KindTests(unittest.TestCase):
               "type_generator_for": ["T"]}],
             [_rec("T", "a.c", kind="type", syms=[("GEN", "a.c")])]]}
         inventory = _inventory(types=[("T", "a.c")])
-        inventory["targeted"]["macros"] = [
+        inventory["closure"]["macros"] = [
             {"name": "GEN", "defined_in": "a.c", "declared_in": []}]
         items = {i["name"]: i for i in
                  _scheduled_items(_schedule(graph, inventory, config=_config()))}

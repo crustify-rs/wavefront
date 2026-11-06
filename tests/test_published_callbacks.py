@@ -21,7 +21,7 @@ class PublishedCallbackTests(unittest.TestCase):
     """A callback the target's own API header publishes gets a record even when
     no target body reaches it -- e.g. it is invoked only by another subsystem."""
 
-    def _compose(self, targeted_functions: list[dict], *, names: list[str] | None = None):
+    def _compose(self, closure_functions: list[dict], *, names: list[str] | None = None):
         with tempfile.TemporaryDirectory() as td:
             t1 = Path(td) / "t1"
             t1.mkdir()
@@ -35,10 +35,10 @@ class PublishedCallbackTests(unittest.TestCase):
                      "decl_files": "include/pub.h", "aliases": "",
                      "unaliased_kind": "callback"}])
             scope_doc = {
-                "targeted": {"files": ["include/pub.h", "src/pub.c"],
-                             "functions": targeted_functions, "globals": [],
+                "closure": {"files": ["include/pub.h", "src/pub.c"],
+                             "functions": closure_functions, "globals": [],
                              "macros": [], "types": []},
-                "imported": {"files": [], "functions": [], "globals": [],
+                "external": {"files": [], "functions": [], "globals": [],
                              "macros": [], "types": []},
             }
             spec = FilterSpec(scope_json_path=scope_doc, names=names or [])
@@ -51,11 +51,11 @@ class PublishedCallbackTests(unittest.TestCase):
                 entries, _scope, _ = syms_manifest.compose(t1, Path(td) / "t2", spec)
         return [e["name"] for v in entries.values() for e in v]
 
-    def test_targeted_callback_emitted_without_body_reach(self) -> None:
+    def test_closure_callback_emitted_without_body_reach(self) -> None:
         cb = {"name": "pub_cb", "defined_in": "", "declared_in": ["include/pub.h"]}
         self.assertIn("pub_cb", self._compose([cb]))
 
-    def test_targeted_callback_admitted_as_named_seed(self) -> None:
+    def test_closure_callback_admitted_as_named_seed(self) -> None:
         cb = {"name": "pub_cb", "defined_in": "", "declared_in": ["include/pub.h"]}
         self.assertIn("pub_cb", self._compose([cb], names=["pub_cb"]))
 

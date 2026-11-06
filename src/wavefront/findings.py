@@ -30,7 +30,7 @@ def _is_pointer_field(f: dict) -> bool:
 
 def type_findings(entry: dict, keep: set | None = None) -> dict:
     """The type's findings: its note, and every field's slots. ``keep``
-    narrows the fields, as ``--targeted-only`` / ``--imported-only`` do."""
+    narrows the fields, as ``--closure-only`` / ``--external-only`` do."""
     fields = {}
     for f in entry.get("fields") or []:
         if not isinstance(f, dict) or (keep is not None and f.get("name") not in keep):

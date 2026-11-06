@@ -63,7 +63,7 @@ Nothing is dropped: external/libc symbols and builtins referenced by
 ``builtin``) so the topo order is complete. The builtin→Rust lowering table
 is deferred — builtins are only *tagged* here.
 
-Scope (targeted/imported) is NOT stored — it is derived by the orchestrators
+Scope (closure/external) is NOT stored — it is derived by the orchestrators
 from ``in-memory inventory`` at schedule time. Read-only, deterministic, no CodeQL.
 """
 from __future__ import annotations
@@ -436,24 +436,27 @@ def _collect(analysis_root: Path,
 
     So edges are narrowed per node against THIS target's scope:
 
-      - **targeted symbol** — every edge. Its body is translated, so its
-        callees and field-derived type uses are real dependencies.
-      - **imported symbol** — signature only. A binding is emitted from the
+      - **owned symbol** (``port_syms``: the closure's functions and
+        globals, and its TU-local macros) — every edge. Its body is
+        translated, so its callees and field-derived type uses are real
+        dependencies.
+      - **any other symbol** (an external one, or a closure header's
+        macro) — signature only. A binding is emitted from the
         signature alone: callee edges are dropped outright, and type edges
         keep only signature/opaque uses (``fields: []``).
-      - **imported struct** — only fields the targeted scope actually touches
+      - **external struct** — only fields the owned symbols actually touch
         (``port_fields``); the rest of the layout is never reached through
         this target and must not order its work. EXCEPT when its definition
-        sits in a selected layout file — a targeted file, or an
+        sits in a selected layout file — a closure file, or an
         ``api_headers`` definition — where the layout IS the API and
         every field edge is kept.
 
     Under ``api_headers_only`` ``port_syms`` is empty, so EVERY symbol
     takes the signature-only path and every struct outside ``layout_paths``
     (there, ``api_headers``) orders no field work at all: exactly how an
-    imported item behaves on a port campaign, which is the point. Scope is
-    unchanged either way — the library is still TARGETED, it is just read
-    shallowly. The default graph is body-deep.
+    external item behaves on a port campaign, which is the point. Scope is
+    unchanged either way — the library is still in the closure, it is just
+    read shallowly. The default graph is body-deep.
 
     ``port_syms`` of None disables narrowing (whole-tree graph, the old
     behaviour) — used by callers with no scope in hand.
@@ -508,10 +511,10 @@ def _collect(analysis_root: Path,
         # every one of them orders real work and the narrowing would drop the
         # whole layout. Same rule the import closure's field-walk applies, for
         # the same reason -- and load-bearing on a wrap campaign, where an
-        # empty targeted scope makes `port_fields` empty and would otherwise
-        # leave every imported struct a dependency leaf.
+        # empty closure makes `port_fields` empty and would otherwise
+        # leave every external struct a dependency leaf.
         # A struct whose definition is in a LAYOUT file keeps every field
-        # edge. The default uses the whole targeted set; `api_headers_only`
+        # edge. The default uses the whole closure; `api_headers_only`
         # uses public definitions alone. Everything else
         # orders only through what body-walked code touches -- which on a wrap
         # campaign is nothing, so an opaque handle correctly orders no work.
@@ -555,7 +558,7 @@ def _collect(analysis_root: Path,
                 n.has_dep = True
                 dep = e["depends_on"] or {}
                 # `depends_on` is only ever emitted for an entry that was
-                # targeted by SOME target; whether it is targeted by THIS one
+                # owned by SOME target; whether it is owned by THIS one
                 # decides how much of it applies. On a wrap campaign nothing is,
                 # so every symbol takes the signature-only branch.
                 is_port = port_syms is None or key in port_syms
@@ -680,7 +683,7 @@ def collect_types_csv(codeql_dir: Path, api_paths: set[str] | None = None):
     # graph is pruned afterwards: a cast edge exists only between two types
     # that are nodes of the target's graph (`_build_edges`), so in API mode a
     # cast to an internal type off the closure (`git_patch ->
-    # git_patch_generated`) adds no edge, while one to an imported public type
+    # git_patch_generated`) adds no edge, while one to an external public type
     # (`AVCodecContext -> AVClass`) does.
     # The pairs the orchestrator rejected (T3 `base_derived` `drop` rows):
     # no cast edge between them, in either direction.
@@ -1315,11 +1318,11 @@ def compose(analysis_root, scope_json=None, codeql_dir: Path | None = None,
     given with the pair, since there is no tree path to derive it from."""
     # Graph depth is explicit and objective-neutral:
     #
-    #   port   body-walk every targeted symbol; a struct defined anywhere in
-    #          the targeted set keeps every field (the layout is being
+    #   port   body-walk every symbol the target owns; a struct defined
+    #          anywhere in the closure keeps every field (the layout is being
     #          reimplemented).
     #   wrap   body-walk NOTHING. Every symbol contributes its signature only,
-    #          exactly as an imported symbol does on a port campaign, and only
+    #          exactly as an external symbol does on a port campaign, and only
     #          a struct defined in `api_headers` keeps its fields -- they ARE
     #          the API. Everything else orders as an opaque handle, which is
     #          the public API shape.
@@ -1329,15 +1332,19 @@ def compose(analysis_root, scope_json=None, codeql_dir: Path | None = None,
         from . import scope as _scope
         port_syms = set()
         if not api_headers_only:
+            # The owned entities, not the whole `closure` section: a macro a
+            # closure HEADER defines is in that section, yet a header
+            # `#define` cannot be re-exported Rust->C and stays C's, so only a
+            # closure `.c` file's TU-local macro is body-walked
+            # (`scope.owned_macro`).
             for kind in ("functions", "globals", "macros"):
                 try:
-                    port_syms |= _scope.load_entities(
-                        scope_json, _scope.TARGETED, kind)
+                    port_syms |= _scope.owned_entities(scope_json, kind)
                 except Exception:
                     pass
         port_fields = port_touched_fields(analysis_root, port_syms)
         layout_paths = (_scope.load_api_paths(scope_json) if api_headers_only
-                        else _scope.load_targeted_paths(scope_json))
+                        else _scope.load_closure_paths(scope_json))
     in_scope_types = None
     if scope_json is not None and (isinstance(scope_json, dict)
                                    or Path(scope_json).is_file()):

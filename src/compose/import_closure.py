@@ -1,4 +1,4 @@
-"""Compute the IMPORTED surface for a target (in-memory inventory `imported`).
+"""Compute the EXTERNAL surface for a target (in-memory inventory `external`).
 
 Tier (iii): a pure function of CodeQL facts + the target seed. The surface is
 computed DIRECTLY from the T1 entity tables + the T2 reach graph — it does NOT
@@ -9,10 +9,10 @@ symbols composer would write, sharing ``syms_manifest``'s reach primitives, so
 the result is byte-equivalent to the old post-``analyze symbols`` aggregation.)
 The per-target derivation:
 
-  1. Walk the targeted entities (those whose home is a ``in-memory inventory``
-     ``targeted.files`` entry) and follow their ``depends_on`` edges into the
+  1. Walk the closure's entities (those whose home is a ``in-memory inventory``
+     ``closure.files`` entry) and follow their ``depends_on`` edges into the
      items they use.
-  2. Keep the deps that fall OUTSIDE the targeted set — the FFI frontier.
+  2. Keep the deps that fall OUTSIDE the closure — the FFI frontier.
   3. **Narrow** each item's ``declared_in`` — which is the entity-table
      *superset* of every declaration site — down to the header(s) the importing
      target TU actually ``#include``s, using the build-resolved include graph
@@ -20,16 +20,16 @@ The per-target derivation:
      in the transitive include-closure of the target TU that depends on it.
 
 The result is the precise import surface (not the all-decls superset, not the
-implicit not-targeted complement), persisted as the ``imported`` section of
-the target's in-memory inventory — **derived and regenerable** from ``targeted``
+implicit not-closure complement), persisted as the ``external`` section of
+the target's in-memory inventory — **derived and regenerable** from ``closure``
 (recompute
 when it changes). An item that survives through >1 distinct header is genuinely
 imported two ways: a re-export signal, recorded rather than collapsed.
 
-Membership says only that the campaign does not OWN the item. Ownership is
-objective-independent: both `port` and `wrap` campaigns own the entities homed
-in `impl_files` + `api_headers`, and this section is their derived external
-frontier. What a wrap campaign publishes and schedules is the separate `api`
+Membership says only that the item is defined outside the closure. Location is
+objective-independent: both `port` and `wrap` campaigns hold the entities homed
+in `impl_files` + `api_headers` in their closure, and this section is their
+derived external frontier. What a wrap campaign publishes and schedules is the separate `api`
 view. What will be DONE with an item — a safe wrapper over the seam, or a native
 translation — is the translate stage's per-wave `--objective`, chosen by the
 orchestrator.
@@ -43,6 +43,31 @@ from typing import Any, Callable
 
 from . import scope
 from . import macro_families as _mf
+
+
+def generator_reached(family: dict, closure_paths: set[str], external_types) -> bool:
+    """Whether the closure reaches one of a generator macro's instances: a
+    member type defined in a closure file, or one of the external section's
+    types (``(name, defined_in)`` keys). Relevance, not a member count."""
+    return any((tag, df) in external_types or df in closure_paths
+               for tag, df in family["members"])
+
+
+def closure_generators(csv_dir_t1: Path, scope_json) -> set[tuple[str, str]]:
+    """The generator macros defined in closure files whose instances the
+    closure reaches, as ``(name, defined_in)`` keys.
+
+    They are in the `closure` section, a header's ones included, so the
+    external section does not list them, and a header macro is not the
+    target's own either (`scope.owned_macro`). A generator is never a callee,
+    so no reach gate admits it: the symbol records admit these on this test,
+    as they admit the external section's entries."""
+    closure_paths = scope.load_closure_paths(scope_json)
+    external_types = scope.load_entities(scope_json, scope.EXTERNAL, "types")
+    return {(name, fam["def_file"])
+            for name, fam in _mf.load(csv_dir_t1.parent).items()
+            if fam["def_file"] in closure_paths
+            and generator_reached(fam, closure_paths, external_types)}
 
 
 # --------------------------------------------------------------- include graph
@@ -167,10 +192,15 @@ def build_index(
     for r in (*funcs, *globals_, *macros):
         sym_index[(r["name"], r["def_file"])] = r
 
-    tgt_funcs = scope.load_entities(scope_json_path, scope.TARGETED, "functions")
-    tgt_globals = scope.load_entities(scope_json_path, scope.TARGETED, "globals")
-    tgt_macros = scope.load_entities(scope_json_path, scope.TARGETED, "macros")
-    # The targeted-file entities the config's items narrowed out are another
+    tgt_funcs = scope.owned_entities(scope_json_path, "functions")
+    tgt_globals = scope.owned_entities(scope_json_path, "globals")
+    # Only the closure's TU-local macros, not every macro of the `closure`
+    # section: a header `#define` cannot be re-exported Rust->C, so only a
+    # macro of a closure `.c` is the target's own (`scope.owned_macro`). A
+    # closure header's macro passes the reach gate like any macro the target
+    # does not own, and seeds no callee walk.
+    tgt_macros = scope.owned_entities(scope_json_path, "macros")
+    # The closure-file entities the config's items narrowed out are another
     # config's: they seed no walk here, so their dependencies are not ours.
     narrowed = {(e["name"], e.get("defined_in") or "")
                 for es in (scope._doc(scope_json_path).get("narrowed") or {}).values()
@@ -386,32 +416,32 @@ def compose_import(
     type_rows: list[dict],
     field_type_rows: list[dict],
 ) -> dict:
-    """Build the ``imported`` section:
+    """Build the ``external`` section:
     ``{files, functions, globals, macros, types}``.
 
     ``files`` is the narrowed import-header surface; the entity buckets list
     the reached items with their import header(s) (``declared_in``) and a
     ``reexport`` flag when an item is imported through more than one header.
 
-    Two complementary walks out of the TARGETED section:
+    Two complementary walks out of the CLOSURE section:
 
       - **symbols** — expand each target symbol's ``depends_on`` edges (the
         callable surface plus the types its signature and body name),
         classifying each as an import (the FFI frontier) or as target (keep
         walking, via its own seed).
       - **types** — walk the CodeQL field-type graph (``type_rows`` = T1
-        ``types``, ``field_type_rows`` = T2 ``field_type_uses``). A TARGETED
+        ``types``, ``field_type_rows`` = T2 ``field_type_uses``). A CLOSURE
         struct is full-scanned: it is the target's own layout, so every field
-        type is a real dep. An IMPORTED struct walks only the fields targeted code
+        type is a real dep. An EXTERNAL struct walks only the fields closure code
         actually accesses (``target_touched``) — bindgen owns the rest. This
         is what pulls a by-value-embedded external type like
         ``pthread_mutex_t`` (``git_odb.lock``) into the surface.
 
-    There is one walk, always: the targeted section is never empty (it is
+    There is one walk, always: the closure section is never empty (it is
     `impl_files` ∪ `api_headers`), so the
-    imported section is always its DERIVED closure — the external frontier.
+    external section is always its DERIVED closure — the external frontier.
     The alternative seeded walk this function used to carry, for a wrap
-    campaign whose targeted section composed empty, is retired: the public
+    campaign whose closure section composed empty, is retired: the public
     surface is now the cross-cutting `api` view, selected on declaration sites
     by `scope_manifest._api_entities`, and a wrap campaign schedules on that
     rather than on a section that had to pretend the library was foreign to
@@ -439,7 +469,7 @@ def compose_import(
         """Headers declaring the item that the importing TU actually #includes.
 
         ``tu`` is the target TU whose dependency pulled this item in. ``None``
-        marks an item reached from a TARGETED entity that is not itself a TU —
+        marks an item reached from a CLOSURE entity that is not itself a TU —
         a header-declared type, or any entity on a target with no `.c` of its
         own — so there is no include graph to consult and the target's own
         file set stands in for it.
@@ -464,7 +494,7 @@ def compose_import(
         return [d for d in decls if d.endswith((".h", ".hpp", ".hh"))] or decls
 
     def add_sym(name: str, df: str, decls: list[str], tu: str | None) -> None:
-        if not name or scope.classify(df, decls, target_paths) != scope.IMPORTED:
+        if not name or scope.classify(df, decls, target_paths) != scope.EXTERNAL:
             return
         via = narrow(decls, tu)
         if not via:
@@ -530,7 +560,7 @@ def compose_import(
             return  # scalar/primitive typedef (Rust primitive) or a callback
                     # (a sym, handled on the symbol surface) — not a wrap-type.
         df, decls = meta["def_file"], meta["decls"]
-        if scope.classify(df, decls, target_paths) != scope.IMPORTED:
+        if scope.classify(df, decls, target_paths) != scope.EXTERNAL:
             return
         via = narrow(decls, tu)
         if not via:
@@ -597,7 +627,7 @@ def compose_import(
             return
         cls = scope.classify(meta["def_file"], meta["decls"], target_paths)
         edges = field_edges.get(key, [])
-        if cls == scope.IMPORTED:
+        if cls == scope.EXTERNAL:
             add_type_key(key, tu)
             # A struct whose DEFINITION is in a file the config named is a
             # public value type: its fields are the API, so every field type is
@@ -642,9 +672,9 @@ def compose_import(
         # Skip target callbacks — they're already collected in
         # target.functions by scope_manifest. Only emit import callbacks here
         # to avoid bucket overlap.
-        if scope.classify(df, decls, target_paths) != scope.IMPORTED:
+        if scope.classify(df, decls, target_paths) != scope.EXTERNAL:
             continue
-        # A callback declared in a TARGETED file needs no reachability: the
+        # A callback declared in a CLOSURE file needs no reachability: the
         # config named the header, so the API it is a parameter of is in scope
         # whether or not anything calls through it.
         in_target = bool(df in target_paths
@@ -687,10 +717,8 @@ def compose_import(
     # `depends_on` -- and a generator is never a callee: it expands once at file
     # scope to mint a type. Its family IS reached, through the instances, and the
     # generic those instances alias has to be emitted by somebody, so emit the
-    # macro itself. Same shape as the callback path above: narrow `declared_in`
-    # to the header a target TU actually includes, or admit the generator when
-    # its own defining header is itself a target file, the include test having
-    # nothing to run against.
+    # macro itself, when a closure TU includes its defining header. One defined
+    # in a closure file is the closure section's, not this one's.
     for _macro, _fam in _mf.load(csv_dir_t1.parent).items():
         _df = _fam["def_file"]
         if not _df or (_macro, _df) in sym_items:
@@ -709,14 +737,14 @@ def compose_import(
         # closure. `classify` is NOT the test -- it would call any system header
         # an import whether or not this target reaches it, readmitting PCRE2 and
         # LHASH with zero reachable members.
-        _reached = any(
-            (tag, df) in type_items
-            or df in target_paths
-            for tag, df in _fam["members"])
-        if not _reached:
+        if not generator_reached(_fam, target_paths, type_items):
             continue
-        if _df not in target_paths and not any(
-                _df in closure(p) for p in target_paths):
+        # A generator defined in a closure file is in the `closure` section,
+        # its definition being there, and so is none of this section's: the
+        # symbol records admit it through `closure_generators` instead.
+        if _df in target_paths:
+            continue
+        if not any(_df in closure(p) for p in target_paths):
             continue
         rec = sym_items.setdefault((_macro, _df), {
             "name": _macro, "defined_in": _df, "declared_in": set()})
@@ -776,19 +804,20 @@ def compose_import(
 
     return {
         "_comment": (
-            "The IMPORTED section: everything the TARGETED set reaches that "
+            "The EXTERNAL section: everything the CLOSURE set reaches that "
             "`wavefront-config.json` does not name — the FFI frontier, i.e. this "
             "campaign's EXTERNAL dependencies. "
-            "DERIVED and regenerable from `targeted`; recompute when it changes. "
-            "Computed by compose/import_closure.py by expanding each targeted "
+            "DERIVED and regenerable from `closure`; recompute when it changes. "
+            "Computed by compose/import_closure.py by expanding each closure "
             "symbol's `depends_on` edges and walking the CodeQL field-type "
             "graph. `declared_in` is narrowed to the header(s) the importing "
             "target TU actually #includes (build-resolved), or to one "
             "canonical header when the reacher is not a TU. `reexport: true` "
             "marks an item imported through >1 header. Membership here says "
-            "the campaign does not OWN the item, not what will be done with "
-            "it. Objective-independent: a `wrap` campaign owns its library "
-            "just as a `port` one does, so its own entities are TARGETED and "
+            "the item is defined outside the closure, not what will be done "
+            "with it. Objective-independent: a `wrap` campaign's library is in "
+            "its closure just as a `port` one's is, so its own entities are "
+            "CLOSURE and "
             "only genuinely foreign code lands here. What a wrap campaign "
             "publishes is the sibling `api` view, not this section."
         ),

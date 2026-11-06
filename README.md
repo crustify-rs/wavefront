@@ -56,7 +56,7 @@ wavefront REPO_ROOT --config PATH COMMAND ...
 | `state_dir` | Directory for the CodeQL database and tables, ownership findings, and caches. |
 | `closure` | The program Wavefront analyzes, for its graph, queries and usage counts: `impl_files`, the sources and private headers that implement it, and `api_headers`, the headers that publish its API, each `included` files and directories, less what `excluded` matches. See [Files](docs/scoping.md#files). |
 | `modules` | Optional. Module records, `{name, files}`, each file entry as in `schedule_seeds`: a schedule orders each module's units together, the modules in dependency order with their cycles cut. A unit no module claims is ordered alone. See [Modules](docs/scoping.md#modules). |
-| `schedule_seeds` | Optional. What `wavefront schedule` starts from: a list of file entries, each seeding what its file defines or declares; a schedule holds its seeds and what they depend on. A file entry is a path, or `{path, items}` whose `included` and `excluded` items, each `{name, kind}`, narrow what it seeds. Without it, everything the closure targets. See [Schedule seeds](docs/scoping.md#schedule-seeds). |
+| `schedule_seeds` | Optional. What `wavefront schedule` starts from: a list of file entries, each seeding what its file defines or declares; a schedule holds its seeds and what they depend on. A file entry is a path, or `{path, items}` whose `included` and `excluded` items, each `{name, kind}`, narrow what it seeds. Without it, every unit of the closure. See [Schedule seeds](docs/scoping.md#schedule-seeds). |
 | `t3_dir` | Optional. Directory, relative to `state_dir`, holding the T3 tables ([`examples/t3/`](examples/t3/)). |
 
 Paths are relative to `REPO_ROOT`. A trailing slash selects a directory
@@ -85,7 +85,7 @@ wavefront REPO_ROOT --config PATH query {types,symbols,files,dag} [FLAGS]
 |---|---|
 | `types` | Type records: fields, casts, users, and findings. |
 | `symbols` | Symbol records: signatures, callers and callees, and findings. |
-| `files` | The targeted, imported, and API file sets. |
+| `files` | The closure, external, and API file sets. |
 | `dag` | Dependency closures, graph layers, and cycle twins. |
 
 Common flags:
@@ -94,7 +94,7 @@ Common flags:
 |---|---|
 | `--name NAME ...` | Select entities by name. Without it, `types` and `symbols` list names. |
 | `--file FILE ...` | Narrow named entities to those defined in these files. |
-| `--targeted-only`, `--imported-only` | Keep entities the config owns, or the external ones it reaches. |
+| `--closure-only`, `--external-only` | Keep entities defined in the closure's files, or the external ones it reaches. |
 | `--api-only` | Keep entities the `api_headers` publish. |
 | `--update FINDINGS` | Submit findings for one named entity (`-` reads stdin). |
 | `--in-tree`, `--out-of-tree` | Listing only: keep entities defined inside, or outside, the repository. |
@@ -179,7 +179,7 @@ changing the order. Each unit carries its module, its `defined_in` and
 | `--output PATH` | | Required. Output file; its directory must exist. |
 | `--api-headers-only` | | Schedule the public API from the public-signature graph. |
 | `--with-enums` | | Schedule enums, which are otherwise dependencies only. |
-| `--with-macros` | | Schedule every macro the closure's files define; otherwise only type generators. |
+| `--with-macros` | | Schedule every macro the closure's files define; otherwise only the type generators its `.c` files define. |
 | `--max-types N` | none | Types per type batch. |
 | `--min-fields N` | none | Declared fields that close a type batch. |
 | `--max-syms N` | none | Symbols per symbol batch. |
@@ -202,7 +202,7 @@ See [`examples/schedule.json`](examples/schedule.json) for the output.
 | Document | Contents |
 |---|---|
 | [`docs/graph.md`](docs/graph.md) | The dependency graph: nodes, edges, type erasure, cycles, polymorphism, and limitations. |
-| [`docs/scoping.md`](docs/scoping.md) | The closure, the schedule seeds, targeted and imported entities, the API view, and default and API modes. |
+| [`docs/scoping.md`](docs/scoping.md) | The closure, the schedule seeds, closure and external entities, the API view, and default and API modes. |
 | [`docs/batching.md`](docs/batching.md) | Units, their order, waves, and batch caps. |
 | [`docs/pointer-properties.md`](docs/pointer-properties.md) | The pointer properties recorded in the ownership store. |
 | [`docs/type-lifecycle.md`](docs/type-lifecycle.md) | Lifecycle roles, and how to find the routines that play them. |

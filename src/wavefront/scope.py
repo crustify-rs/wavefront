@@ -10,8 +10,8 @@ graph, and the same fix applies — compose it, don't cache it.
 
 Two halves, both composer-only:
 
-  ``targeted``  from `wavefront-config.json` + T1, ~0.12s
-  ``imported``  the closure of ``targeted`` over T1/T2, ~1.4s (dominated by
+  ``closure``   from `wavefront-config.json` + T1, ~0.12s
+  ``external``  what ``closure`` reaches over T1/T2, ~1.4s (dominated by
                 parsing `macro_expansions.csv` and friends)
 
 Plus a cross-cutting ``api`` view: what ``api_headers`` PUBLISHES, selected on
@@ -76,24 +76,24 @@ def build(layout: Layout, target: Path, *, stage: str) -> dict:
     import json
     config = json.loads(config_path.read_text())
     manifest = _sm.compose(config_path, t1, layout.repo_root)
-    target_paths = _scope.load_targeted_paths(manifest)
+    closure_paths = _scope.load_closure_paths(manifest)
     # An empty file set means the campaign covers nothing. There is no implicit
     # walk to fall back on, so this is always a config error — a mistyped path,
     # or a list that never got filled in — and it would otherwise compose a
     # well-formed, entirely empty scope that every later stage reports as
     # "nothing to do".
-    if not target_paths:
+    if not closure_paths:
         raise SystemExit(
             f"{stage}: {config_path} selects no files. `{_sm.CLOSURE}.{_sm.IMPL_FILES}` "
             f"and `{_sm.API_HEADERS}` are both empty, or name paths that nothing "
             f"under {layout.repo_root} matches, or name only files this build "
             f"never compiled (the sets are anchored on the T1 tables).")
-    # The imported half needs the targeted half, and only that — it reads
+    # The external half needs the closure half, and only that — it reads
     # no composed type or symbol records, so scope stands alone ahead of them.
-    manifest[_scope.IMPORTED] = compose_import(
+    manifest[_scope.EXTERNAL] = compose_import(
         t1, t2, manifest,
         _scope.load_csv(includes_csv),
-        target_paths,
+        closure_paths,
         _scope.load_csv(t1 / "types.csv"),
         _scope.load_csv(t2 / "field_type_uses.csv"),
     )

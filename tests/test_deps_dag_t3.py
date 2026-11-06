@@ -98,7 +98,7 @@ class T3DagTests(unittest.TestCase):
     def test_api_mode_prunes_casts_off_the_graph(self) -> None:
         # Ctx is downcast to the internal Priv. Casts are collected
         # program-wide in both modes; the graph decides: while Priv is one of
-        # its nodes (an imported type) the edge stays, and once Priv is off
+        # its nodes (an external type) the edge stays, and once Priv is off
         # the closure the edge goes with it.
         ctx, priv = ("Ctx", "log.h"), ("Priv", "priv.c")
         for api in (False, True):

@@ -99,14 +99,14 @@ def load(config: dict, repo_root: Path) -> list[Entry] | None:
     """The config's ``schedule_seeds`` as file entries, validated: every file lies
     within the closure. ``None`` when the config lists none: every unit is a
     seed."""
-    from compose.scope_manifest import targeted_candidates
+    from compose.scope_manifest import closure_candidates
 
     if SCHEDULE not in config:
         return None
     records = config[SCHEDULE]
     if not isinstance(records, list) or not records:
         _fail(f"`schedule_seeds` must be a non-empty list. {_HINT}")
-    closure = set(targeted_candidates(config, repo_root))
+    closure = set(closure_candidates(config, repo_root))
     out: list[Entry] = []
     for i, rec in enumerate(records):
         out.extend(file_entry(rec, f"schedule_seeds[{i}]", repo_root, closure))
@@ -114,10 +114,13 @@ def load(config: dict, repo_root: Path) -> list[Entry] | None:
 
 
 def declarations(inventory: dict) -> dict[NodeKey, set[str]]:
-    """The declaration files of every targeted entity, keyed as the dag keys
-    its node: by its home, the defining file or, without one, its canonical
-    declaration. A tag's declaration-only rows fold into its definitions, as
-    the graph folds them."""
+    """The declaration files of every entity the closure owns, keyed as the
+    dag keys its node: by its home, the defining file or, without one, its
+    canonical declaration. A tag's declaration-only rows fold into its
+    definitions, as the graph folds them. A macro a closure header defines is
+    in the `closure` section but not owned (`compose.scope.owned_macro`): it
+    is no unit but with ``--with-macros``, and an item names it then through
+    the units."""
     from compose import scope as compose_scope
 
     doc = compose_scope._doc(inventory)
@@ -125,8 +128,11 @@ def declarations(inventory: dict) -> dict[NodeKey, set[str]]:
     floating: dict[str, set[str]] = defaultdict(set)
     for bucket, kind in (("types", "type"), ("functions", "symbol"),
                          ("globals", "symbol"), ("macros", "symbol")):
-        for e in doc.get(compose_scope.TARGETED, {}).get(bucket, []):
+        owned = compose_scope.owned_entities(doc, bucket)
+        for e in doc.get(compose_scope.CLOSURE, {}).get(bucket, []):
             name = compose_scope.entry_tag(e)
+            if (name, e.get("defined_in") or "") not in owned:
+                continue
             decls = set(e.get("declared_in") or ())
             if kind == "type" and not e.get("defined_in"):
                 floating[name] |= decls
@@ -141,7 +147,7 @@ def declarations(inventory: dict) -> dict[NodeKey, set[str]]:
 
 def check(entries: list[Entry], decls: dict[NodeKey, set[str]],
           units=()) -> None:
-    """Refuse an item that names no targeted entity or unit its file defines
+    """Refuse an item that names no owned entity or unit its file defines
     or declares: a misspelt name, or the wrong kind."""
     known: dict[str, set[tuple[str, str]]] = defaultdict(set)
     for (name, home, kind), files in decls.items():
@@ -155,7 +161,7 @@ def check(entries: list[Entry], decls: dict[NodeKey, set[str]],
     if bad:
         lines = [f"  - {path} items.{part}: {kind} {name}"
                  for path, part, (name, kind) in bad[:40]]
-        _fail(f"{len(bad)} item(s) name no targeted entity their file "
+        _fail(f"{len(bad)} item(s) name no owned entity their file "
               f"defines or declares:\n" + "\n".join(lines))
 
 

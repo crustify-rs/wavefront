@@ -21,7 +21,7 @@ composer, agent, and redo precursors all share the same semantics.
 
 | in-memory inventory passed? | Effect on seeds and closure |
 |---|---|
-| **No** (default) | No port/wrap split. Every entry is wrap-shape (base only). No closure expansion. Seeds emit only if they pass `--targeted-only`/`--imported-only` (and the wrap_only side admits everything). |
+| **No** (default) | No port/wrap split. Every entry is wrap-shape (base only). No closure expansion. Seeds emit only if they pass `--closure-only`/`--external-only` (and the wrap_only side admits everything). |
 | **Yes** | Port/wrap classification per the in-memory inventory. A seed is admitted iff it's target-section OR wrap-reachable from port code per the in-memory inventory. Port seeds emit with port additions; wrap seeds + closure entries emit as base shape. |
 
 ## Why in-memory inventory is optional now

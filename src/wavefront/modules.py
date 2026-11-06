@@ -34,14 +34,14 @@ class Module:
 
 def load(config: dict, repo_root: Path) -> list[Module]:
     """The config's ``modules``, validated; empty without any."""
-    from compose.scope_manifest import targeted_candidates
+    from compose.scope_manifest import closure_candidates
 
     if MODULES not in config:
         return []
     records = config[MODULES]
     if not isinstance(records, list) or not records:
         _fail(f"`modules` must be a non-empty list. {_HINT}")
-    closure = set(targeted_candidates(config, repo_root))
+    closure = set(closure_candidates(config, repo_root))
     out: list[Module] = []
     seen: set[str] = set()
     for i, rec in enumerate(records):

@@ -105,29 +105,29 @@ def _add_query_flags(p: argparse.ArgumentParser, *, facets: bool) -> None:
     records). On a type, `--fields`/`--lifecycle-ops` print its windowable lists
     (`facets`)."""
     sc = p.add_mutually_exclusive_group()
-    sc.add_argument("--imported-only", action="store_true", dest="imported_only",
-                    help="Narrow to the IMPORTED section — this campaign's "
-                         "EXTERNAL dependencies: everything the targeted set "
-                         "reaches but does not own. Always the derived closure, "
+    sc.add_argument("--external-only", action="store_true", dest="external_only",
+                    help="Narrow to the EXTERNAL section — this campaign's "
+                         "EXTERNAL dependencies: everything the closure "
+                         "reaches that is defined outside it. Always derived, "
                          "in the objective-neutral inventory. Enumeration → "
-                         "imported entries; --lifecycle-ops/--users → imported "
-                         "functions; --fields/--field-touchers → fields touched "
-                         "by imported code. (Facets are complete by default.)")
-    sc.add_argument("--targeted-only", action="store_true", dest="targeted_only",
-                    help="Narrow to the TARGETED section — the library this "
-                         "campaign OWNS: what `wavefront-config.json`'s "
-                         "`impl_files` + `api_headers` name, DEFINITION-anchored. "
-                         "Objective-neutral. Enumeration → targeted "
-                         "entries; --lifecycle-ops/--users → targeted functions; "
-                         "--fields/--field-touchers → fields touched by targeted "
-                         "code. (Facets are complete by default.) Says what the "
+                         "external entries; --lifecycle-ops/--users → external "
+                         "functions. (Facets are complete by default.)")
+    sc.add_argument("--closure-only", action="store_true", dest="closure_only",
+                    help="Narrow to the CLOSURE section — every entity "
+                         "defined in the files `wavefront-config.json`'s "
+                         "`impl_files` + `api_headers` name, DEFINITION-anchored "
+                         "(a closure header's macros included). "
+                         "Objective-neutral. Enumeration → closure "
+                         "entries; --lifecycle-ops/--users → closure functions; "
+                         "--fields/--field-touchers → fields touched by the "
+                         "closure's own code. (Facets are complete by default.) Says what the "
                          "campaign COVERS, not what one wave does with it — that "
                          "is `translate --objective`.")
     # NOT in the `sc` exclusive group: `api` is an AXIS, not a section. It cuts
-    # PUBLICATION (does a named header declare it) where targeted/imported cut
-    # OWNERSHIP (whose body is it), so the two compose. `--api-only
-    # --imported-only` is the re-export query — published by this library,
-    # owned by another — and refusing it would lose the one fact that
+    # PUBLICATION (does a named header declare it) where closure/external cut
+    # LOCATION (where is it defined), so the two compose. `--api-only
+    # --external-only` is the re-export query — published by this library,
+    # defined by another — and refusing it would lose the one fact that
     # distinguishes a re-export from an ordinary import.
     p.add_argument("--api-only", action="store_true", dest="api_only",
                    help="Narrow to the API view — what `wavefront-config.json`'s "
@@ -135,19 +135,19 @@ def _add_query_flags(p: argparse.ArgumentParser, *, facets: bool) -> None:
                         "sites (a public header publishes what it declares; "
                         "the bodies live in the .c files behind it). This is "
                         "the set a `wrap` campaign translates. INTERSECTS with "
-                        "--targeted-only / --imported-only rather than "
-                        "excluding them: `--api-only --targeted-only` is the "
-                        "public surface this campaign also owns, and "
-                        "`--api-only --imported-only` is the re-export set.")
+                        "--closure-only / --external-only rather than "
+                        "excluding them: `--api-only --closure-only` is the "
+                        "public surface this campaign also defines, and "
+                        "`--api-only --external-only` is the re-export set.")
     og = p.add_mutually_exclusive_group()
     og.add_argument("--out-of-tree", action="store_true", dest="out_of_tree",
                     help="Enumeration only. Keep entries whose home is OUTSIDE the "
                          "repository (system / toolchain headers). Combines with the "
-                         "scope flags: `--imported-only --out-of-tree` is the permanent FFI "
-                         "floor — code that can never move into the targeted section.")
+                         "scope flags: `--external-only --out-of-tree` is the permanent FFI "
+                         "floor — code that can never move into the closure.")
     og.add_argument("--in-tree", action="store_true", dest="in_tree",
                     help="Enumeration only. Keep entries whose home is INSIDE the "
-                         "repository. `--imported-only --in-tree` is first-party code "
+                         "repository. `--external-only --in-tree` is first-party code "
                          "wrapped only because this target does not port it — the "
                          "remaining port backlog.")
     p.add_argument("--name", nargs="+", action="extend", default=None, metavar="NAME",
@@ -165,8 +165,8 @@ def _add_query_flags(p: argparse.ArgumentParser, *, facets: bool) -> None:
         facet.add_argument("--fields", action="store_true",
                            help="Introspect a type: all declared fields, split into "
                                 "their composed records and their findings; "
-                                "--targeted-only narrows to the fields the config's "
-                                "own code reaches (--imported-only does not apply).")
+                                "--closure-only narrows to the fields the config's "
+                                "own code reaches (--external-only does not apply).")
         facet.add_argument("--lifecycle-ops", action="store_true",
                            dest="lifecycle_ops",
                            help="Introspect a type: its LIFECYCLE surface only — "
@@ -181,15 +181,15 @@ def _add_query_flags(p: argparse.ArgumentParser, *, facets: bool) -> None:
                                 "opaque_in ∪ non_opaque_in functions (every function "
                                 "tree-wide that USES the type, as a handle or through "
                                 "a field, incl. out-of-scope); "
-                                "--targeted-only/--imported-only intersect with that section's "
+                                "--closure-only/--external-only intersect with that section's "
                                 "functions; '[]' if none. Wider than --lifecycle-ops, "
                                 "and unordered.")
         facet.add_argument("--field-touchers", action="store_true",
                            dest="field_touchers",
                            help="Introspect a type: {field: [touchers]} — ALL "
-                                "declared fields by default; --targeted-only "
+                                "declared fields by default; --closure-only "
                                 "narrows the FIELDS to the subset this target's "
-                                "code reaches; --imported-only does not apply. "
+                                "code reaches; --external-only does not apply. "
                                 "each field's toucher set is the COMPLETE, unfiltered "
                                 "set of functions that access it.")
     else:
@@ -228,7 +228,7 @@ def _add_query_flags(p: argparse.ArgumentParser, *, facets: bool) -> None:
                  "allocation primitive. No --name needed.")
         # The raw use-graph closure around a symbol. Distinct from `query dag
         # --name F --depth N`, which walks the ORDERING graph: scope-narrowed
-        # (an imported symbol contributes no callees at all) and carrying the
+        # (an external symbol contributes no callees at all) and carrying the
         # layering. These two walk the graph the C actually wrote.
         facet.add_argument(
             "--callees", action="store_true", dest="callees",
@@ -278,7 +278,7 @@ def _add_query_command(sub) -> None:
         help=(
             "Read-only oracle. `types`/`symbols` enumerate (filtered, as a name "
             "list) or introspect one (--name) as the whole record. "
-            "`files` lists the targeted / imported section file sets. "
+            "`files` lists the closure / external section file sets. "
             "`dag` does the graph walks (closure / layer / scc)."
         ),
     )
@@ -292,7 +292,7 @@ def _add_query_command(sub) -> None:
         "ownership store holds anything for this entity — `lifetime: null` "
         "alone cannot distinguish 'nobody looked' from 'an agent found no "
         "lifecycle role'; `pending` lists the pointer slots with no ownership "
-        "block, counted per section under --targeted-only/--imported-only. "
+        "block, counted per section under --closure-only/--external-only. "
         "A type carries no lifecycle of its own: dropped_by / "
         "fields_disposed_by / cloned_by are reverse-derived from the acting "
         "symbols' `lifetime` blocks. "
@@ -305,7 +305,7 @@ def _add_query_command(sub) -> None:
         "type's destructor in another scope is readable, submittable through "
         "--update, and comes back from --lifetime-for. Scope gates emission, "
         "not content: an emitted record's depends_on / used_by are "
-        "codebase-wide whatever its scope, so an imported node's "
+        "codebase-wide whatever its scope, so an external node's "
         "depends_on.syms is populated and safe to walk. "
         "Every graph walk here (--callees / --callers / --calling) is keyed on "
         "(name, defined_in), never on the bare name, and reports both halves: "
@@ -327,13 +327,13 @@ def _add_query_command(sub) -> None:
 
     files_q = query_sub.add_parser(
         "files",
-        help="Scope files: --targeted-only (what the campaign owns) or "
-             "--imported-only (its derived external dependency frontier).",
+        help="Scope files: --closure-only (the files the campaign names) or "
+             "--external-only (its derived external dependency frontier).",
     )
     files_sel = files_q.add_mutually_exclusive_group()
     files_sel.add_argument(
-        "--targeted-only", action="store_true", dest="targeted_only",
-        help="Print what the campaign owns (in-memory inventory.targeted.files). "
+        "--closure-only", action="store_true", dest="closure_only",
+        help="Print the closure's files (in-memory inventory.closure.files). "
              "Computed identically for `port` and `wrap` campaigns.",
     )
     files_q.add_argument(
@@ -342,10 +342,10 @@ def _add_query_command(sub) -> None:
              "that publish the library, T1-anchored.",
     )
     files_sel.add_argument(
-        "--imported-only", action="store_true", dest="imported_only",
-        help="Print the imported closure — entities reached by the targeted "
-             "set but owned outside it, with files narrowed to the headers "
-             "actually used (in-memory inventory.imported.files). Objective-independent; "
+        "--external-only", action="store_true", dest="external_only",
+        help="Print the external section's files — entities reached by the "
+             "closure but defined outside it, with files narrowed to the headers "
+             "actually used (in-memory inventory.external.files). Objective-independent; "
              "a `wrap` campaign schedules the separate API view.",
     )
 
@@ -418,16 +418,16 @@ def _add_query_command(sub) -> None:
     )
     dag_scope = dag_q.add_mutually_exclusive_group()
     dag_scope.add_argument(
-        "--imported-only", action="store_true", dest="imported_only",
-        help="Restrict the node set (slice / --loc) to IMPORTED entities "
-             "(in-memory inventory's derived / seeded closure).",
+        "--external-only", action="store_true", dest="external_only",
+        help="Restrict the node set (slice / --loc) to EXTERNAL entities "
+             "(in-memory inventory's derived external section).",
     )
     dag_scope.add_argument(
-        "--targeted-only", action="store_true", dest="targeted_only",
-        help="Restrict the node set (slice / --loc) to TARGETED entities "
-             "(the inventory's own file set — the library itself). Pair with "
-             "--api-only for the public surface "
-             "it owns.",
+        "--closure-only", action="store_true", dest="closure_only",
+        help="Restrict the node set (slice / --loc) to CLOSURE entities "
+             "(defined in the inventory's own file set — the library "
+             "itself). Pair with --api-only for the public surface "
+             "it defines.",
     )
 
 
@@ -436,8 +436,8 @@ def _dispatch_query(args: argparse.Namespace, target: Path) -> None:
         from wavefront.query import query_files
         query_files(
             target,
-            targeted_only=bool(getattr(args, "targeted_only", False)),
-            imported_only=bool(getattr(args, "imported_only", False)),
+            closure_only=bool(getattr(args, "closure_only", False)),
+            external_only=bool(getattr(args, "external_only", False)),
             api_only=bool(getattr(args, "api_only", False)),
         )
         return
@@ -451,8 +451,8 @@ def _dispatch_query(args: argparse.Namespace, target: Path) -> None:
             scc=getattr(args, "scc", None),
             layer=getattr(args, "layer", None),
             loc=bool(getattr(args, "loc", False)),
-            imported_only=bool(getattr(args, "imported_only", False)),
-            targeted_only=bool(getattr(args, "targeted_only", False)),
+            external_only=bool(getattr(args, "external_only", False)),
+            closure_only=bool(getattr(args, "closure_only", False)),
             api_only=bool(getattr(args, "api_only", False)),
             api_headers_only=bool(getattr(args, "api_headers_only", False)),
             kind=getattr(args, "kind", None),
@@ -464,8 +464,8 @@ def _dispatch_query(args: argparse.Namespace, target: Path) -> None:
         subject=args.subject,
         names=getattr(args, "name", None),
         files=getattr(args, "files", None),
-        imported_only=bool(getattr(args, "imported_only", False)),
-        targeted_only=bool(getattr(args, "targeted_only", False)),
+        external_only=bool(getattr(args, "external_only", False)),
+        closure_only=bool(getattr(args, "closure_only", False)),
         out_of_tree=bool(getattr(args, "out_of_tree", False)),
         in_tree=bool(getattr(args, "in_tree", False)),
         fields=bool(getattr(args, "fields", False)),

@@ -27,7 +27,7 @@ def _fn(name: str, df: str = "src/mem.c", decls: str = "include/mem.h") -> dict:
 
 class ClosureTests(unittest.TestCase):
     """`closure` names the program Wavefront analyzes: its files' entities are
-    the targeted section, whole (docs/scoping.md#files)."""
+    the closure section, whole (docs/scoping.md#files)."""
 
     def _compose(self, **config) -> dict:
         with tempfile.TemporaryDirectory() as td:
@@ -58,10 +58,10 @@ class ClosureTests(unittest.TestCase):
 
     def test_the_closure_owns_its_files_whole(self) -> None:
         m = self._compose()
-        self.assertEqual(self._names(m["targeted"], "functions"),
+        self.assertEqual(self._names(m["closure"], "functions"),
                          {"mem_alloc", "mem_free", "str_dup", "mem_hook"})
-        self.assertEqual(self._names(m["targeted"], "globals"), {"pool"})
-        self.assertEqual(self._names(m["targeted"], "types"), {"pool"})
+        self.assertEqual(self._names(m["closure"], "globals"), {"pool"})
+        self.assertEqual(self._names(m["closure"], "types"), {"pool"})
 
     def test_excluded_files_leave_a_directory_entry(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -72,7 +72,7 @@ class ClosureTests(unittest.TestCase):
             config = {"closure": {
                 "impl_files": {"included": ["src/"], "excluded": ["src/tests/"]},
                 "api_headers": {"included": ["include/a.h"]}}}
-            self.assertEqual(scope_manifest.targeted_candidates(config, root),
+            self.assertEqual(scope_manifest.closure_candidates(config, root),
                              ["include/a.h", "src/a.c"])
 
     def test_errors(self) -> None:
