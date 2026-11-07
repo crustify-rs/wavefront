@@ -1,0 +1,4 @@
+"derived_name","derived_def_file","base_name","base_def_file","position","virtual","access"
+"kv::BytewiseComparatorImpl","src/misc.cc","kv::Comparator","include/kv/comparator.h","0","false","public"
+"kv::EmptyIterator","src/misc.cc","kv::Iterator","include/kv/iterator.h","0","false","public"
+"kv::MemTableIterator","src/memtable.cc","kv::Iterator","include/kv/iterator.h","0","false","public"

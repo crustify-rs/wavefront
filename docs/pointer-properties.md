@@ -7,6 +7,11 @@ as a pointer's properties, in the ownership store
 translation reads them to choose the pointer's Rust type: a reference, a
 slice, a string, an owning box, an `Option`.
 
+A C++ slot's type states some of these properties itself: a reference, a
+smart pointer, a container or a string. Its record composes them as `cpp`
+([`cpp.md`](cpp.md#ownership-nullability-and-cardinality)), and only a raw
+pointer leaves them all to a finding.
+
 ## Where pointers occur
 
 The same block of properties, `ptr`, describes a pointer wherever it occurs:

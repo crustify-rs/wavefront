@@ -56,6 +56,13 @@ that depends on the type through its own signature. Folding would project
 the call graph onto the types, and make the graph depend on which routines
 users judge droppers or cloners.
 
+A C++ class's lifecycle is the exception: its constructors, destructor, copy
+and move are the language's, not a judgement, so they fold into the class's
+node, which takes their edges and lists them as its `cpp.lifecycle`. Its
+other members stay symbol nodes that depend on the class and say which class
+they implement. A C++ entity is keyed by its qualified name, an instantiation
+by its template's ([`cpp.md`](cpp.md#identity)).
+
 ## Edges
 
 `A -> B` means A needs B first. Each edge comes from one fact:
@@ -66,6 +73,9 @@ users judge droppers or cloners.
 | signature | a function or callback | the types of its parameters and return | both |
 | body | a function, global or `.c` macro the config owns | the functions, globals and macros it references; the types its body uses | default |
 | generator | a type a T3 generator mints | the generator macro | both |
+| base | a C++ class | each base class, and the primary template a specialization specializes | both |
+| member | a C++ member function | its class | both |
+| override | a C++ override | the virtual function it overrides | both |
 | cast | see [Type erasure](#type-erasure) and [Polymorphism](#polymorphism) | | both |
 
 A struct's field edges are narrowed to the layout that matters to the
@@ -150,7 +160,9 @@ is an edge in its written direction: `X` cast to `T` makes X depend on T.
 An upcast to a base orders the base first, and an erasure to an engine
 orders the engine first. A downcast alone would order a base after its
 derived type; a T3 `base_derived` row states the pair's direction, and
-replaces the written edge for that pair with `derived -> base`.
+replaces the written edge for that pair with `derived -> base`. A C++ base
+class states it in the class head, and replaces the written edge the same
+way, without a row.
 
 Where the remaining cast edges form a cycle (both directions written, or a
 ring through several types) the written direction settles nothing, and

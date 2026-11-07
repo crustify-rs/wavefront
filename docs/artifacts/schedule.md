@@ -140,6 +140,8 @@ record names across a module boundary that is still in the other language.
 | `depended_on_by.cut` | the reverse: the units ordered before it whose dependency on it was cut |
 | `type_generator_for` | on a generator macro (T3 `type_generators.csv`), the instance types it mints, routed as one type so one generic is written for them; `[]` otherwise |
 | `used_fields` | on a type, the fields its users reach: in API mode every field of a type an `api_headers` file defines, and none of a type defined elsewhere; otherwise the fields the closure's own functions access |
+| `cpp` | C++ only, absent otherwise: on a class, what its declarations state, with `lifecycle`, the special members folded into it ([`cpp.md`](../cpp.md#lifecycle)) |
+| `member` | C++ only, absent otherwise: on a member function, the class it `implements` and what it is to it ([`syms.md`](syms.md#member)) |
 
 Each list is split into `types` and `symbols` by route, a generator macro
 among the types, and each reference in them is

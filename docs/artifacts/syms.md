@@ -40,6 +40,22 @@ Callback forks only, absent otherwise: the fork's index, from 1. The primary
 record has no `variant`. A fork's `used_by.call` is the subset of invokers
 that realize its contract.
 
+## member
+
+C++ only, absent on a free function: what a member function is to its class
+([`cpp.md`](../cpp.md#implementers-and-consumers)). `implements`, the class,
+`{name, defined_in}`; `member_kind`; `static`, `const`, `virtual`, `pure`,
+`access`; `defaulted` or `deleted` when true; `accessor`, `{kind, field}`,
+for a getter or setter; `overrides`, the virtual functions it overrides; and
+`lifecycle_role` on a special member, `null` when it is deleted.
+
+## cpp
+
+C++ only: the pointer properties each slot's type states, under `params`,
+keyed by position, and `return` for a function; directly for a global. Each
+is shaped as a C++ field's `cpp` ([`types.md`](types.md#cpp)), with the
+parameter's `name`.
+
 ## _analysis
 
 Derived at read time, never stored and never submitted.

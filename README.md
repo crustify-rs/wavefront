@@ -1,7 +1,7 @@
 # Wavefront
 
-Wavefront analyzes a C codebase and schedules its units in dependency order
-for translation to Rust. It extracts entities and dependencies with CodeQL,
+Wavefront analyzes a C or C++ codebase and schedules its units in dependency
+order for translation to Rust. It extracts entities and dependencies with CodeQL,
 builds a cycle-free dependency graph of the codebase's types and symbols, and
 packs that graph into ordered waves of batches. Each batch can be translated
 once the waves before it are complete.
@@ -13,6 +13,15 @@ polymorphic and type-erased edges it cannot infer; Wavefront loads them into
 the dependency graph, and its schedules order units by them. You can also
 record pointer-level ownership and lifecycle properties for each type and
 symbol, which Wavefront returns with their records.
+
+A C++ codebase states much of what a C one leaves to convention: a class's
+constructors, destructor, copy and move, its methods, its bases, its
+templates, and who owns, borrows or shares a pointer. Wavefront reads these
+from the declarations, still without data-flow: it folds a class's lifecycle
+into the class's node, marks the members that implement a class apart from
+the functions that consume it, orders bases, overridden functions and
+templates first, and composes the pointer properties a slot's type states.
+See [`docs/cpp.md`](docs/cpp.md).
 
 ## Requirements
 
@@ -212,6 +221,7 @@ See [`examples/schedule.json`](examples/schedule.json) for the output.
 | [`docs/batching.md`](docs/batching.md) | Units, their order, waves, and batch caps. |
 | [`docs/pointer-properties.md`](docs/pointer-properties.md) | The pointer properties recorded in the ownership store. |
 | [`docs/type-lifecycle.md`](docs/type-lifecycle.md) | Lifecycle roles, and how to find the routines that play them. |
+| [`docs/cpp.md`](docs/cpp.md) | C++: identity, what the type system states (lifecycle, members, bases, templates, ownership), what stays open, and the `cpp_*` tables. |
 | [`docs/artifacts/`](docs/artifacts/) | Field reference for type and symbol records, findings, the ownership store, schedules, and T3 tables. |
 
 ## Maintainers

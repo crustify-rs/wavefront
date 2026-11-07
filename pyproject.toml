@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "wavefront"
 version = "0.1.0"
-description = "Deterministic semantic analysis and wave scheduling for C codebases"
+description = "Deterministic semantic analysis and wave scheduling for C and C++ codebases"
 requires-python = ">=3.13"
 dependencies = []
 
@@ -17,7 +17,7 @@ where = ["src"]
 include = ["wavefront*", "compose*"]
 
 [tool.setuptools.data-files]
-"share/wavefront" = ["README.md", "src/qlpack.yml", "src/codeql-pack.lock.yml", "src/identity.qll"]
+"share/wavefront" = ["README.md", "src/qlpack.yml", "src/codeql-pack.lock.yml", "src/*.qll"]
 "share/wavefront/entities" = ["src/entities/*.ql"]
 "share/wavefront/edges" = ["src/edges/*.ql"]
 "share/wavefront/scratch" = ["src/scratch/*.ql"]

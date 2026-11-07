@@ -36,6 +36,13 @@ The lifecycle is read back from the routines:
 - `query symbols --lifetime-for T` lists the routines with a role on `T`,
   `void` or `string`.
 
+A C++ class states its lifecycle in its special members, and wavefront
+reads it from them rather than from the store: the class's record and
+schedule item list its constructors, destructor, copy and move with their
+roles, and the graph folds them into its node ([`cpp.md`](cpp.md#lifecycle)).
+The store's roles still describe a C++ codebase's free functions and
+factories.
+
 Lifecycle roles never change the dependency graph
 ([`graph.md`](graph.md#nodes)): a schedule is made before any role is
 known.

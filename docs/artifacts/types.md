@@ -74,6 +74,20 @@ of this type and so need its concrete layout (incl. transitive `a->b->field`
 reachers). COMPLETE: the FULL cross-codebase footprint for every
 type.
 
+## cpp
+
+C++ only, absent on a C type: what the class's declarations state
+([`cpp.md`](../cpp.md)). `keyword`, `template_params`, `specializes`,
+`abstract`, `polymorphic`, `final`, `copyable`, `movable` and `trivial`, as
+`t1/cpp_classes.csv` gives them; `special_members`, how it has each special
+member; `bases`, each `{name, defined_in, virtual, access}`; `lifecycle`, its
+special members and allocator, each `{name, defined_in, member_kind}` with
+its `role`, or `deleted`; and `implementers`, its other members, each
+`{name, defined_in, member_kind}`, with its `accessor` when it is one. A
+field of a C++ class carries `cpp` too: the pointer properties its type
+states (`chain`, `element`, `owned`, `borrowed`, `shared`, `nullable`,
+`mutable`, `cardinality`, `type`), each only when the type states it.
+
 ## _analysis
 
 Derived at read time, never stored and never submitted.
