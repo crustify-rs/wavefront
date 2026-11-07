@@ -80,11 +80,13 @@ try:                                  # package import (analyze.py)
     from . import macro_families as _mf
     from . import slot_casts
     from . import t3 as _t3
+    from . import cpp_facts as _cpp
 except ImportError:                   # script execution (python3 deps_dag.py)
     import scope as _scope            # type: ignore
     import macro_families as _mf      # type: ignore
     import slot_casts                 # type: ignore
     import t3 as _t3                  # type: ignore
+    import cpp_facts as _cpp          # type: ignore
 
 
 def _canonical_decl(declared_in: Any) -> str | None:
@@ -114,7 +116,7 @@ class TypeNode:
     __slots__ = ("tag", "def_file", "kind", "defined_in", "declared_in",
                  "ctype_refs", "dep_types", "dep_syms",
                  "cast_to", "cast_from", "nfields", "generated_by", "chased_bases",
-                 "cast_field_refs")
+                 "cast_field_refs", "cpp", "cpp_bases")
 
     def __init__(self, tag: str, def_file: str = "") -> None:
         self.tag = tag
@@ -136,6 +138,11 @@ class TypeNode:
         # (`slot_casts`) and T3 `erased_field` rows, less T3 `drop` rows.
         # Each depends on this owner, as a derived type on its base
         self.cast_field_refs: set = set()
+        # C++ (`cpp_facts`): what the class's declarations state, and the
+        # (name, def_file) of its bases and of the primary template it
+        # specializes, each a type it embeds or refines
+        self.cpp: dict | None = None
+        self.cpp_bases: set = set()
 
     def cast_degree(self, amap: dict | None = None, keep: set | None = None) -> int:
         """Cast-graph centrality: how many distinct types this one is cast
@@ -161,7 +168,7 @@ class SymNode:
     __slots__ = ("name", "file", "kind", "defined_in", "declared_in",
                  "has_dep", "dep_on_types", "dep_on_syms",
                  "sig_type_refs", "subkind", "dep_types", "dep_syms", "loc",
-                 "generates", "cast_sig_refs")
+                 "generates", "cast_sig_refs", "cpp", "cpp_class", "cpp_overrides")
 
     def __init__(self, name: str, file: str | None) -> None:
         self.name = name
@@ -187,6 +194,11 @@ class SymNode:
         self.dep_types: set[str] = set()
         self.dep_syms: set[SymKey] = set()        # resolved (name, file) keys
         self.loc: int = 0                         # body line span (port LoC budget)
+        # C++ (`cpp_facts`): a member's relation to its class, the class it
+        # implements, and the virtual functions it overrides
+        self.cpp: dict | None = None
+        self.cpp_class: "TypeKey | None" = None
+        self.cpp_overrides: set[SymKey] = set()
 
     @property
     def key(self) -> "TypeKey":
@@ -662,7 +674,7 @@ def collect_types_csv(codeql_dir: Path, api_paths: set[str] | None = None):
     for n, df in meta:
         defs[n].append(df)
     for n, rows in floating.items():
-        if len(defs.get(n) or ()) > 1:
+        if len(defs.get(n) or ()) > 1 and not _is_std_name(n):
             # C gives a tag no identity across translation units: a forward
             # declaration names whichever definition each unit that includes
             # it sees. With several definitions of the tag, folding it into
@@ -713,6 +725,12 @@ def collect_types_csv(codeql_dir: Path, api_paths: set[str] | None = None):
         edges[(sn, r.get("struct_def_file") or "")].append(
             (r.get("field_name") or "", tn, r.get("type_def_file") or ""))
     return meta, dict(edges), dict(casts), alias, _gen_of
+
+
+def _is_std_name(name: str) -> bool:
+    """A C++ standard library entity: its forward declarations name its
+    partial specializations, by design, and no user needs to check them."""
+    return name.startswith(("std::", "__gnu_cxx::", "__gnu_debug::", "__cxxabiv1::"))
 
 
 def _fold_type_row(m: dict, decls, kind: str, uak: str) -> None:
@@ -894,6 +912,10 @@ def _build_edges(types, syms, amap, cast_scope: tuple[set, set] | None = None):
     # `base -> derived` cast edge, only the stated `derived -> base`.
     chased_pairs = {(b, key) for key, n in types.items() for ref in n.chased_bases
                     if cast_t(key, b := _resolve_ctype(ref, amap, types))}
+    # A C++ base is stated by the class head, as a T3 `base_derived` row
+    # states one: its pair gets the `derived -> base` edge, never a cast edge.
+    chased_pairs |= {(b, key) for key, n in types.items() for ref in n.cpp_bases
+                     if (b := _resolve_ctype(ref, amap, types)) in types}
     for key, n in types.items():
         for ref in n.ctype_refs:                     # field refs (hard layout)
             # `n.dep_syms` passed so a field of function-pointer-typedef type
@@ -925,6 +947,13 @@ def _build_edges(types, syms, amap, cast_scope: tuple[set, set] | None = None):
         # generators, keyed `(macro, def_file)`, so a one-off macro has no edge.
         if n.generated_by in syms:
             n.dep_syms.add(n.generated_by)
+        # A C++ class embeds its bases, and a specialization refines its
+        # primary template: each is written first, as a field's type is, in
+        # every graph -- the class head is layout, not a body.
+        for ref in n.cpp_bases:
+            t = _resolve_ctype(ref, amap, types)
+            if t in types and t != key:
+                n.dep_types.add(t)
         # Chased base -> derived pair: the row states the direction (and the
         # cast edges below skip the reverse). A cycle a FIELD edge closes with
         # it is broken like any other.
@@ -1004,6 +1033,12 @@ def _build_edges(types, syms, amap, cast_scope: tuple[set, set] | None = None):
                 t = _resolve_ctype(ref, amap, types)
                 if t in keep_t:
                     n.dep_types.add(t)
+        # A C++ member implements its class, which it takes as its receiver:
+        # the class is written first, in every graph. An override implements
+        # the virtual function it overrides, its trait method.
+        if n.cpp_class in types:
+            n.dep_types.add(n.cpp_class)
+        n.dep_syms |= {o for o in n.cpp_overrides if o in syms}
         n.dep_syms.discard(key)          # no self-edge
 
     return ext_syms, ext_types
@@ -1083,6 +1118,7 @@ def _build_graph(types, syms, ext_syms, ext_types):
             "id": n.tag, "node_kind": "type", "subkind": n.kind,
             "defined_in": n.origin(),
             "loc": n.nfields,           # struct field count (a type's own LoC)
+            **({"cpp": dict(n.cpp)} if n.cpp else {}),
             "_dt": n.dep_types, "_ds": n.dep_syms,
         })
     for key, n in syms.items():
@@ -1090,6 +1126,7 @@ def _build_graph(types, syms, ext_syms, ext_types):
             "id": n.name, "node_kind": "symbol", "subkind": n.kind or "symbol",
             **({"generates": n.generates} if n.generates else {}),
             "defined_in": n.origin(), "loc": n.loc,
+            **({"member": n.cpp} if n.cpp else {}),
             "_dt": n.dep_types, "_ds": n.dep_syms,
         })
     for tag in ext_types:
@@ -1244,12 +1281,14 @@ def _emit_node(nodes, comp):
         # scheduler reads it off `dag.Node` to make its one macro exception.
         if rec.get("generates"):
             out["type_generator_for"] = rec["generates"]
+        _emit_cpp(rec, out)
         return out  # deps filled by caller
     def member(m):
         d = {"id": m["id"], "node_kind": m["node_kind"], "subkind": str(m["subkind"]),
              "defined_in": m.get("defined_in")}
         if m.get("generates"):
             d["type_generator_for"] = m["generates"]
+        _emit_cpp(m, d)
         if m["node_kind"] == "type":
             if m.get("loc"):
                 d["loc"] = m["loc"]
@@ -1257,6 +1296,93 @@ def _emit_node(nodes, comp):
             d["loc"] = m["loc"]
         return d
     return {"scc": [member(nodes[c]) for c in comp]}
+
+
+def _emit_cpp(rec: dict, out: dict) -> None:
+    """Carry a C++ node's annotations: a class's `cpp` (its declarations, and
+    the lifecycle folded into it), a member's `member` (the class it
+    implements). A C node has neither, and its record is unchanged."""
+    if rec.get("cpp"):
+        out["cpp"] = rec["cpp"]
+    if rec.get("member"):
+        out["member"] = rec["member"]
+
+
+def _annotate_cpp(types: dict, syms: dict, facts) -> None:
+    """Hang the ``cpp_*`` facts on the nodes they describe: a class's
+    declarations and bases on its type node, a member's class and overrides
+    on its symbol node. A member is keyed by ``(name, def_file)``, a symbol
+    node by its defining file or, never defined (a pure virtual function), its
+    canonical declaration."""
+    if not facts:
+        return
+    for key, n in types.items():
+        info = facts.class_info(key)
+        if info is None:
+            continue
+        n.cpp = info
+        n.cpp_bases = {(b["name"], b["defined_in"] or "") for b in info["bases"]}
+        spec = facts.specializes(key)
+        if spec is not None:
+            n.cpp_bases.add(spec)
+    by_def: dict[tuple[str, str], SymKey] = {}
+    for key, n in syms.items():
+        by_def.setdefault((n.name, n.defined_in or ""), key)
+
+    def sym_of(k):
+        return by_def.get((k[0], k[1] or ""))
+
+    for mkey in facts.members:
+        skey = sym_of(mkey)
+        if skey is None:
+            continue
+        n = syms[skey]
+        n.cpp = facts.member_info(mkey)
+        ckey = facts.class_of(mkey)
+        n.cpp_class = ckey if ckey in types else None
+        n.cpp_overrides = {o for o in map(sym_of, facts.overrides.get(mkey, ())) if o}
+
+
+def _fold_lifecycle(nodes: dict, adj: dict, syms: dict, types: dict) -> int:
+    """Fold each C++ class's lifecycle into its node: its constructors,
+    destructor, copy and move, and class-specific allocator. They are not
+    judgements, as a C type's lifecycle is (see the module doc): the language
+    makes them the class's own. The folded node depends on what they depend
+    on, and every edge to one of them is an edge to the class; the class's
+    `cpp.lifecycle` lists them, with their roles. Returns how many folded."""
+    into: dict[str, str] = {}
+    for skey, n in syms.items():
+        if not (n.cpp and "lifecycle_role" in n.cpp and n.cpp_class in types):
+            continue
+        sid, tid = _sid(skey), _tid(n.cpp_class)
+        if sid not in nodes or tid not in nodes:
+            continue
+        into[sid] = tid
+        rec = nodes[tid]
+        cpp = rec.setdefault("cpp", {})
+        cpp.setdefault("lifecycle", []).append({
+            "name": n.name, "defined_in": n.origin(),
+            "member_kind": n.cpp["member_kind"],
+            **({"role": n.cpp["lifecycle_role"]} if n.cpp["lifecycle_role"] else {}),
+            **({"deleted": True} if n.cpp.get("deleted") else {}),
+            **({"defaulted": True} if n.cpp.get("defaulted") else {}),
+            **({"loc": n.loc} if n.loc else {}),
+        })
+    if not into:
+        return 0
+    for sid, tid in into.items():
+        adj[tid] |= adj.pop(sid)
+        nodes.pop(sid)
+    for nid in adj:
+        deps = adj[nid]
+        if deps & into.keys():
+            adj[nid] = {into.get(d, d) for d in deps}
+        adj[nid].discard(nid)
+    for rec in nodes.values():
+        lc = (rec.get("cpp") or {}).get("lifecycle")
+        if lc:
+            lc.sort(key=lambda m: (m["member_kind"], m["name"]))
+    return len(into)
 
 
 def _populate_nfields(codeql_dir: Path, types: dict[str, TypeNode]) -> None:
@@ -1375,6 +1501,7 @@ def compose(analysis_root, scope_json=None, codeql_dir: Path | None = None,
                                    layout_paths=layout_paths,
                                    api_paths=layout_paths if api_headers_only else None)
     _populate_nfields(codeql_dir, types)
+    _annotate_cpp(types, syms, _cpp.load(codeql_dir))
     # A generator macro is already a symbol node; hang its family off it rather
     # than minting a synthetic type, which would collide with this very node on
     # `(name, file)`. `generates` is also what lets the wrap scheduler make its
@@ -1397,6 +1524,7 @@ def compose(analysis_root, scope_json=None, codeql_dir: Path | None = None,
             if _d in syms and (_m, _f["def_file"]) in syms:
                 syms[_d].dep_syms.add((_m, _f["def_file"]))
     nodes, adj = _build_graph(types, syms, ext_syms, ext_types)
+    n_folded = _fold_lifecycle(nodes, adj, syms, types)
     sccs = _tarjan(adj)
     # Flatten genuine cycles (parent↔child backrefs) with a FAS: the
     # back-edges become per-node `fallback` deps (the wrap stage renders those as
@@ -1483,6 +1611,7 @@ def compose(analysis_root, scope_json=None, codeql_dir: Path | None = None,
             "layers": len(layers),
             "sccs_flattened": n_cyclic,
             "fallback_edges": len(back),
+            **({"lifecycle_folded": n_folded} if n_folded else {}),
         },
         "layers": layers,
     }

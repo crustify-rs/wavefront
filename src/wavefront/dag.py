@@ -52,6 +52,10 @@ class Node:
     #: Types this macro mints, when it is a template generator (else empty).
     #: Non-empty is what exempts it from the wrap stage's macro exclusion.
     type_generator_for: list[str] = field(default_factory=list)
+    # C++ only: a class's declarations, with the lifecycle folded into it
+    # (`cpp`), and a member's relation to the class it implements (`member`).
+    cpp: dict | None = None
+    member: dict | None = None
 
     @property
     def key(self) -> NodeKey:
@@ -124,6 +128,8 @@ def load_nodes(dag: dict) -> tuple[dict[SymKey, Node], dict[str, list[SymKey]]]:
             back_fill=keys(rec.get("back_fill"), "types"),
             loc=int(rec.get("loc") or 0),
             type_generator_for=list(rec.get("type_generator_for") or ()),
+            cpp=rec.get("cpp"),
+            member=rec.get("member"),
         )
         by_key[n.key] = n
         by_name.setdefault(n.id, []).append(n.key)

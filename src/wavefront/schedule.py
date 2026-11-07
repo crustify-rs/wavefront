@@ -400,6 +400,10 @@ def build_schedule(layout, target: Path, *, api_headers_only: bool = False,
             "depended_on_by": {"cut": sides(lower.get(key, ()))},
             "type_generator_for": list(node.type_generator_for),
             "used_fields": used.get(key, []),
+            # C++ only, so a C item is unchanged: what a class's declarations
+            # state, its lifecycle among them, and the class a member implements.
+            **({"cpp": node.cpp} if node.cpp else {}),
+            **({"member": node.member} if node.member else {}),
         }
 
     def unit(key: NodeKey) -> Unit:

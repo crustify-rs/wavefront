@@ -77,12 +77,73 @@ def build(layout: Layout, target: Path, kind: str, *, stage: str,
     if kind == "symbols":
         _materialize_forks(by_dir, doc)
 
+    _annotate_cpp(by_dir, kind, layout)
+
     for entries_ in by_dir.values():
         for e in entries_:
             e["_analysis"] = analysis_state(e, kind, keyfn(e) in idx)
 
     _CACHE[ck] = by_dir
     return by_dir
+
+
+def _annotate_cpp(by_dir: dict, kind: str, layout: Layout) -> None:
+    """Add what a C++ codebase's type system states to its records
+    (:mod:`compose.cpp_facts`): on a class, its declarations, lifecycle and
+    implementers, and on each field what its type says of ownership,
+    nullability and cardinality; on a member, the class it implements; on a
+    function, the same for each parameter and its return. Composed, not
+    findings: the type states them. A C codebase has no `cpp_*` rows, and its
+    records are unchanged."""
+    from compose import cpp_facts as _cpp
+
+    facts = _cpp.load(layout.codeql)
+    if not facts:
+        return
+    if kind == "types":
+        by_class: dict = {}
+        for mkey, row in facts.members.items():
+            ckey = (row["class_name"], row.get("class_def_file") or "")
+            by_class.setdefault(ckey, []).append((mkey, row))
+        for entries_ in by_dir.values():
+            for e in entries_:
+                key = (e.get("name") or "", e.get("defined_in") or "")
+                info = facts.class_info(key)
+                if info is None:
+                    continue
+                members = sorted(by_class.get(key, ()), key=lambda m: m[0])
+                info["lifecycle"] = [
+                    {"name": n, "defined_in": f or None, "member_kind": r["member_kind"],
+                     **({"role": _cpp.LIFECYCLE_ROLES[r["member_kind"]]}
+                        if r.get("deleted") != "true" else {"deleted": True})}
+                    for (n, f), r in members if r["member_kind"] in _cpp.LIFECYCLE_KINDS]
+                info["implementers"] = [
+                    {"name": n, "defined_in": f or None, "member_kind": r["member_kind"],
+                     **({"accessor": {"kind": r["accessor"], "field": r.get("accessor_field") or ""}}
+                        if r.get("accessor") else {})}
+                    for (n, f), r in members if r["member_kind"] not in _cpp.LIFECYCLE_KINDS]
+                e["cpp"] = info
+                slots = _cpp.slots_of(facts, "field", key)
+                for fld in e.get("fields") or []:
+                    if isinstance(fld, dict) and fld.get("name") in slots:
+                        fld["cpp"] = slots[fld["name"]]
+        return
+    for entries_ in by_dir.values():
+        for e in entries_:
+            key = (e.get("name") or "", e.get("defined_in") or "")
+            member = facts.member_info(key)
+            if member is not None:
+                e["member"] = member
+            kind_ = e.get("kind") or ""
+            if kind_.startswith("global"):
+                g = _cpp.slots_of(facts, "global", key)
+                if g:
+                    e["cpp"] = g.get("") or next(iter(g.values()))
+                continue
+            params = _cpp.slots_of(facts, "param", key)
+            ret = _cpp.slots_of(facts, "return", key).get("ret")
+            if params or ret:
+                e["cpp"] = {"params": params, **({"return": ret} if ret else {})}
 
 
 def analysis_state(entry: dict, kind: str, submitted: bool,
