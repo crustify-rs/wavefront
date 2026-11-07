@@ -26,25 +26,14 @@
  *                         return-before-params, low-index-first)
  */
 import cpp
-
-string pathOf(File f) {
-  if exists(f.getRelativePath())
-  then result = f.getRelativePath()
-  else result = f.getAbsolutePath()
-}
-
-string kindOf(UserType t) {
-  if t instanceof Struct then result = "struct"
-  else if t instanceof Union then result = "union"
-  else if t instanceof Enum then result = "enum"
-  else if t instanceof TypedefType then result = "typedef"
-  else result = "other"
-}
+import identity
 
 string typeDefFileOf(UserType t) {
-  if exists(t.getDefinition())
-  then result = pathOf(t.getDefinition().getFile())
-  else result = ""
+  exists(UserType c | c = canonicalUserType(t) |
+    if exists(c.getDefinition())
+    then result = pathOf(c.getDefinition().getFile())
+    else result = ""
+  )
 }
 
 string tdDefFileOf(TypedefType td) { result = pathOf(td.getFile()) }
@@ -64,25 +53,6 @@ RoutineType routineOf(Type t) {
   result = routineOf(t.(TypedefType).getBaseType())
 }
 
-/** As `signature_type_uses.ql`: stop only on a `UserType`. */
-predicate reachableUserType(Type outer, UserType t) {
-  outer = t
-  or
-  reachableUserType(outer.(DerivedType).getBaseType(), t)
-  or
-  // Descend INTO a function pointer's SIGNATURE. The `DerivedType` step above
-  // already reaches the `RoutineType` itself, but a routine's parameter and
-  // return types hang off `getAParameterType()` / `getReturnType()` — NOT
-  // `getBaseType()` — so without these two disjuncts the walk dies at the
-  // routine and every user type named by a bare (un-typedef'd) function
-  // pointer is invisible. A typedef'd callback also benefits: the consumer
-  // gains a direct edge to the types in the callback's signature, alongside
-  // the indirect one through the callback's own symbol entry.
-  reachableUserType(outer.(RoutineType).getReturnType(), t)
-  or
-  reachableUserType(outer.(RoutineType).getAParameterType(), t)
-}
-
 from TypedefType td, RoutineType rt, UserType t, string pos
 where
   rt = routineOf(td) and
@@ -95,12 +65,13 @@ where
     )
   ) and
   t.getName() != "" and
-  kindOf(t) != "other" and
+  typeKindOf(t) != "other" and
   // never a self-edge onto the callback typedef itself
-  t != td
-select td.getName() as callback_name,
+  t != td and
+  not isInstantiatedType(td)
+select cppName(td) as callback_name,
        tdDefFileOf(td) as callback_def_file,
-       t.getName() as type_name,
-       kindOf(t) as type_kind,
+       cppName(t) as type_name,
+       typeKindOf(t) as type_kind,
        typeDefFileOf(t) as type_def_file,
        pos as position

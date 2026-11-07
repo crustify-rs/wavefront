@@ -29,23 +29,8 @@
  *   access_line         : 1-indexed line number of the access site
  */
 import cpp
+import identity
 
-/**
- * Repository-relative path, falling back to absolute for files outside the
- * source root (system/external headers) — keeps system entities' identity
- * consistent with the T1 entity CSVs.
- */
-string pathOf(File f) {
-  if exists(f.getRelativePath())
-  then result = f.getRelativePath()
-  else result = f.getAbsolutePath()
-}
-
-string defFileOf(Function fn) {
-  if exists(fn.getDefinition())
-  then result = pathOf(fn.getDefinition().getFile())
-  else result = ""
-}
 
 /**
  * The entity an access belongs to: the enclosing function when there is one,
@@ -58,10 +43,10 @@ string defFileOf(Function fn) {
  * with no forward edges, and the port had to rediscover them by hand.
  */
 string enclosingNameOf(Expr e) {
-  exists(e.getEnclosingFunction()) and result = e.getEnclosingFunction().getName()
+  exists(e.getEnclosingFunction()) and result = enclosingFunctionName(e)
   or
   not exists(e.getEnclosingFunction()) and
-  exists(Variable v | v.getInitializer().getExpr().getAChild*() = e | result = v.getName())
+  exists(Variable v | v.getInitializer().getExpr().getAChild*() = e | result = globalName(v))
   or
   not exists(e.getEnclosingFunction()) and
   not exists(Variable v | v.getInitializer().getExpr().getAChild*() = e) and
@@ -69,7 +54,7 @@ string enclosingNameOf(Expr e) {
 }
 
 from FunctionAccess fa, Function target
-where target = fa.getTarget()
+where target = canonicalFunction(fa.getTarget()) and not target.isCompilerGenerated()
 // In cpp-all, direct calls (`foo(x)`) do NOT produce a separate
 // FunctionAccess entity — the FunctionCall IS the access. A
 // FunctionAccess entity only materialises when the function
@@ -79,6 +64,6 @@ where target = fa.getTarget()
 // entity level.
 select enclosingNameOf(fa) as enclosing_name,
        pathOf(fa.getFile()) as access_file,
-       target.getName() as target_name,
-       defFileOf(target) as target_def_file,
+       functionName(target) as target_name,
+       functionDefFile(target) as target_def_file,
        fa.getLocation().getStartLine() as access_line

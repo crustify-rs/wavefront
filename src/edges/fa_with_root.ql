@@ -27,7 +27,7 @@ import identity
 
 string enclosingNameOf(FieldAccess fa) {
   if exists(fa.getEnclosingFunction())
-  then result = fa.getEnclosingFunction().getName()
+  then result = enclosingFunctionName(fa)
   else result = ""
 }
 
@@ -79,11 +79,15 @@ Type rootNamedDeclaringType(FieldAccess fa) {
 }
 
 string structDefFileOf(Type t) {
-  if exists(t.(Struct).getDefinition())
-  then result = pathOf(t.(Struct).getDefinition().getFile())
-  else if exists(t.(Union).getDefinition())
-  then result = pathOf(t.(Union).getDefinition().getFile())
-  else result = ""
+  // `Class` covers C's structs and unions, and C++'s classes; an
+  // instantiation's layout is its template's.
+  exists(Class c | c = canonicalUserType(t) |
+    if exists(c.getDefinition())
+    then result = pathOf(c.getDefinition().getFile())
+    else result = ""
+  )
+  or
+  not t instanceof Class and result = ""
 }
 
 from FieldAccess fa, Field f, Type rootT

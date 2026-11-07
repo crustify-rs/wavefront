@@ -55,8 +55,9 @@ import identity
  * reached by peeling pointers, arrays, cv-qualifiers and typedefs off `t`.
  * Same rule as `edges/casts.ql`, so the two cast graphs share identities.
  */
-Struct namedStruct(Type t) {
-  result = t and not isAnonNamed(canonicalTypeName(result))
+Class namedStruct(Type t) {
+  // `Class`: C's structs and unions, and C++'s classes.
+  result = t and not isAnonNamed(canonicalTypeName(result)) and not isSyntheticType(result)
   or
   result = namedStruct(t.(DerivedType).getBaseType())
   or
@@ -70,13 +71,9 @@ string declOf(Type t) {
   else result = ""
 }
 
-string fnFileOf(Function f) {
-  if exists(f.getDefinition())
-  then result = pathOf(f.getDefinition().getFile())
-  else result = ""
-}
+string fnFileOf(Function f) { result = functionDefFile(f) }
 
-string structFileOf(Struct s) { result = defFileOf(s) }
+string structFileOf(Class s) { result = defFileOf(s) }
 
 /**
  * Only POINTER slots carry a cast: an `int` field returned or an enum passed
@@ -168,7 +165,8 @@ predicate storesField(Expr v, Field fld) {
 predicate paramSlot(Function f, int pos, string name, string file, string member,
                     string decl, string ctype) {
   exists(Parameter p | p = f.getParameter(pos) and pointerSlot(p.getType()) |
-    name = f.getName() and file = fnFileOf(f) and member = pos.toString() and
+    isEntityFunction(f) and
+    name = functionName(f) and file = fnFileOf(f) and member = pos.toString() and
     decl = declOf(p.getType()) and ctype = p.getType().toString()
   )
 }
@@ -176,7 +174,8 @@ predicate paramSlot(Function f, int pos, string name, string file, string member
 predicate retSlot(Function f, string name, string file, string member,
                   string decl, string ctype) {
   pointerSlot(f.getType()) and
-  name = f.getName() and file = fnFileOf(f) and member = "ret" and
+  isEntityFunction(f) and
+  name = functionName(f) and file = fnFileOf(f) and member = "ret" and
   decl = declOf(f.getType()) and ctype = f.getType().toString()
 }
 
@@ -228,12 +227,12 @@ predicate slotStore(Expr v, string kind, string name, string file, string member
  * `T` is a named struct some conversion on `e` (up to its fully converted
  * form, implicit conversions included) produces.
  */
-Struct convertedTo(Expr e) {
+Class convertedTo(Expr e) {
   exists(Conversion c | c = e.getConversion+() | result = namedStruct(c.getType()))
 }
 
 /** A named struct as an endpoint: `decl` is the tag itself, `ctype` "". */
-predicate typeEnd(Struct s, string name, string file, string member, string decl,
+predicate typeEnd(Class s, string name, string file, string member, string decl,
                   string ctype) {
   name = canonicalTypeName(s) and not isAnonNamed(name) and file = structFileOf(s) and
   member = "" and decl = name and ctype = ""
@@ -242,7 +241,7 @@ predicate typeEnd(Struct s, string name, string file, string member, string decl
 /** Where the edge is written: enclosing function, or "" at file scope. */
 predicate siteOf(Expr e, string fn, string file, int line) {
   (if exists(e.getEnclosingFunction())
-   then fn = e.getEnclosingFunction().getName() and file = fnFileOf(e.getEnclosingFunction())
+   then fn = enclosingFunctionName(e) and file = fnFileOf(bodyOwner(e.getEnclosingFunction()))
    else (fn = "" and file = pathOf(e.getFile()))) and
   line = e.getLocation().getStartLine()
 }
@@ -267,7 +266,7 @@ predicate slotEdge(string rel,
                    string dk, string dn, string df, string dm, string dd, string dc,
                    Expr at) {
   rel = "from" and
-  exists(Struct d |
+  exists(Class d |
     d = namedStruct(at.getType()) and
     sk = "type" and typeEnd(d, sn, sf, sm, sd, sc) and
     slotStore(at, dk, dn, df, dm, dd, dc) and
@@ -276,7 +275,7 @@ predicate slotEdge(string rel,
   )
   or
   rel = "to" and
-  exists(Struct t |
+  exists(Class t |
     slotRead(at, sk, sn, sf, sm, sd, sc) and
     t = convertedTo(at) and
     dk = "type" and typeEnd(t, dn, df, dm, dd, dc) and

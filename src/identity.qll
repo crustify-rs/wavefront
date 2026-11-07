@@ -100,7 +100,7 @@ string typedefIdentityOf(UserType t) {
  */
 string canonicalTypeName(UserType t) {
   if not isAnonymous(t)
-  then result = t.getName()
+  then result = cppName(t)
   else
     if exists(typedefIdentityOf(t))
     then result = typedefIdentityOf(t)
@@ -143,12 +143,10 @@ predicate namingTypedef(UserType anon, TypedefType td) {
 
 /** Definition-site path of an aggregate, or "" when only declared. */
 string anonDefFileOf(UserType anon) {
-  if exists(anon.(Struct).getDefinition())
-  then result = pathOf(anon.(Struct).getDefinition().getFile())
-  else
-    if exists(anon.(Union).getDefinition())
-    then result = pathOf(anon.(Union).getDefinition().getFile())
-    else result = ""
+  // `Class` covers C's structs and unions, and C++'s classes.
+  if exists(anon.(Class).getDefinition())
+  then result = pathOf(anon.(Class).getDefinition().getFile())
+  else result = ""
 }
 
 /** Strip arrays and cv-qualifiers, but NOT pointers: a pointer to an
@@ -224,7 +222,9 @@ string memberPathPrefix(Field outer) {
  */
 predicate ownerOf(UserType t, string name, string file) {
   not isAnonymous(t) and
-  name = t.getName() and
+  not isInstantiatedType(t) and
+  not isSyntheticType(t) and
+  name = cppName(t) and
   file = anonDefFileOf(t)
   or
   exists(TypedefType td |
@@ -253,10 +253,349 @@ UserType anonBaseOf(TypedefType td) {
  * was keyed `(name, <path>)` — the target did not resolve and the edge died.
  */
 string defFileOf(UserType t) {
-  if exists(t.getDefinition())
-  then result = pathOf(t.getDefinition().getFile())
+  exists(UserType c | c = canonicalUserType(t) |
+    if exists(c.getDefinition())
+    then result = pathOf(c.getDefinition().getFile())
+    else
+      if exists(anonBaseOf(c).getDefinition())
+      then result = pathOf(anonBaseOf(c).getDefinition().getFile())
+      else result = ""
+  )
+}
+
+/*
+ * ---------------------------------------------------------------------------
+ * C++ identity.
+ *
+ * C names an entity by its identifier alone. C++ scopes it in namespaces and
+ * classes, overloads it, and instantiates it from templates, so the
+ * identifier names many entities and the database holds one entity per
+ * instantiation. Every query names a C++ entity through the predicates below,
+ * so that each table keys it the same way:
+ *
+ *   - a scoped entity is named by its qualified name, `geo::Circle::area`;
+ *     an anonymous namespace adds nothing, since the defining file already
+ *     tells its entities apart, as it does a C `static`, and an inline
+ *     namespace adds nothing either (`std::__cxx11::basic_string` is
+ *     `std::basic_string`);
+ *   - an instantiation is named, and keyed, as the template it was
+ *     instantiated from: `Pool<Circle>` is `geo::Pool`, and its members are
+ *     `geo::Pool`'s. A primary class template is named without its parameter
+ *     list, an explicit or partial specialization with its arguments
+ *     (`geo::Pool<bool>`);
+ *   - a lambda is part of the function that writes it: what its body calls
+ *     and touches, that function calls and touches;
+ *   - an overloaded function takes its parameter types as a suffix,
+ *     `geo::total_area(const Scene &)`, so overloads stay distinct entities;
+ *   - a member the compiler generates is no entity: it is in no source file.
+ *     Whether a class has it is a fact about the class (`cpp_classes.csv`).
+ *
+ * A C entity is never scoped, instantiated or overloaded, so every predicate
+ * below yields its plain identifier and C tables are unchanged.
+ * ---------------------------------------------------------------------------
+ */
+
+/**
+ * `f` is C++: a translation unit compiled as C++, or a header one includes.
+ * A C codebase has none, so nothing below changes its names.
+ */
+cached
+predicate isCppFile(File f) {
+  f.compiledAsCpp()
+  or
+  exists(File tu | tu.compiledAsCpp() and tu.getAnIncludedFile+() = f)
+}
+
+/** The prefix a namespace contributes to the names it scopes: `geo::`. */
+string namespacePrefix(Namespace ns) {
+  ns instanceof GlobalNamespace and result = ""
+  or
+  not ns instanceof GlobalNamespace and
+  if ns.isAnonymous() or ns.isInline()
+  then result = namespacePrefix(ns.getParentNamespace())
+  else result = namespacePrefix(ns.getParentNamespace()) + ns.getName() + "::"
+}
+
+/**
+ * The class template, or the member of one, that `t` was instantiated from;
+ * `t` itself when it is no instantiation.
+ */
+UserType canonicalUserType(UserType t) {
+  if t.(Class).isConstructedFrom(_)
+  then exists(UserType u | t.(Class).isConstructedFrom(u) | result = canonicalUserType(u))
+  else result = t
+}
+
+/** `t` is an instantiation, or a class nested in one: its template is the entity. */
+predicate isInstantiatedType(UserType t) {
+  t.(Class).isConstructedFrom(_)
+  or
+  t instanceof AliasTemplateInstantiationType
+  or
+  isInstantiatedType(t.getDeclaringType())
+}
+
+/**
+ * A class written by the compiler or standing in for a template parameter:
+ * a lambda's closure type, a template parameter, a proxy class. None names
+ * an entity of the codebase.
+ */
+predicate isSyntheticType(UserType t) {
+  t instanceof Closure or
+  t instanceof TypeTemplateParameter or
+  t instanceof ProxyClass or
+  t instanceof TemplateTemplateParameterInstantiation
+}
+
+/** The scope prefix of a declaration: its enclosing classes and namespaces. */
+string scopePrefix(Declaration d) {
+  if d.isMember() and isCppFile(d.getFile())
+  then result = cppName(canonicalUserType(d.getDeclaringType())) + "::"
   else
-    if exists(anonBaseOf(t).getDefinition())
-    then result = pathOf(anonBaseOf(t).getDefinition().getFile())
+    if exists(d.getNamespace())
+    then result = namespacePrefix(d.getNamespace())
     else result = ""
+}
+
+/**
+ * A user type's name: its identifier in C; in C++ its qualified name,
+ * without the parameter list of a primary template, and the template's for
+ * an instantiation. Every query names a type by this, or by
+ * `canonicalTypeName`, which falls back to a naming typedef.
+ */
+string cppName(UserType t) {
+  exists(UserType c | c = canonicalUserType(t) |
+    if isAnonNamed(c.getName())
+    then result = c.getName()
+    else
+    if c instanceof TemplateClass
+    then result = scopePrefix(c) + c.getSimpleName()
+    else result = scopePrefix(c) + c.getName()
+  )
+}
+
+/** The canonical function of `f`: the template it was instantiated from, or, for a lambda's call operator, the function that writes the lambda. */
+Function canonicalFunction(Function f) {
+  if f.isConstructedFrom(_)
+  then exists(Function g | f.isConstructedFrom(g) | result = canonicalFunction(g))
+  else
+    if f = any(Closure c).getLambdaFunction()
+    then
+      exists(Closure c | f = c.getLambdaFunction() |
+        result = canonicalFunction(c.getLambdaExpression().getEnclosingFunction())
+      )
+    else result = f
+}
+
+/** `f` is an entity of its own: no instantiation, no lambda, no compiler-generated member. */
+predicate isEntityFunction(Function f) {
+  canonicalFunction(f) = f and
+  not f.isCompilerGenerated() and
+  not isInstantiatedType(f.getDeclaringType()) and
+  not isSyntheticType(f.getDeclaringType())
+}
+
+/** A function's qualified name, before any overload suffix. */
+string baseFunctionName(Function f) { result = scopePrefix(f) + f.getName() }
+
+/** The parameter types of `f`, and `const` on a const member, as an overload suffix. */
+string overloadSuffix(Function f) {
+  result =
+    "(" +
+      concat(int i |
+        exists(f.getParameter(i))
+      |
+        typeSpelling(f.getParameter(i).getType()), ", " order by i
+      ) + ")" + any(string c | if f instanceof ConstMemberFunction then c = " const" else c = "")
+}
+
+/**
+ * A parameter type as an overload suffix spells it: as written, less the
+ * policies a standard container takes by default
+ * (`vector<Shape *, allocator<Shape *>>` is `vector<Shape *>`).
+ */
+string typeSpelling(Type t) {
+  result =
+    t.toString()
+        .regexpReplaceAll("basic_string<char, char_traits<char>, allocator<char>>", "string")
+        .regexpReplaceAll(", (allocator|default_delete|char_traits|less|hash|equal_to)<([^<>]|<([^<>]|<[^<>]*>)*>)*>", "")
+}
+
+/** `f` shares its qualified name with another C++ entity function of another signature. */
+predicate isOverloaded(Function f) {
+  isCppFile(f.getFile()) and
+  exists(Function g |
+    g != f and
+    isEntityFunction(g) and
+    baseFunctionName(g) = baseFunctionName(f) and
+    overloadSuffix(g) != overloadSuffix(f)
+  )
+}
+
+/** The name a function's entity is keyed by, `canonicalFunction` applied. */
+string functionName(Function f) {
+  exists(Function c | c = canonicalFunction(f) |
+    if isOverloaded(c)
+    then result = baseFunctionName(c) + overloadSuffix(c)
+    else result = baseFunctionName(c)
+  )
+}
+
+/**
+ * The file that defines a function's entity: the canonical function's
+ * definition, or, for a template member whose body the database records
+ * only in its instantiations, an instantiation's.
+ */
+string functionDefFile(Function f) {
+  exists(Function c | c = canonicalFunction(f) |
+    if exists(c.getDefinition())
+    then result = pathOf(c.getDefinition().getFile())
+    else
+      if exists(Function i | canonicalFunction(i) = c and exists(i.getDefinition()))
+      then
+        result =
+          min(Function i | canonicalFunction(i) = c and exists(i.getDefinition()) |
+            pathOf(i.getDefinition().getFile())
+          )
+      else result = ""
+  )
+}
+
+/**
+ * A variable of static storage the codebase names at file or class scope:
+ * a C global, a C++ namespace variable, or a static data member. A variable
+ * template's instantiations are its template's.
+ */
+predicate isGlobalEntity(Variable v) {
+  (v instanceof GlobalOrNamespaceVariable or v.(MemberVariable).isStatic()) and
+  not v.isConstructedFrom(_) and
+  not isInstantiatedType(v.getDeclaringType())
+}
+
+/** A global's name: its identifier in C, its qualified name in C++. */
+string globalName(Variable v) { result = scopePrefix(v) + v.getName() }
+
+/** The kind a type entity is recorded as. A C++ class is a struct: Rust has no other. */
+string typeKindOf(UserType t) {
+  if t instanceof Struct
+  then result = "struct"
+  else
+    if t instanceof Union
+    then result = "union"
+    else
+      if t instanceof Enum
+      then result = "enum"
+      else
+        if t instanceof TypedefType
+        then result = "typedef"
+        else
+          if t instanceof Class and not isSyntheticType(t)
+          then result = "struct"
+          else result = "other"
+}
+
+/**
+ * Template arguments that a standard container takes by default and that
+ * name no dependency: its allocator, deleter, traits and comparator.
+ */
+predicate isDefaultTemplatePolicy(Type t) {
+  exists(string n | n = t.(Class).getSimpleName() |
+    n = ["allocator", "default_delete", "char_traits", "less", "hash", "equal_to", "greater"]
+  ) and
+  t.(Class).getNamespace().getParentNamespace*().getName() = "std"
+}
+
+/**
+ * The user types a type names: itself, through pointers, references, arrays
+ * and qualifiers, a routine type's parameters and return, and an
+ * instantiation's type arguments (`std::vector<std::unique_ptr<Shape>>`
+ * names `std::vector`, `std::unique_ptr` and `Shape`), less the policies a
+ * container takes by default.
+ */
+predicate reachableUserType(Type outer, UserType t) {
+  outer = t and not isDefaultTemplatePolicy(t)
+  or
+  reachableUserType(outer.(DerivedType).getBaseType(), t)
+  or
+  reachableUserType(outer.(RoutineType).getReturnType(), t)
+  or
+  reachableUserType(outer.(RoutineType).getAParameterType(), t)
+  or
+  // A C++ alias names what it aliases: `using Shapes = std::vector<Shape *>`
+  // names `Shape`. Only C++ files: a C typedef stays an alias the composer
+  // resolves.
+  reachableUserType(outer.(TypedefType).getBaseType(), t) and
+  isCppFile(outer.getFile())
+  or
+  exists(Type arg |
+    arg = outer.(Class).getATemplateArgument() and
+    outer.(Class).isConstructedFrom(_) and
+    not isDefaultTemplatePolicy(arg) and
+    reachableUserType(arg, t)
+  )
+}
+
+/**
+ * The entity whose body `f`'s body is part of: `f` itself, or, for a
+ * lambda's call operator, the function that writes the lambda. None for an
+ * instantiation, or a member the compiler generates: what an instantiation's
+ * body reaches depends on its template arguments, which the template's users
+ * name, so the template depends only on what its own body names without
+ * them.
+ */
+Function bodyOwner(Function f) {
+  if f = any(Closure c).getLambdaFunction()
+  then
+    exists(Closure c | f = c.getLambdaFunction() |
+      result = bodyOwner(c.getLambdaExpression().getEnclosingFunction())
+    )
+  else (
+    not f.isConstructedFrom(_) and
+    not isInstantiatedType(f.getDeclaringType()) and
+    not f.isCompilerGenerated() and
+    result = f
+  )
+}
+
+/** The outermost class enclosing `t`, its template's for an instantiation. */
+UserType outermostClass(UserType t) {
+  exists(UserType c | c = canonicalUserType(t) |
+    if exists(c.getDeclaringType())
+    then result = outermostClass(c.getDeclaringType())
+    else result = c
+  )
+}
+
+/**
+ * A call from an instantiation's body that its template's body makes too:
+ * from one member of a class template to another, which the template makes
+ * whatever its arguments (`SkipList<K, C>::Insert` calls `NewNode`). The
+ * database leaves such a call unresolved in the template, where it depends
+ * on the template's parameters, and resolves it in each instantiation.
+ * Calls into the arguments' members (`compare_(a, b)`) stay with the
+ * template's users, as `bodyOwner` says.
+ */
+predicate templateSelfCall(Function enc, Function callee) {
+  enc.isConstructedFrom(_) and
+  not enc = any(Closure c).getLambdaFunction() and
+  outermostClass(canonicalFunction(enc).getDeclaringType()) instanceof TemplateClass and
+  outermostClass(canonicalFunction(callee).getDeclaringType()) =
+    outermostClass(canonicalFunction(enc).getDeclaringType())
+}
+
+/** The entity name of the function whose body holds `e`. */
+string enclosingFunctionName(Element e) {
+  result = functionName(bodyOwner(e.(Expr).getEnclosingFunction()))
+  or
+  result = functionName(bodyOwner(e.(MacroInvocation).getEnclosingFunction()))
+}
+
+/** A global's file-local linkage: C's `static`, which a static data member is not. */
+predicate isFileLocalGlobal(Variable g) { g.isStatic() and not g.isMember() }
+
+/** The file that defines a global, or "" when only declared. */
+string globalDefFile(Variable g) {
+  if exists(g.getDefinition())
+  then result = pathOf(g.getDefinition().getFile())
+  else result = ""
 }

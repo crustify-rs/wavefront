@@ -33,26 +33,12 @@
  *   access_line         : 1-indexed line number of the access site
  */
 import cpp
+import identity
 
-/**
- * Repository-relative path, falling back to absolute for files outside the
- * source root (system/external headers) — keeps system entities' identity
- * consistent with the T1 entity CSVs.
- */
-string pathOf(File f) {
-  if exists(f.getRelativePath())
-  then result = f.getRelativePath()
-  else result = f.getAbsolutePath()
-}
+string defFileOf(Variable g) { result = globalDefFile(g) }
 
-string defFileOf(GlobalVariable g) {
-  if exists(g.getDefinition())
-  then result = pathOf(g.getDefinition().getFile())
-  else result = ""
-}
-
-string linkageOf(GlobalVariable g) {
-  if g.isStatic()
+string linkageOf(Variable g) {
+  if isFileLocalGlobal(g)
   then result = "global_static"
   else result = "global_extern"
 }
@@ -65,10 +51,10 @@ string linkageOf(GlobalVariable g) {
  * from that table, not an anonymous file-scope event.
  */
 string enclosingNameOf(Expr e) {
-  exists(e.getEnclosingFunction()) and result = e.getEnclosingFunction().getName()
+  exists(e.getEnclosingFunction()) and result = enclosingFunctionName(e)
   or
   not exists(e.getEnclosingFunction()) and
-  exists(Variable v | v.getInitializer().getExpr().getAChild*() = e | result = v.getName())
+  exists(Variable v | v.getInitializer().getExpr().getAChild*() = e | result = globalName(v))
   or
   not exists(e.getEnclosingFunction()) and
   not exists(Variable v | v.getInitializer().getExpr().getAChild*() = e) and
@@ -83,11 +69,11 @@ string accessKindOf(VariableAccess va) {
   else result = "read"
 }
 
-from VariableAccess va, GlobalVariable g
-where g = va.getTarget()
+from VariableAccess va, Variable g
+where g = va.getTarget() and isGlobalEntity(g)
 select enclosingNameOf(va) as enclosing_name,
        pathOf(va.getFile()) as access_file,
-       g.getName() as global_name,
+       globalName(g) as global_name,
        defFileOf(g) as global_def_file,
        linkageOf(g) as global_linkage,
        accessKindOf(va) as access_kind,

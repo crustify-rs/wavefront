@@ -35,9 +35,10 @@
  * `LocalVariable` and `Parameter` by class.
  */
 import cpp
+import identity
 
-string linkageClassOf(GlobalVariable g) {
-  if g.isStatic()
+string linkageClassOf(Variable g) {
+  if isFileLocalGlobal(g)
   then result = "global_static"
   else result = "global_extern"
 }
@@ -47,19 +48,10 @@ string linkageClassOf(GlobalVariable g) {
  * source root (system / external headers) so out-of-root globals are
  * captured under a `system/` manifest dir instead of dropped.
  */
-string pathOf(File f) {
-  if exists(f.getRelativePath())
-  then result = f.getRelativePath()
-  else result = f.getAbsolutePath()
-}
 
-string defFileOf(GlobalVariable g) {
-  if exists(g.getDefinition())
-  then result = pathOf(g.getDefinition().getFile())
-  else result = ""
-}
+string defFileOf(Variable g) { result = globalDefFile(g) }
 
-string declFilesOf(GlobalVariable g) {
+string declFilesOf(Variable g) {
   result = concat(File h |
     h = g.getADeclarationEntry().getFile()
   | pathOf(h), "|"
@@ -67,8 +59,9 @@ string declFilesOf(GlobalVariable g) {
   )
 }
 
-from GlobalVariable g
-select g.getName() as name,
+from Variable g
+where isGlobalEntity(g)
+select globalName(g) as name,
        linkageClassOf(g) as linkage,
        g.getType().toString() as type,
        defFileOf(g) as def_file,

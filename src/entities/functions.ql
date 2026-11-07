@@ -39,37 +39,39 @@
  * sentinel surfaces the missing-body case explicitly.
  */
 import cpp
+import identity
+
+/** A header: C's `.h`, and C++'s other spellings, the standard's extensionless ones included. */
+bindingset[path]
+predicate isHeaderPath(string path) {
+  path.regexpMatch(".*\\.(h|hh|hpp|hxx|h\\+\\+|inl|ipp|tcc|txx)") or
+  not path.regexpMatch("(.*/)?[^/]*\\.[^/]*")
+}
 
 /**
- * Repository-relative path of a file, falling back to its absolute path
- * when the file lives outside the source root (system / external headers
- * like /usr/include/string.h). Out-of-root entities (libc, etc.) thus get
- * an absolute path instead of "" — the composer routes them under a
- * `system/` manifest dir so the external boundary surface is captured.
+ * C++ defines a member in its class, or a template in a header, inline,
+ * whether or not it says `inline`: the header holds the definition.
  */
-string pathOf(File f) {
-  if exists(f.getRelativePath())
-  then result = f.getRelativePath()
-  else result = f.getAbsolutePath()
+predicate isInlineDefined(Function fn) {
+  fn.isInline()
+  or
+  isCppFile(fn.getFile()) and
+  (fn.isMember() or fn instanceof TemplateFunction or fn.getDeclaringType() instanceof TemplateClass) and
+  isHeaderPath(functionDefFile(fn))
 }
 
 string linkageClassOf(Function fn) {
-  if fn.isInline() and exists(fn.getDefinition()) and
-     fn.getDefinition().getFile().getExtension() = "h"
+  if isInlineDefined(fn) and functionDefFile(fn) != "" and isHeaderPath(functionDefFile(fn))
   then result = "function_inline_header"
-  else if fn.isInline() and exists(fn.getDefinition()) and
-          fn.getDefinition().getFile().getExtension() != "h"
+  else if isInlineDefined(fn) and functionDefFile(fn) != "" and
+          not isHeaderPath(functionDefFile(fn))
   then result = "function_inline_tu"
-  else if fn.isStatic()
+  else if fn.isStatic() and not fn.isMember()
   then result = "function_static"
   else result = "function_exported"
 }
 
-string defFileOf(Function fn) {
-  if exists(fn.getDefinition())
-  then result = pathOf(fn.getDefinition().getFile())
-  else result = ""
-}
+string defFileOf(Function fn) { result = functionDefFile(fn) }
 
 string declFilesOf(Function fn) {
   result = concat(File h |
@@ -80,7 +82,7 @@ string declFilesOf(Function fn) {
 }
 
 string signatureOf(Function fn) {
-  result = fn.getType().toString() + " " + fn.getName() + "(" +
+  result = fn.getType().toString() + " " + baseFunctionName(fn) + "(" +
            concat(int i | exists(fn.getParameter(i)) |
                   fn.getParameter(i).getType().toString(), ", "
                   order by i) + ")"
@@ -97,7 +99,15 @@ int locOf(Function fn) {
     result =
       fn.getBlock().getLocation().getEndLine() -
         fn.getBlock().getLocation().getStartLine() + 1
-  else result = 0
+  else
+    // A template member whose body only its instantiations record.
+    if exists(Function i | canonicalFunction(i) = fn and exists(i.getBlock()))
+    then
+      result =
+        max(Function i | canonicalFunction(i) = fn and exists(i.getBlock()) |
+          i.getBlock().getLocation().getEndLine() - i.getBlock().getLocation().getStartLine() + 1
+        )
+    else result = 0
 }
 
 /**
@@ -109,7 +119,8 @@ int isVariadicOf(Function fn) {
 }
 
 from Function fn
-select fn.getName() as name,
+where isEntityFunction(fn)
+select functionName(fn) as name,
        linkageClassOf(fn) as linkage,
        defFileOf(fn) as def_file,
        declFilesOf(fn) as decl_files,

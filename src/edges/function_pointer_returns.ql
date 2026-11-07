@@ -32,17 +32,7 @@
  * with a pointer-typed return.
  */
 import cpp
-
-/**
- * Repository-relative path, falling back to absolute for files outside the
- * source root (system/external headers) — keeps system entities' identity
- * consistent with the T1 entity CSVs.
- */
-string pathOf(File f) {
-  if exists(f.getRelativePath())
-  then result = f.getRelativePath()
-  else result = f.getAbsolutePath()
-}
+import identity
 
 /** Holds if a pointer level is reachable from `t` through qualifiers/typedefs. */
 predicate reachesPointer(Type t) {
@@ -126,18 +116,14 @@ string pointeeName(Type inner) {
       or
       unq instanceof ArrayType and result = "(array)"
       or
-      unq instanceof UserType and result = unq.(UserType).getName()
+      unq instanceof UserType and result = cppName(unq)
       or
       unq instanceof BuiltInType and result = unq.toString()
     )
   )
 }
 
-string fnDefFileOf(Function fn) {
-  if exists(fn.getDefinition())
-  then result = pathOf(fn.getDefinition().getFile())
-  else result = ""
-}
+string fnDefFileOf(Function fn) { result = functionDefFile(fn) }
 
 string constStr(Type inner) {
   if inner.isConst() then result = "true" else result = "false"
@@ -165,11 +151,15 @@ RoutineType routineOf(Type t) {
  * `_compose_ptr_ret` composer serve callbacks with no extra code.
  */
 predicate sigRet(string name, string defFile, Type rtype) {
-  exists(Function fn | rtype = fn.getType() and name = fn.getName() and defFile = fnDefFileOf(fn))
+  exists(Function fn |
+    isEntityFunction(fn) and
+    rtype = fn.getType() and name = functionName(fn) and defFile = fnDefFileOf(fn)
+  )
   or
   exists(TypedefType td, RoutineType rt |
     rt = routineOf(td) and rtype = rt.getReturnType() and
-    name = td.getName() and defFile = tdDefFileOf(td)
+    not isInstantiatedType(td) and
+    name = cppName(td) and defFile = tdDefFileOf(td)
   )
 }
 

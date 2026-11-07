@@ -27,16 +27,11 @@ import cpp
 import identity
 import pointers
 
-string functionDefFileOf(Function fn) {
-  if exists(fn.getDefinition())
-  then result = pathOf(fn.getDefinition().getFile())
-  else result = ""
-}
 
 from Function fn, int pos, Parameter p
-where p = fn.getParameter(pos)
-select fn.getName() as function_name,
-       functionDefFileOf(fn) as function_def_file,
+where p = fn.getParameter(pos) and isEntityFunction(fn)
+select functionName(fn) as function_name,
+       functionDefFile(fn) as function_def_file,
        pos as position,
        p.getName() as param_name,
        p.getType().toString() as param_type,

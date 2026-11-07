@@ -39,21 +39,11 @@
  *   invocation_line     : 1-indexed line number of the invocation
  */
 import cpp
-
-/**
- * Repository-relative path, falling back to absolute for files outside the
- * source root (system/external headers) — keeps system entities' identity
- * consistent with the T1 entity CSVs.
- */
-string pathOf(File f) {
-  if exists(f.getRelativePath())
-  then result = f.getRelativePath()
-  else result = f.getAbsolutePath()
-}
+import identity
 
 string enclosingNameOf(MacroInvocation mi) {
   if exists(mi.getEnclosingFunction())
-  then result = mi.getEnclosingFunction().getName()
+  then result = enclosingFunctionName(mi)
   else result = ""
 }
 

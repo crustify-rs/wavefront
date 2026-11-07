@@ -37,64 +37,28 @@
  * scoped only.
  */
 import cpp
+import identity
 
-/**
- * Repository-relative path, falling back to absolute for files outside the
- * source root (system/external headers) — keeps system entities' identity
- * consistent with the T1 entity CSVs.
- */
-string pathOf(File f) {
-  if exists(f.getRelativePath())
-  then result = f.getRelativePath()
-  else result = f.getAbsolutePath()
-}
-
-string defFileOf(GlobalVariable g) {
-  if exists(g.getDefinition())
-  then result = pathOf(g.getDefinition().getFile())
-  else result = ""
-}
+string defFileOf(Variable g) { result = globalDefFile(g) }
 
 string typeDefFileOf(UserType t) {
-  if exists(t.getDefinition())
-  then result = pathOf(t.getDefinition().getFile())
-  else result = ""
+  exists(UserType c | c = canonicalUserType(t) |
+    if exists(c.getDefinition())
+    then result = pathOf(c.getDefinition().getFile())
+    else result = ""
+  )
 }
 
-string typeKindOf(UserType t) {
-  if t instanceof Struct then result = "struct"
-  else if t instanceof Union then result = "union"
-  else if t instanceof Enum then result = "enum"
-  else if t instanceof TypedefType then result = "typedef"
-  else result = "other"
-}
 
-predicate reachableUserType(Type outer, UserType t) {
-  outer = t
-  or
-  reachableUserType(outer.(DerivedType).getBaseType(), t)
-  or
-  // Descend INTO a function pointer's SIGNATURE. The `DerivedType` step above
-  // already reaches the `RoutineType` itself, but a routine's parameter and
-  // return types hang off `getAParameterType()` / `getReturnType()` — NOT
-  // `getBaseType()` — so without these two disjuncts the walk dies at the
-  // routine and every user type named by a bare (un-typedef'd) function
-  // pointer is invisible. A typedef'd callback also benefits: the consumer
-  // gains a direct edge to the types in the callback's signature, alongside
-  // the indirect one through the callback's own symbol entry.
-  reachableUserType(outer.(RoutineType).getReturnType(), t)
-  or
-  reachableUserType(outer.(RoutineType).getAParameterType(), t)
-}
-
-from GlobalVariable g, UserType t
+from Variable g, UserType t
 where
+  isGlobalEntity(g) and
   reachableUserType(g.getType(), t) and
   t.getName() != "" and
   not t.getName().prefix(1) = "(" and
   typeKindOf(t) != "other"
-select g.getName() as global_name,
+select globalName(g) as global_name,
        defFileOf(g) as global_def_file,
-       t.getName() as type_name,
+       cppName(t) as type_name,
        typeKindOf(t) as type_kind,
        typeDefFileOf(t) as type_def_file

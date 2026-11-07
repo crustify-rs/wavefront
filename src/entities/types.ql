@@ -109,13 +109,7 @@ string declFilesOf(UserType t) {
   )
 }
 
-string kindOf(UserType t) {
-  if t instanceof Struct then result = "struct"
-  else if t instanceof Union then result = "union"
-  else if t instanceof Enum then result = "enum"
-  else if t instanceof TypedefType then result = "typedef"
-  else result = "other"
-}
+string kindOf(UserType t) { result = typeKindOf(t) }
 
 /**
  * For typedef `td`, return the C tag of its immediate underlying
@@ -130,7 +124,7 @@ string aliasOf(TypedefType td) {
   exists(UserType b |
     unwrappedUserType(td.getBaseType(), b) and
     not b.getName().prefix(1) = "(" and
-    result = b.getName()
+    result = cppName(b)
   )
   or
   not exists(UserType b |
@@ -207,10 +201,14 @@ from UserType t
 where
   // Skip anonymous tags — no stable identifier for consumers.
   t.getName() != "" and
+  // An instantiation is its template's; a closure or template parameter
+  // names nothing (see `identity.qll`, C++ identity).
+  not isInstantiatedType(t) and
+  not isSyntheticType(t) and
   // Keep struct / union / enum / typedef; skip class-template etc.
   // (which don't exist in C anyway but cpp-all hosts them).
   kindOf(t) != "other"
-select t.getName() as name,
+select cppName(t) as name,
        kindOf(t) as kind,
        defFileOf(t) as def_file,
        declFilesOf(t) as decl_files,

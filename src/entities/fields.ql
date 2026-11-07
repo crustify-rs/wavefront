@@ -83,7 +83,9 @@ import pointers
  * `unsigned long`, `char *`, `void *`).
  */
 predicate containsAggregateType(Type t) {
-  t instanceof Struct
+  // `Class`: C's structs and unions, and C++'s classes.
+  t instanceof Class and not isSyntheticType(t)
+  or t instanceof Struct
   or t instanceof Union
   or t instanceof Enum
   or containsAggregateType(t.(DerivedType).getBaseType())

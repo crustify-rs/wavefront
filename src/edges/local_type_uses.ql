@@ -59,70 +59,25 @@
  * pure C codebases.
  */
 import cpp
+import identity
 
-/**
- * Repository-relative path, falling back to absolute for files outside the
- * source root (system/external headers) — keeps system entities' identity
- * consistent with the T1 entity CSVs.
- */
-string pathOf(File f) {
-  if exists(f.getRelativePath())
-  then result = f.getRelativePath()
-  else result = f.getAbsolutePath()
-}
-
-string kindOf(UserType t) {
-  if t instanceof Struct then result = "struct"
-  else if t instanceof Union then result = "union"
-  else if t instanceof Enum then result = "enum"
-  else if t instanceof TypedefType then result = "typedef"
-  else result = "other"
-}
-
-string fnDefFileOf(Function fn) {
-  if exists(fn.getDefinition())
-  then result = pathOf(fn.getDefinition().getFile())
-  else result = ""
-}
+string fnDefFileOf(Function fn) { result = functionDefFile(fn) }
 
 string typeDefFileOf(UserType t) {
-  if exists(t.getDefinition())
-  then result = pathOf(t.getDefinition().getFile())
-  else result = ""
+  exists(UserType c | c = canonicalUserType(t) |
+    if exists(c.getDefinition())
+    then result = pathOf(c.getDefinition().getFile())
+    else result = ""
+  )
 }
 
-/**
- * Unwrap pointers, arrays, and qualifiers from `outer` to find the
- * underlying `UserType`. `DerivedType` includes `TypedefType` in
- * cpp-all, so typedef chains are descended automatically — the
- * predicate yields the chain's terminal `UserType` AND each
- * intermediate typedef along the way, so consumers see every name
- * the source might have used.
- */
-predicate reachableUserType(Type outer, UserType t) {
-  outer = t
-  or
-  reachableUserType(outer.(DerivedType).getBaseType(), t)
-  or
-  // Descend INTO a function pointer's SIGNATURE. The `DerivedType` step above
-  // already reaches the `RoutineType` itself, but a routine's parameter and
-  // return types hang off `getAParameterType()` / `getReturnType()` — NOT
-  // `getBaseType()` — so without these two disjuncts the walk dies at the
-  // routine and every user type named by a bare (un-typedef'd) function
-  // pointer is invisible. A typedef'd callback also benefits: the consumer
-  // gains a direct edge to the types in the callback's signature, alongside
-  // the indirect one through the callback's own symbol entry.
-  reachableUserType(outer.(RoutineType).getReturnType(), t)
-  or
-  reachableUserType(outer.(RoutineType).getAParameterType(), t)
-}
-
-from Function fn, UserType t, string kind_str, int line_num
+from Function body, Function fn, UserType t, string kind_str, int line_num
 where
+  fn = bodyOwner(body) and
   (
     // Local variable declared with this type.
     exists(LocalVariable lv |
-      lv.getFunction() = fn and
+      lv.getFunction() = body and
       reachableUserType(lv.getType(), t) and
       kind_str = "local_var" and
       line_num = lv.getLocation().getStartLine()
@@ -130,7 +85,7 @@ where
     or
     // Cast TO this type.
     exists(Cast c |
-      c.getEnclosingFunction() = fn and
+      c.getEnclosingFunction() = body and
       reachableUserType(c.getType(), t) and
       kind_str = "cast" and
       line_num = c.getLocation().getStartLine()
@@ -138,18 +93,27 @@ where
     or
     // sizeof(T) where T is the type.
     exists(SizeofTypeOperator s |
-      s.getEnclosingFunction() = fn and
+      s.getEnclosingFunction() = body and
       reachableUserType(s.getTypeOperand(), t) and
       kind_str = "sizeof" and
       line_num = s.getLocation().getStartLine()
     )
+    or
+    // C++: an object `new` allocates, which no local need name
+    // (`return new Scene()`).
+    exists(NewOrNewArrayExpr n |
+      n.getEnclosingFunction() = body and
+      reachableUserType(n.getAllocatedType(), t) and
+      kind_str = "new" and
+      line_num = n.getLocation().getStartLine()
+    )
   ) and
   t.getName() != "" and
-  kindOf(t) != "other"
-select fn.getName() as function_name,
+  typeKindOf(t) != "other"
+select functionName(fn) as function_name,
        fnDefFileOf(fn) as function_def_file,
-       t.getName() as type_name,
-       kindOf(t) as type_kind,
+       cppName(t) as type_name,
+       typeKindOf(t) as type_kind,
        typeDefFileOf(t) as type_def_file,
        kind_str as use_kind,
        line_num as use_line

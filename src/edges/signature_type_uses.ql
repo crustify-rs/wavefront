@@ -42,63 +42,21 @@
  * pull in user-defined types).
  */
 import cpp
-
-/**
- * Repository-relative path, falling back to absolute for files outside the
- * source root (system/external headers) — keeps system entities' identity
- * consistent with the T1 entity CSVs.
- */
-string pathOf(File f) {
-  if exists(f.getRelativePath())
-  then result = f.getRelativePath()
-  else result = f.getAbsolutePath()
-}
-
-string kindOf(UserType t) {
-  if t instanceof Struct then result = "struct"
-  else if t instanceof Union then result = "union"
-  else if t instanceof Enum then result = "enum"
-  else if t instanceof TypedefType then result = "typedef"
-  else result = "other"
-}
+import identity
 
 string typeDefFileOf(UserType t) {
-  if exists(t.getDefinition())
-  then result = pathOf(t.getDefinition().getFile())
-  else result = ""
+  exists(UserType c | c = canonicalUserType(t) |
+    if exists(c.getDefinition())
+    then result = pathOf(c.getDefinition().getFile())
+    else result = ""
+  )
 }
 
-string fnDefFileOf(Function fn) {
-  if exists(fn.getDefinition())
-  then result = pathOf(fn.getDefinition().getFile())
-  else result = ""
-}
-
-/**
- * `t` is reached by unwrapping pointers, arrays, and qualifiers from
- * `outer`. We only stop on `UserType` — primitives are skipped at
- * the select.
- */
-predicate reachableUserType(Type outer, UserType t) {
-  outer = t
-  or
-  reachableUserType(outer.(DerivedType).getBaseType(), t)
-  or
-  // Descend INTO a function pointer's SIGNATURE. The `DerivedType` step above
-  // already reaches the `RoutineType` itself, but a routine's parameter and
-  // return types hang off `getAParameterType()` / `getReturnType()` — NOT
-  // `getBaseType()` — so without these two disjuncts the walk dies at the
-  // routine and every user type named by a bare (un-typedef'd) function
-  // pointer is invisible. A typedef'd callback also benefits: the consumer
-  // gains a direct edge to the types in the callback's signature, alongside
-  // the indirect one through the callback's own symbol entry.
-  reachableUserType(outer.(RoutineType).getReturnType(), t)
-  or
-  reachableUserType(outer.(RoutineType).getAParameterType(), t)
-}
+string fnDefFileOf(Function fn) { result = functionDefFile(fn) }
 
 from Function fn, UserType t, string pos
 where
+  isEntityFunction(fn) and
   (
     // Return type
     (reachableUserType(fn.getType(), t) and pos = "return")
@@ -115,10 +73,10 @@ where
   // prefix filter — compiler builtins are kept consistently with
   // entities/types.ql.
   t.getName() != "" and
-  kindOf(t) != "other"
-select fn.getName() as function_name,
+  typeKindOf(t) != "other"
+select functionName(fn) as function_name,
        fnDefFileOf(fn) as function_def_file,
-       t.getName() as type_name,
-       kindOf(t) as type_kind,
+       cppName(t) as type_name,
+       typeKindOf(t) as type_kind,
        typeDefFileOf(t) as type_def_file,
        pos as position

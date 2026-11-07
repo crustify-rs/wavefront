@@ -52,37 +52,6 @@
 import cpp
 import identity
 
-string typeKindOf(UserType t) {
-  if t instanceof Struct then result = "struct"
-  else if t instanceof Union then result = "union"
-  else if t instanceof Enum then result = "enum"
-  else if t instanceof TypedefType then result = "typedef"
-  else result = "other"
-}
-
-/**
- * Unwrap pointers, arrays, and qualifiers from `outer` and bind `t`
- * to every `UserType` reached along the way. Mirrors
- * `signature_type_uses.ql`'s `reachableUserType`.
- */
-predicate reachableUserType(Type outer, UserType t) {
-  outer = t
-  or
-  reachableUserType(outer.(DerivedType).getBaseType(), t)
-  or
-  // Descend INTO a function pointer's SIGNATURE. The `DerivedType` step above
-  // already reaches the `RoutineType` itself, but a routine's parameter and
-  // return types hang off `getAParameterType()` / `getReturnType()` — NOT
-  // `getBaseType()` — so without these two disjuncts the walk dies at the
-  // routine and every user type named by a bare (un-typedef'd) function
-  // pointer is invisible. A typedef'd callback also benefits: the consumer
-  // gains a direct edge to the types in the callback's signature, alongside
-  // the indirect one through the callback's own symbol entry.
-  reachableUserType(outer.(RoutineType).getReturnType(), t)
-  or
-  reachableUserType(outer.(RoutineType).getAParameterType(), t)
-}
-
 from Field f, UserType t, string struct_name, string struct_def_file, string field_name
 where
   reachableUserType(fieldType(f), t) and
