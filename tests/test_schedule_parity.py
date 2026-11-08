@@ -95,7 +95,7 @@ class SchedulePackingParityTests(unittest.TestCase):
         root = Path(__file__).resolve().parents[1]
         schedule = json.loads((root / "examples" / "schedule.json").read_text())
 
-        self.assertEqual(schedule["schema_version"], 4)
+        self.assertEqual(schedule["schema_version"], 5)
         items = _scheduled_items(schedule)
         waves = schedule["waves"]
         summary = schedule["summary"]
@@ -120,7 +120,8 @@ class SchedulePackingParityTests(unittest.TestCase):
                 self.assertEqual(waves[index]["module"], module["name"])
         keys = {"name", "defined_in", "declared_in", "kind", "source_kind",
                 "seeded", "module", "loc", "stats", "depends_on", "depended_on_by",
-                "type_generator_for", "used_fields"}
+                "type_generator_for", "used_fields", "opaque_after",
+                "unreferenced_after"}
         for item in items:
             self.assertEqual(set(item), keys)
 
@@ -271,7 +272,7 @@ class SchedulePackingParityTests(unittest.TestCase):
 
         wave = _schedule(graph, inventory, api_headers_only=True)
 
-        self.assertEqual(wave["schema_version"], 4)
+        self.assertEqual(wave["schema_version"], 5)
         self.assertEqual([w["layer"] for w in wave["waves"]], [0, 1])
         self.assertEqual(
             [item["name"] for item in _scheduled_items(wave)],

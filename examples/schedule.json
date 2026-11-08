@@ -1,5 +1,5 @@
 {
-  "schema_version": 4,
+  "schema_version": 5,
   "oracle_config": {
     "path": "examples/wavefront-config.json",
     "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
@@ -115,7 +115,43 @@
                 }
               },
               "type_generator_for": [],
-              "used_fields": []
+              "used_fields": [],
+              "opaque_after": null,
+              "unreferenced_after": {
+                "closure": {
+                  "users": 1,
+                  "items": [
+                    {
+                      "name": "widget_new",
+                      "defined_in": "src/widget.c",
+                      "kind": "symbol",
+                      "module": "src/widget.c",
+                      "wave": 2
+                    }
+                  ],
+                  "modules": [
+                    "src/widget.c"
+                  ]
+                },
+                "scheduled": {
+                  "users": 1,
+                  "items": [
+                    {
+                      "name": "widget_new",
+                      "defined_in": "src/widget.c",
+                      "kind": "symbol",
+                      "module": "src/widget.c",
+                      "wave": 2
+                    }
+                  ],
+                  "waves": [
+                    2
+                  ],
+                  "modules": [
+                    "src/widget.c"
+                  ]
+                }
+              }
             }
           ]
         }
@@ -175,7 +211,57 @@
                 "refs",
                 "lock",
                 "users"
-              ]
+              ],
+              "opaque_after": {
+                "closure": {
+                  "users": 2,
+                  "items": [
+                    {
+                      "name": "widget_free",
+                      "defined_in": "src/widget.c",
+                      "kind": "symbol",
+                      "module": "src/widget.c",
+                      "wave": 2
+                    },
+                    {
+                      "name": "widget_new",
+                      "defined_in": "src/widget.c",
+                      "kind": "symbol",
+                      "module": "src/widget.c",
+                      "wave": 2
+                    }
+                  ],
+                  "modules": [
+                    "src/widget.c"
+                  ]
+                },
+                "scheduled": {
+                  "users": 2,
+                  "items": [
+                    {
+                      "name": "widget_free",
+                      "defined_in": "src/widget.c",
+                      "kind": "symbol",
+                      "module": "src/widget.c",
+                      "wave": 2
+                    },
+                    {
+                      "name": "widget_new",
+                      "defined_in": "src/widget.c",
+                      "kind": "symbol",
+                      "module": "src/widget.c",
+                      "wave": 2
+                    }
+                  ],
+                  "waves": [
+                    2
+                  ],
+                  "modules": [
+                    "src/widget.c"
+                  ]
+                }
+              },
+              "unreferenced_after": null
             }
           ]
         }
@@ -254,7 +340,43 @@
                 }
               },
               "type_generator_for": [],
-              "used_fields": []
+              "used_fields": [],
+              "opaque_after": null,
+              "unreferenced_after": {
+                "closure": {
+                  "users": 0,
+                  "items": [
+                    {
+                      "name": "widget_new",
+                      "defined_in": "src/widget.c",
+                      "kind": "symbol",
+                      "module": "src/widget.c",
+                      "wave": 2
+                    }
+                  ],
+                  "modules": [
+                    "src/widget.c"
+                  ]
+                },
+                "scheduled": {
+                  "users": 0,
+                  "items": [
+                    {
+                      "name": "widget_new",
+                      "defined_in": "src/widget.c",
+                      "kind": "symbol",
+                      "module": "src/widget.c",
+                      "wave": 2
+                    }
+                  ],
+                  "waves": [
+                    2
+                  ],
+                  "modules": [
+                    "src/widget.c"
+                  ]
+                }
+              }
             },
             {
               "name": "widget_free",
@@ -302,7 +424,43 @@
                 }
               },
               "type_generator_for": [],
-              "used_fields": []
+              "used_fields": [],
+              "opaque_after": null,
+              "unreferenced_after": {
+                "closure": {
+                  "users": 0,
+                  "items": [
+                    {
+                      "name": "widget_free",
+                      "defined_in": "src/widget.c",
+                      "kind": "symbol",
+                      "module": "src/widget.c",
+                      "wave": 2
+                    }
+                  ],
+                  "modules": [
+                    "src/widget.c"
+                  ]
+                },
+                "scheduled": {
+                  "users": 0,
+                  "items": [
+                    {
+                      "name": "widget_free",
+                      "defined_in": "src/widget.c",
+                      "kind": "symbol",
+                      "module": "src/widget.c",
+                      "wave": 2
+                    }
+                  ],
+                  "waves": [
+                    2
+                  ],
+                  "modules": [
+                    "src/widget.c"
+                  ]
+                }
+              }
             }
           ]
         }

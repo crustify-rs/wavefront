@@ -25,6 +25,12 @@ such as a test suite, is no use of the program's entities.
 
 ## Modules
 
+A module is a named group of the closure's files and of the items they
+define, which a schedule orders together: typically a translation unit with
+the headers that carry its name, but a group may hold a part of a TU, a
+header alone, or several TUs, as its config says. It is unrelated to C++20
+modules.
+
 `modules`, optional, groups the closure's units for `wavefront schedule`
 ([`batching.md`](batching.md#order)). It lists module records,
 `{"name": ..., "files": [...]}`: a unique name and file entries, each as

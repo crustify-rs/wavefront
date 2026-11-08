@@ -117,3 +117,59 @@ Each type unit carries the fields its users reach (`used_fields`). An API
 schedule lists every field of a type the `api_headers` define, and none of a
 type defined elsewhere, whose layout the API does not publish. A default
 schedule lists the fields the config's own functions access.
+
+## Release points
+
+A unit's users are processed in the order too, and each one's place tells a
+consumer when the unit is no longer needed in its original form:
+
+- a struct or union is **opaque** after its **layout users**: the functions,
+  globals and aggregates that read its members, take its size, alignment or
+  an offset into it, hold it by value, or step a pointer over it
+  (`t2/layout_uses.csv`). Once all of them are processed, what remains holds
+  it only through pointers. A type held by value inside another is also used
+  by every layout user of its holder, transitively, since they depend on the
+  holder's layout and so on its own;
+- a function or global is **unreferenced** after its **referrers**: the units
+  that call it, take its address or access it, the edges of the body-deep
+  graph between functions and globals.
+
+Users are read off the body-deep graph and the layout-use table. Only the
+closure's units count: an external function, a test the closure leaves out,
+or a macro, whose uses are recorded where it is expanded, is no user.
+
+A schedule made with `--api-headers-only` has no release points: its items'
+`opaque_after` and `unreferenced_after` are `null`. It binds what the
+headers publish and keeps the C behind it, so nothing it schedules retires a
+layout or an export, and its order, the API graph's, does not hold most of
+the users.
+
+Each item records its release point, `opaque_after` or
+`unreferenced_after`
+([`artifacts/schedule.md`](artifacts/schedule.md#release-points)); its users
+are a query away, `query types --layout-users` and `query symbols --callers`.
+The point is a frontier rather than one wave: the waves are listed in one
+topological order, which puts a wave after others it does not depend on, so
+the point is, of the unit's own wave and its scheduled users', those no other
+one depends on, transitively through `depends_on.scheduled`. Its items are the users in
+those waves, the unit itself when its own wave is one: within a wave nothing
+is ordered, so each of them is a last user. A consumer that runs waves once
+their dependencies complete has released the unit once all of them have; one
+that runs them in their listed order, once the highest has. The modules
+answer the same over the order of the modules, counting a user no module
+claims toward the module whose wave holds it: a consumer that switches a
+module whole, once its last wave has run, reads them rather than the waves,
+since a user's wave can end before the module that holds it does.
+
+Each point has two records, `closure` over every user and `scheduled` over
+those the schedule holds. A narrow schedule may leave users out: a user
+depends on the unit, not the other way round, so the unit's seeds need not
+reach it. Its `scheduled` record then counts fewer users, and its waves are a
+lower bound, while the `closure` record names the last users in the order of
+the whole closure, which a narrow schedule keeps, and their modules.
+
+The layout uses are syntactic, as every fact is
+([`graph.md`](graph.md#assumptions-and-limitations)): a size written as a
+number, or an offset computed by hand, reads no layout Wavefront can see, and
+neither does a byte buffer copied without `sizeof` of the type, or a union
+that puns it.

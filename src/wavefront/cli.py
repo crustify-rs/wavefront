@@ -192,6 +192,16 @@ def _add_query_flags(p: argparse.ArgumentParser, *, facets: bool) -> None:
                                 "code reaches; --external-only does not apply. "
                                 "each field's toucher set is the COMPLETE, unfiltered "
                                 "set of functions that access it.")
+        facet.add_argument("--layout-users", action="store_true",
+                           dest="layout_users",
+                           help="Introspect a struct or union: every function, "
+                                "global and aggregate that depends on its layout "
+                                "(reads a member, takes its size, alignment or an "
+                                "offset, holds it by value, or steps a pointer "
+                                "over it), with the sites of each kind of use, "
+                                "and those that use it through an aggregate that "
+                                "holds it by value, under `via`. --closure-only "
+                                "keeps the closure's own users.")
     else:
         # Symbols-only REVERSE lifecycle lookup, parameterized by a TYPE (no
         # --name): which symbols drop / dispose / clone / construct TYPE, read
@@ -473,6 +483,7 @@ def _dispatch_query(args: argparse.Namespace, target: Path) -> None:
         lifecycle_ops=bool(getattr(args, "lifecycle_ops", False)),
         users=bool(getattr(args, "users", False)),
         field_touchers=bool(getattr(args, "field_touchers", False)),
+        layout_users=bool(getattr(args, "layout_users", False)),
         update=getattr(args, "update", None),
         lifetime_for=getattr(args, "lifetime_for", None),
         taking=getattr(args, "taking", None),

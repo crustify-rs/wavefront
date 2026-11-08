@@ -17,11 +17,11 @@ The filename is not identity. `--output` accepts any path whose parent
 directory already exists, so a consumer names schedules however its own layout
 prefers. Wavefront never creates that directory.
 
-## Version 4
+## Version 5
 
 ```json
 {
-  "schema_version": 4,
+  "schema_version": 5,
   "oracle_config": {
     "path": "examples/wavefront-config.json",
     "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
@@ -121,7 +121,18 @@ record names across a module boundary that is still in the other language.
                  "cut": {"types": [], "symbols": []}},
   "depended_on_by": {"cut": {"types": [], "symbols": []}},
   "type_generator_for": [],
-  "used_fields": []
+  "used_fields": [],
+  "opaque_after": null,
+  "unreferenced_after": {
+    "closure": {"users": 0,
+                "items": [{"name": "widget_new", "defined_in": "src/widget.c",
+                           "kind": "symbol", "module": "src/widget.c", "wave": 2}],
+                "modules": ["src/widget.c"]},
+    "scheduled": {"users": 0,
+                  "items": [{"name": "widget_new", "defined_in": "src/widget.c",
+                             "kind": "symbol", "module": "src/widget.c", "wave": 2}],
+                  "waves": [2], "modules": ["src/widget.c"]}
+  }
 }
 ```
 
@@ -140,6 +151,8 @@ record names across a module boundary that is still in the other language.
 | `depended_on_by.cut` | the reverse: the units ordered before it whose dependency on it was cut |
 | `type_generator_for` | on a generator macro (T3 `type_generators.csv`), the instance types it mints, routed as one type so one generic is written for them; `[]` otherwise |
 | `used_fields` | on a type, the fields its users reach: in API mode every field of a type an `api_headers` file defines, and none of a type defined elsewhere; otherwise the fields the closure's own functions access |
+| `opaque_after` | on a struct or union, the point after which none of its layout users is left ([Release points](#release-points)); `null` on any other item, and in an API schedule |
+| `unreferenced_after` | on a function or global, the point after which none of its referrers is left; `null` on any other item, and in an API schedule |
 
 Each list is split into `types` and `symbols` by route, a generator macro
 among the types, and each reference in them is
@@ -150,6 +163,47 @@ second node table. `scope` is:
 - `closure`: an entity of the config's closure that is no unit, such as a
   macro;
 - `external`: an entity outside the closure, such as a system header's.
+
+### Release points
+
+How users and release points are found is in
+[`batching.md`](../batching.md#release-points). A user is a unit of the
+closure, whether or not the schedule holds it. The users themselves are not
+recorded: `query types --name T --layout-users` lists a type's, with the
+sites and kinds of each use, and `query symbols --name F --callers` a
+function's or global's referrers.
+
+A release point, `opaque_after` or `unreferenced_after`, has two records: the
+point among every user, in the order of the whole closure, and the point among
+the users this schedule holds, in its waves. They agree when the schedule
+holds every user. Each record's candidates are the item and its users, and
+its last are those no other candidate depends on, transitively: its frontier.
+
+| field | meaning |
+|---|---|
+| `closure.users` | how many users the closure has |
+| `closure.items` | of the item and its users, those no other one depends on in the order of the whole closure, over its kept edges |
+| `closure.modules` | the same over the order of the modules, of the item's module and every user's |
+| `scheduled.users` | how many of the users the schedule holds; fewer than `closure.users` when a narrow schedule leaves some out |
+| `scheduled.waves` | of the item's wave and its scheduled users' waves, those no other one depends on through `depends_on.scheduled`. The highest index among them is always one: the listing is one topological order of the waves, and the others are those it orders before it without a dependency |
+| `scheduled.items` | the item and its scheduled users whose wave is one of `scheduled.waves`: not every item of those waves |
+| `scheduled.modules` | the same as `closure.modules`, over the item and its scheduled users |
+
+An item is `{"name", "defined_in", "kind", "module", "wave"}`: `kind` is
+`symbol` for a function or global and `type` for an aggregate that holds the
+type by value; `module` is the module that claims it, `null` when none does;
+and `wave` its wave, absent when the schedule does not hold it. A user no
+module claims counts toward the module whose wave holds it. `modules` is
+`null` without `modules`. An item with no user has itself as its release
+point.
+
+The two records can name different items even when they agree on the users:
+the closure's are ordered by their dependencies, while a wave also follows
+its module's previous wave, so a user can be last in the closure and not in
+the schedule.
+
+A schedule made with `--api-headers-only` has no release points, as
+[`batching.md`](../batching.md#release-points) describes.
 
 ### Statistics
 
@@ -169,7 +223,8 @@ A function pointer is a pointer, written inline or through a typedef.
 
 A macro or callback typedef has none: `{}`.
 
-Schema-v3 schedules, sequential waves of one config's selection, and schema-v2
+Schema-v4 schedules, which have no release points, schema-v3
+schedules, sequential waves of one config's selection, and schema-v2
 schedules with `steps`, `plan_items`, and `dependency_nodes` remain readable
 historical records and need not be rewritten. New schedules are always
-schema v4.
+schema v5.

@@ -31,6 +31,7 @@ def query(
     lifecycle_ops: bool = False,
     users: bool = False,
     field_touchers: bool = False,
+    layout_users: bool = False,
     update: str | None = None,
     lifetime_for: str | None = None,
     taking: str | None = None,
@@ -84,11 +85,15 @@ def query(
         _call_closure(target, name_list, files,
                       direction="callees" if callees else "callers", depth=depth)
         return
-    type_facets = fields or lifecycle_ops or users or field_touchers
+    type_facets = fields or lifecycle_ops or users or field_touchers or layout_users
     if type_facets and kind != "type":
         raise SystemExit(
-            "query symbols: --fields/--lifecycle-ops/--users/--field-touchers "
-            "apply to types only.")
+            "query symbols: --fields/--lifecycle-ops/--users/--field-touchers/"
+            "--layout-users apply to types only.")
+    if external_only and layout_users:
+        raise SystemExit(
+            "query types: --external-only does not apply to --layout-users: a "
+            "layout user is code the closure may translate. Use --closure-only.")
     if external_only and (fields or field_touchers):
         raise SystemExit(
             "query types: --external-only does not apply to --fields / "
@@ -105,7 +110,7 @@ def query(
         _introspect(target, kind=kind, names=name_list, files=files,
                     api_only=api_only,
                     fields=fields, lifecycle_ops=lifecycle_ops, users=users,
-                    field_touchers=field_touchers,
+                    field_touchers=field_touchers, layout_users=layout_users,
                     update=update,
                     external_only=external_only, closure_only=closure_only)
     else:
@@ -649,7 +654,7 @@ def _enumerate(
 def _introspect(
     target: Path, *, kind: str, names, files, fields, lifecycle_ops,
     external_only, closure_only, api_only=False, users=False,
-    field_touchers=False, update=None,
+    field_touchers=False, layout_users=False, update=None,
 ) -> None:
     """One named entity's record (summary / whole), or — for a single type —
     its windowable ``--fields`` / ``--lifecycle-ops`` / ``--users`` /
@@ -658,7 +663,7 @@ def _introspect(
     ``crates locate --name``.)"""
     from wavefront import dag as D
 
-    if (fields or lifecycle_ops or users or field_touchers
+    if (fields or lifecycle_ops or users or field_touchers or layout_users
             or update is not None):
         layout, node, by_key = _resolve(target, kind=kind, name=names[0],
                                         files=files,
@@ -696,6 +701,10 @@ def _introspect(
                         sj, sec, kinds=("functions", "globals", "macros"))}
             win = sorted(pool)
             print("\n".join(win) if win else "[]")
+            return
+        if layout_users:
+            _layout_users(layout, target, node.id, node.defined_in,
+                          closure_only=closure_only)
             return
         if field_touchers:
             # {field: [touchers]} — the type's fields (ALL declared by default;
@@ -895,6 +904,54 @@ def _field_touchers(layout, target, tag: str, defined_in: str | None, *,
     out = {f: [_node(k) for k in sorted(complete.get(f, set()))]
            for f in sorted(scoped)}
     print(json.dumps({"name": tag, "fields": out}, indent=2))
+
+
+def _layout_users(layout, target, tag: str, defined_in: str | None, *,
+                  closure_only: bool = False) -> None:
+    """The type's layout users, from ``t2/layout_uses.csv``: every function,
+    global and aggregate that reads its members, size or alignment, steps over
+    it, or holds it by value, each with the sites of its uses by kind
+    (``file:line``), and those that use it through an aggregate that holds it
+    by value, named in ``via`` (:mod:`wavefront.opacity`). --closure-only keeps
+    the closure's own users."""
+    import csv as _csv
+    from collections import defaultdict
+
+    from wavefront import opacity
+
+    path = layout.t2 / "layout_uses.csv"
+    if not path.is_file():
+        raise SystemExit(
+            f"query types: {path} is missing; run `extract-ql` to emit it.")
+    sites: dict = defaultdict(lambda: defaultdict(set))
+    with path.open(newline="") as fh:
+        for r in _csv.DictReader(fh):
+            if r["type_name"] == tag and r["type_def_file"] == (defined_in or ""):
+                ukind = "type" if r["user_kind"] == "type" else "symbol"
+                sites[(r["user_name"], r["user_def_file"], ukind)][r["use_kind"]].add(
+                    (r["use_file"], int(r["use_line"])))
+    users = opacity.close_over_embedding(opacity.load_layout_uses(layout.t2)).get(
+        (tag, defined_in, "type"), {})
+    keep = None
+    if closure_only:
+        from compose import scope as _sc
+        from wavefront import scope as _scope_mod
+        sj = _scope_mod.try_build(layout, target)
+        if sj is not None:
+            keep = _sc.scope_membership(sj, _sc.CLOSURE)
+    out = []
+    for u in sorted(users, key=lambda k: (k[0], k[1] or "", k[2])):
+        if keep is not None and (u[0], u[1]) not in keep:
+            continue
+        uses, via = users[u]
+        out.append({
+            "name": u[0], "defined_in": u[1], "kind": u[2],
+            "uses": {k: [f"{f}:{n}" for f, n in sorted(sites[u][k])]
+                     for k in opacity.USE_KINDS if k in uses},
+            "via": [_node(h) for h in sorted(via, key=lambda k: (k[0], k[1] or ""))],
+        })
+    print(json.dumps({"name": tag, "defined_in": defined_in, "layout_users": out},
+                     indent=2))
 
 
 # ----------------------------------------------------------- --update ingest

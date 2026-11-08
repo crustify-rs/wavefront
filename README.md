@@ -59,7 +59,7 @@ wavefront REPO_ROOT --config PATH COMMAND ...
 |---|---|
 | `state_dir` | Directory for the CodeQL database and tables, ownership findings, and caches. |
 | `closure` | The program Wavefront analyzes, for its graph, queries and usage counts: `impl_files`, the sources and private headers that implement it, and `api_headers`, the headers that publish its API, each `included` files and directories, less what `excluded` matches. See [Files](docs/scoping.md#files). |
-| `modules` | Optional. Module records, `{name, files}`, each file entry as in `schedule_seeds`: a schedule orders each module's units together, the modules in dependency order with their cycles cut. A unit no module claims is ordered alone. See [Modules](docs/scoping.md#modules). |
+| `modules` | Optional. Module records, `{name, files}`, each file entry as in `schedule_seeds`: a module is a named group of files and items, typically a TU with its headers, unrelated to C++20 modules. A schedule orders each module's units together, the modules in dependency order with their cycles cut. A unit no module claims is ordered alone. See [Modules](docs/scoping.md#modules). |
 | `schedule_seeds` | Optional. What `wavefront schedule` starts from: a list of file entries, each seeding what its file defines or declares; a schedule holds its seeds and what they depend on. A file entry is a path, a directory written with a trailing slash, or `{path, items}` whose `included` and `excluded` items, each `{name, kind}`, narrow what it seeds. Without it, every unit of the closure. See [Schedule seeds](docs/scoping.md#schedule-seeds). |
 | `t3_dir` | Optional. Directory, relative to `state_dir`, holding the T3 tables ([`examples/t3/`](examples/t3/)). |
 
@@ -111,6 +111,7 @@ Type views (one `--name`):
 | `--lifecycle-ops` | Print the routines that drop, dispose, clone, or construct the type. |
 | `--users` | Print every function that uses the type. |
 | `--field-touchers` | Print each field and the functions that access it. |
+| `--layout-users` | Print every function, global and aggregate that depends on the type's layout, with the sites of each use. |
 
 Symbol searches:
 
@@ -178,7 +179,11 @@ does, or in a wave of its own when it is a seed, or what only such a seed
 needs. A narrow schedule keeps the order and cuts of the whole
 closure, so a consumer can schedule parts of a library in turn without
 changing the order. Each unit carries its module, its `defined_in` and
-`declared_in` files, and the statistics a consumer weighs its work by.
+`declared_in` files, and the statistics a consumer weighs its work by. A
+struct or union also carries the point after which none of its layout users
+is left to process, `opaque_after`, and a function or global the point after
+which none of its referrers is, `unreferenced_after`
+([Release points](docs/batching.md#release-points)).
 
 | Flag | Default | Effect |
 |---|---:|---|
@@ -209,7 +214,7 @@ See [`examples/schedule.json`](examples/schedule.json) for the output.
 |---|---|
 | [`docs/graph.md`](docs/graph.md) | The dependency graph: nodes, edges, type erasure, cycles, polymorphism, and limitations. |
 | [`docs/scoping.md`](docs/scoping.md) | The closure, modules, the schedule seeds, closure and external entities, the API view, and default and API modes. |
-| [`docs/batching.md`](docs/batching.md) | Units, their order, waves, and batch caps. |
+| [`docs/batching.md`](docs/batching.md) | Units, their order, waves, batch caps, and release points. |
 | [`docs/pointer-properties.md`](docs/pointer-properties.md) | The pointer properties recorded in the ownership store. |
 | [`docs/type-lifecycle.md`](docs/type-lifecycle.md) | Lifecycle roles, and how to find the routines that play them. |
 | [`docs/artifacts/`](docs/artifacts/) | Field reference for type and symbol records, findings, the ownership store, schedules, and T3 tables. |

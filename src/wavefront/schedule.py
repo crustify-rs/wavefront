@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from wavefront.dag import Node, NodeKey, load_nodes, load_type_meta
+from wavefront.order import _sort_key
 
 #: The batch caps, each optional.
 CAPS = ("max_syms", "max_loc", "max_types", "min_fields")
@@ -185,6 +186,101 @@ def _used_fields(layout, target: Path, *,
             names = [name for name in names if name in touched.get(tag, set())]
         out[key] = names
     return out
+
+
+def _release_points(layout, target: Path, *, docs: dict[NodeKey, dict],
+                    waves: list[dict], chosen: set[NodeKey],
+                    wave_of: dict[NodeKey, int], graph: tuple,
+                    units: set[NodeKey], mods: list,
+                    owner: dict[NodeKey, int], group_order: tuple,
+                    unit_dag: dict[NodeKey, set[NodeKey]]) -> None:
+    """Fill the point after which no user of an item is left
+    (:mod:`wavefront.opacity`): a struct's or union's ``opaque_after``, after
+    its layout users, and a function's or global's ``unreferenced_after``,
+    after its referrers, read off the body-deep graph and the layout-use
+    table; they are the closure's units. The users themselves are not
+    recorded: ``query types --layout-users`` and ``query symbols --callers``
+    list them.
+
+    Each point has two records: ``closure``, over every user, in the order
+    of the whole closure (``unit_dag``, its kept edges), and ``scheduled``,
+    over the users the schedule holds, in its waves."""
+    from wavefront import opacity
+
+    by_key, edges = graph
+
+    # Ancestry: a candidate that another depends on, transitively, is not
+    # the last. Module ancestry is the order's, over every group, so that it
+    # is the same in every schedule.
+    by_wave = opacity.Order({w["index"]: set(w["depends_on"]["scheduled"])
+                             for w in waves})
+    by_unit = opacity.Order(unit_dag)
+    groups, group_adj, group_cut = group_order
+    before_group = opacity.Order(
+        {g: {d for d in group_adj.get(g, ()) if (g, d) not in group_cut}
+         for g in groups})
+    by_module = opacity.Order(
+        {g[1]: {d[1] for d in groups if d[0] == "module" and before_group.depends(g, d)}
+         for g in groups if g[0] == "module"})
+    wave_module = {w["index"]: w["module"] for w in waves}
+    index_of_module = {m.name: i for i, m in enumerate(mods)}
+
+    def module_of(k: NodeKey) -> int | None:
+        """The module a unit counts toward: its own, or the one whose wave
+        holds it."""
+        if k in owner:
+            return owner[k]
+        name = wave_module.get(wave_of.get(k)) if k in wave_of else None
+        return index_of_module.get(name) if name is not None else None
+
+    def entry(k: NodeKey) -> dict:
+        out = {"name": k[0], "defined_in": k[1], "kind": k[2],
+               "module": mods[owner[k]].name if k in owner else None}
+        if k in wave_of:
+            out["wave"] = wave_of[k]
+        return out
+
+    def last_modules(keys: list[NodeKey]) -> list[str] | None:
+        if not mods:
+            return None
+        ms = {m for m in map(module_of, keys) if m is not None}
+        return sorted(mods[m].name for m in by_module.frontier(ms))
+
+    def release(key: NodeKey, users: list[NodeKey]) -> dict:
+        everyone = [key] + users
+        held = [k for k in everyone if k in wave_of]
+        last = by_wave.frontier({wave_of[k] for k in held})
+        return {
+            "closure": {
+                "users": len(users),
+                "items": [entry(k) for k in by_unit.frontier(everyone)],
+                "modules": last_modules(everyone),
+            },
+            "scheduled": {
+                "users": len(held) - 1,
+                "items": [entry(k) for k in held if wave_of[k] in last],
+                "waves": last,
+                "modules": last_modules(held),
+            },
+        }
+
+    layout_users = opacity.close_over_embedding(opacity.load_layout_uses(layout.t2))
+
+    def is_symbol(k: NodeKey) -> bool:
+        n = by_key.get(k)
+        return (k[2] == "symbol" and n is not None
+                and (n.subkind.startswith("function") or n.subkind.startswith("global")))
+
+    refs = opacity.referrers(edges, is_symbol, lambda k: k in units)
+
+    for key, d in docs.items():
+        if key[2] == "type" and d["source_kind"] in ("struct", "union"):
+            found = layout_users.get(key, {})
+            users = sorted((u for u in found if u in units), key=_sort_key)
+            d["opaque_after"] = release(key, users)
+        elif is_symbol(key):
+            users = sorted((u for u in refs.get(key, ()) if u in units), key=_sort_key)
+            d["unreferenced_after"] = release(key, users)
 
 
 def build_schedule(layout, target: Path, *, api_headers_only: bool = False,
@@ -380,11 +476,13 @@ def build_schedule(layout, target: Path, *, api_headers_only: bool = False,
     def sides(keys) -> dict:
         return {"types": refs(keys, "type"), "symbols": refs(keys, "symbol")}
 
+    docs: dict[NodeKey, dict] = {}
+
     def doc(key: NodeKey) -> dict:
         node = by_key[key]
         deps = {d for d in edges.get(key, ()) if (key, d) not in cut}
         higher = {d for d in edges.get(key, ()) if (key, d) in cut}
-        return {
+        docs[key] = out = {
             "name": node.id,
             "defined_in": node.defined_in,
             "declared_in": sorted(decls.get(key, ())),
@@ -400,7 +498,10 @@ def build_schedule(layout, target: Path, *, api_headers_only: bool = False,
             "depended_on_by": {"cut": sides(lower.get(key, ()))},
             "type_generator_for": list(node.type_generator_for),
             "used_fields": used.get(key, []),
+            "opaque_after": None,
+            "unreferenced_after": None,
         }
+        return out
 
     def unit(key: NodeKey) -> Unit:
         node = by_key[key]
@@ -516,6 +617,17 @@ def build_schedule(layout, target: Path, *, api_headers_only: bool = False,
         assert all(d < n for d in wave["depends_on"]["scheduled"]), n
         waves.append(wave)
 
+    # An API schedule binds what the headers publish and keeps the C behind
+    # it: nothing it schedules retires a layout or an export, so it has no
+    # release points.
+    if not api_headers_only:
+        _release_points(
+            layout, target, docs=docs, waves=waves, chosen=chosen,
+            wave_of={k: index_of[slot[k]] for k in chosen},
+            graph=(by_key, edges), units=units, mods=mods, owner=owner,
+            group_order=(groups, group_adj, group_cut),
+            unit_dag={k: {d for d in ds if (k, d) not in cut} for k, ds in adj.items()})
+
     # A module's dependencies are those of its scheduled units, which every
     # unit they reach is too: a narrow schedule names no module it leaves out.
     # They pass through the units no module claims, over kept edges, to the
@@ -575,7 +687,7 @@ def build_schedule(layout, target: Path, *, api_headers_only: bool = False,
     listed = sorted({owner[k] for k in chosen if k in owner},
                     key=lambda i: (stage[("module", i)], mods[i].name))
     return {
-        "schema_version": 4,
+        "schema_version": 5,
         "oracle_config": layout.config_provenance(),
         "api_headers_only": api_headers_only,
         "with_enums": with_enums,
