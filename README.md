@@ -112,6 +112,7 @@ Type views (one `--name`):
 | `--users` | Print every function that uses the type. |
 | `--field-touchers` | Print each field and the functions that access it. |
 | `--layout-users` | Print every function, global and aggregate that depends on the type's layout, with the sites of each use. |
+| `--raw-sites` | Print every function that allocates or frees the type with a raw routine (a lifecycle role on a `void *`, in the ownership store), with each site. With `--unresolved` and no `--name`: the raw sites on type-erased values no table types. |
 
 Symbol searches:
 
@@ -181,8 +182,9 @@ closure, so a consumer can schedule parts of a library in turn without
 changing the order. Each unit carries its module, its `defined_in` and
 `declared_in` files, and the statistics a consumer weighs its work by. A
 struct or union also carries the point after which none of its layout users
-is left to process, `opaque_after`, and a function or global the point after
-which none of its referrers is, `unreferenced_after`
+is left to process, `opaque_after`, and after which no C allocates or frees
+it with a raw routine, `unmanaged_after`; a function or global the point
+after which none of its referrers is, `unreferenced_after`
 ([Release points](docs/batching.md#release-points)).
 
 | Flag | Default | Effect |

@@ -130,6 +130,96 @@ class OpacityTests(unittest.TestCase):
         self.assertEqual(order.frontier({1, 3, 9}), [3, 9])
 
 
+def _cast(rel, src, dst, site, line=1) -> dict:
+    """An `arg_casts` row; each end is ("type", name, file) or (kind, name,
+    file, member, decl, ctype)."""
+    row = {"rel": rel, "site_fn": site[0], "site_file": site[1], "line": str(line)}
+    for side, end in (("src", src), ("dst", dst)):
+        kind, name, file, *rest = end
+        member, decl, ctype = rest if rest else ("", name, "")
+        row.update({f"{side}_kind": kind, f"{side}_name": name, f"{side}_def_file": file,
+                    f"{side}_member": member, f"{side}_decl": decl, f"{side}_ctype": ctype})
+    return row
+
+
+FREE = ("param", "my_free", "m.c", "0", "", "void *")
+MALLOC = ("ret", "my_malloc", "m.c", "ret", "", "void *")
+
+
+class RawSiteTests(unittest.TestCase):
+    raw = opacity.raw_routines(
+        [{"name": "my_free", "defined_in": "m.c",
+          "lifetime": {"for": "p", "is_dropper": True}},
+         {"name": "my_malloc", "defined_in": "m.c",
+          "lifetime": {"for": "return", "is_constructor": {"alloc": True}}},
+         {"name": "free", "defined_in": None,
+          "lifetime": {"for": "__ptr", "is_dropper": True}},
+         {"name": "t_free", "defined_in": "t.c",              # typed: not raw
+          "lifetime": {"for": "t", "is_dropper": True}}],
+        [{"function_name": "my_free", "function_def_file": "m.c", "position": "0",
+          "param_name": "p", "is_erased": "true"},
+         {"function_name": "free", "function_def_file": "", "position": "0",
+          "param_name": "__ptr", "is_erased": "true"},
+         {"function_name": "t_free", "function_def_file": "t.c", "position": "0",
+          "param_name": "t", "is_erased": "false"}])
+
+    def sites(self, *rows, params=None, fns=None, fields=None):
+        return opacity.raw_sites(rows, self.raw, params or {}, fns or {}, fields or {})
+
+    def test_the_raw_routines_are_the_roles_on_erased_pointers(self) -> None:
+        self.assertEqual(self.raw.into, {("my_free", "m.c", "0"), ("free", "", "0")})
+        self.assertEqual(self.raw.out, {("my_malloc", "m.c")})
+
+    def test_a_site_names_its_type_by_value_or_typed_slot(self) -> None:
+        got = self.sites(
+            _cast("from", ("type", "T", "t.h"), FREE, ("f", "a.c"), 3),
+            _cast("forward", ("param", "g", "a.c", "0", "T", "struct T *"), FREE, ("g", "a.c")),
+            _cast("to", MALLOC, ("type", "T", "t.h"), ("h", "a.c")),
+            _cast("forward", MALLOC, ("field", "U", "u.h", "buf", "", "char *"), ("h", "a.c")))
+        self.assertEqual([(x.user[0], x.op, x.how, x.types) for x in got], [
+            ("f", "release", "value", {("exact", "T", "t.h")}),
+            ("g", "release", "typed slot", {("tag", "T")}),
+            ("h", "alloc", "value", {("exact", "T", "t.h")}),
+            ("h", "alloc", "typed slot", frozenset())])      # a byte buffer: no struct
+
+    def test_an_erased_parameter_names_a_type_only_when_read_as_one(self) -> None:
+        one = ("param", "free_one", "a.c", "0", "", "void *")
+        two = ("param", "free_any", "a.c", "1", "", "void *")
+        params = {("free_one", "a.c", "0"): {"T"}, ("free_any", "a.c", "1"): {"T", "U"}}
+        got = self.sites(_cast("forward", one, FREE, ("free_one", "a.c")),
+                         _cast("forward", two, FREE, ("free_any", "a.c")), params=params)
+        self.assertEqual([(x.how, x.types) for x in got],
+                         [("erased param", {("tag", "T")}), ("", frozenset())])
+        # T3 names what a function's erased parameters hold, whatever the reads.
+        got = self.sites(_cast("forward", two, FREE, ("free_any", "a.c")), params=params,
+                         fns={("free_any", "a.c"): {"U"}})
+        self.assertEqual(got[0].types, {("tag", "U")})
+
+    def test_an_erased_field_names_every_type_it_holds(self) -> None:
+        field = ("field", "Ctx", "c.h", "priv", "", "void *")
+        got = self.sites(_cast("forward", field, FREE, ("close", "c.c")),
+                         _cast("forward", MALLOC, field, ("open", "c.c")),
+                         fields={("Ctx", "c.h", "priv"): {"A", "B"}})
+        self.assertEqual([(x.op, x.how, x.types) for x in got], [
+            ("release", "erased field", {("tag", "A"), ("tag", "B")}),
+            ("alloc", "erased field", {("tag", "A"), ("tag", "B")})])
+
+    def test_an_erased_end_nothing_types_is_unresolved(self) -> None:
+        got = self.sites(
+            _cast("forward", ("field", "Raw", "r.h", "data", "", "void *"), FREE, ("f", "a.c")),
+            _cast("forward", MALLOC, ("ret", "wrap", "a.c", "ret", "", "void *"), ("wrap", "a.c")))
+        self.assertEqual([(x.how, x.slot) for x in got],
+                         [("", "field:Raw.data@r.h"), ("", "ret:wrap.ret@a.c")])
+
+    def test_other_calls_are_no_site(self) -> None:
+        typed = ("param", "t_free", "t.c", "0", "T", "struct T *")
+        sized = ("ret", "my_malloc", "m.c", "ret", "", "size_t")
+        self.assertEqual(self.sites(
+            _cast("from", ("type", "T", "t.h"), typed, ("f", "a.c")),
+            _cast("to", sized, ("type", "T", "t.h"), ("f", "a.c")),
+            _cast("from", ("type", "T", "t.h"), FREE, ("", "a.c"))), [])
+
+
 T = ("T", "h.c", "type")
 A1, B1 = ("a1", "a.c", "symbol"), ("b1", "b.c", "symbol")
 
@@ -165,6 +255,10 @@ def _item(name: str, defined_in: str, kind: str, module: str | None,
     if wave is not None:
         out["wave"] = wave
     return out
+
+
+def _site(user, op, types) -> opacity.RawSite:
+    return opacity.RawSite(user, "my_free", op, "value", frozenset(types), "", 1)
 
 
 class ReleasePointTests(unittest.TestCase):
@@ -225,6 +319,30 @@ class ReleasePointTests(unittest.TestCase):
             "closure": {"users": 2, "items": last, "modules": None},
             "scheduled": {"users": 2, "items": last, "waves": [w], "modules": None}})
 
+    def test_a_type_is_unmanaged_after_its_last_raw_sites(self) -> None:
+        # a1 allocates T raw and b1 frees it, without either using its layout.
+        sites = [_site(("a1", "a.c"), "alloc", {("exact", "T", "h.c")}),
+                 _site(("b1", "b.c"), "release", {("tag", "T")}),
+                 _site(("test", "t.c"), "release", {("tag", "T")})]   # no unit
+        with patch("wavefront.opacity.load_raw_sites", return_value=sites):
+            schedule = _run(self.config)
+        items = _items(schedule)
+        wa1, wb1 = _wave(schedule, "a1"), _wave(schedule, "b1")
+        last = [_item("a1", "a.c", "symbol", "A", wa1), _item("b1", "b.c", "symbol", "B", wb1)]
+        self.assertEqual(items["T"]["unmanaged_after"], {
+            "closure": {"users": 2, "items": last, "modules": ["A"]},
+            "scheduled": {"users": 2, "items": last, "waves": sorted([wa1, wb1]),
+                          "modules": ["A"]}})
+        self.assertIsNone(items["a1"]["unmanaged_after"])
+
+    def test_without_raw_routines_nothing_is_known(self) -> None:
+        with patch("wavefront.opacity.load_raw_sites", return_value=None):
+            schedule = _run(self.config)
+        self.assertIsNone(_items(schedule)["T"]["unmanaged_after"])
+        with patch("wavefront.opacity.load_raw_sites", return_value=[]):
+            schedule = _run(self.config)
+        self.assertEqual(_items(schedule)["T"]["unmanaged_after"]["closure"]["users"], 0)
+
     def test_an_api_schedule_has_no_release_points(self) -> None:
         # a2 is the API; it reaches every other unit.
         inventory = _inventory(functions=[("a1", "a.c"), ("a2", "a.c"), ("b1", "b.c")],
@@ -239,6 +357,7 @@ class ReleasePointTests(unittest.TestCase):
         for item in _scheduled_items(schedule):
             self.assertIsNone(item["opaque_after"], item["name"])
             self.assertIsNone(item["unreferenced_after"], item["name"])
+            self.assertIsNone(item["unmanaged_after"], item["name"])
 
     def test_the_closure_frontier_follows_the_units_order(self) -> None:
         # b1 and a2 both refer to x, and a2 depends on b1: only a2 is last,

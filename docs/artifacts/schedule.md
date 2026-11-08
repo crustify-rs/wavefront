@@ -123,6 +123,7 @@ record names across a module boundary that is still in the other language.
   "type_generator_for": [],
   "used_fields": [],
   "opaque_after": null,
+  "unmanaged_after": null,
   "unreferenced_after": {
     "closure": {"users": 0,
                 "items": [{"name": "widget_new", "defined_in": "src/widget.c",
@@ -152,6 +153,7 @@ record names across a module boundary that is still in the other language.
 | `type_generator_for` | on a generator macro (T3 `type_generators.csv`), the instance types it mints, routed as one type so one generic is written for them; `[]` otherwise |
 | `used_fields` | on a type, the fields its users reach: in API mode every field of a type an `api_headers` file defines, and none of a type defined elsewhere; otherwise the fields the closure's own functions access |
 | `opaque_after` | on a struct or union, the point after which none of its layout users is left ([Release points](#release-points)); `null` on any other item, and in an API schedule |
+| `unmanaged_after` | on a struct or union, the point after which none of its raw sites is left, no C allocating or freeing it with a raw routine; `null` on any other item, in an API schedule, and when the ownership store holds no raw routine |
 | `unreferenced_after` | on a function or global, the point after which none of its referrers is left; `null` on any other item, and in an API schedule |
 
 Each list is split into `types` and `symbols` by route, a generator macro
@@ -169,11 +171,12 @@ second node table. `scope` is:
 How users and release points are found is in
 [`batching.md`](../batching.md#release-points). A user is a unit of the
 closure, whether or not the schedule holds it. The users themselves are not
-recorded: `query types --name T --layout-users` lists a type's, with the
-sites and kinds of each use, and `query symbols --name F --callers` a
+recorded: `query types --name T --layout-users` lists a type's layout
+users, with the sites and kinds of each use, `query types --name T
+--raw-sites` its raw sites, and `query symbols --name F --callers` a
 function's or global's referrers.
 
-A release point, `opaque_after` or `unreferenced_after`, has two records: the
+A release point, `opaque_after`, `unmanaged_after` or `unreferenced_after`, has two records: the
 point among every user, in the order of the whole closure, and the point among
 the users this schedule holds, in its waves. They agree when the schedule
 holds every user. Each record's candidates are the item and its users, and

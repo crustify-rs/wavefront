@@ -130,24 +130,32 @@ consumer when the unit is no longer needed in its original form:
   it only through pointers. A type held by value inside another is also used
   by every layout user of its holder, transitively, since they depend on the
   holder's layout and so on its own;
+- a struct or union is **unmanaged** after its **raw sites**: the functions
+  that allocate it with an allocator of untyped memory, or free or dispose
+  of it with a releaser of untyped memory. Once all of them are processed,
+  no C hands its storage to C's allocator, and a consumer may move it to
+  another. Its own constructors, destructors and cloners are functions like
+  any other, unreferenced after their callers: what they call does not
+  matter to C, which only calls them;
 - a function or global is **unreferenced** after its **referrers**: the units
   that call it, take its address or access it, the edges of the body-deep
   graph between functions and globals.
 
-Users are read off the body-deep graph and the layout-use table. Only the
-closure's units count: an external function, a test the closure leaves out,
+Users are read off the body-deep graph, the layout-use table and, for raw
+sites, `t2/arg_casts.csv`. Only the closure's units count: an external function, a test the closure leaves out,
 or a macro, whose uses are recorded where it is expanded, is no user.
 
 A schedule made with `--api-headers-only` has no release points: its items'
-`opaque_after` and `unreferenced_after` are `null`. It binds what the
+`opaque_after`, `unmanaged_after` and `unreferenced_after` are `null`. It binds what the
 headers publish and keeps the C behind it, so nothing it schedules retires a
 layout or an export, and its order, the API graph's, does not hold most of
 the users.
 
-Each item records its release point, `opaque_after` or
-`unreferenced_after`
-([`artifacts/schedule.md`](artifacts/schedule.md#release-points)); its users
-are a query away, `query types --layout-users` and `query symbols --callers`.
+Each item records its release points, `opaque_after` and `unmanaged_after`
+or `unreferenced_after`
+([`artifacts/schedule.md`](artifacts/schedule.md#release-points)); their
+users are a query away, `query types --layout-users`, `query types
+--raw-sites` and `query symbols --callers`.
 The point is a frontier rather than one wave: the waves are listed in one
 topological order, which puts a wave after others it does not depend on, so
 the point is, of the unit's own wave and its scheduled users', those no other
@@ -173,3 +181,32 @@ The layout uses are syntactic, as every fact is
 number, or an offset computed by hand, reads no layout Wavefront can see, and
 neither does a byte buffer copied without `sizeof` of the type, or a union
 that puns it.
+
+### Raw sites
+
+The raw routines are the ownership store's: a lifecycle role on a
+type-erased pointer ([`type-lifecycle.md`](type-lifecycle.md)), a dropper,
+a disposer or an out-parameter allocator acting on its `void *` parameter,
+an allocator or a deep cloner returning new untyped storage. They are the
+`void` lifecycle, established while planning; a store without them knows no
+raw site, and `unmanaged_after` is `null`. A role on a typed pointer is no
+raw routine, whatever it calls.
+
+A raw site is one conversion `t2/arg_casts.csv` records at a raw routine's
+parameter or return, and its type is what the conversion's other end holds,
+nothing being followed further:
+
+| the other end | the type |
+|---|---|
+| a value of a named type: `free(db)`, `db = malloc(...)` | that type |
+| a slot declared to hold one: a typed parameter, field or return | that type |
+| a `void *` parameter | the one type its body reads it as, or what T3 `erased_arg` rows say it holds. A parameter read as several types is dispatched on (`opt_free_elem(type, void *ptr)`), and its free is one branch's: it names none |
+| a `void *` field | every type stored into it or read out of it, less T3 `drop` rows, with T3 `erased_field` rows: freeing the field frees whatever any instance stored (`av_freep(&ctx->priv_data)`) |
+| a scalar pointer: a byte or character buffer | none: it holds no struct |
+
+A raw site on a type-erased end that names no type is unresolved: a byte
+buffer in a `void *` field, a raw routine wrapping another, a generic
+container's storage. A schedule warns of how many there are, and
+`query types --raw-sites --unresolved` lists them; T3 rows type those that
+hold a struct. A named type's conversion carries no pointer depth, so the
+storage of a `T **` array of pointers counts as `T`'s, which errs late.

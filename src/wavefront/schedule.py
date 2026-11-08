@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 import sys
-from collections import defaultdict
+from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -196,7 +196,9 @@ def _release_points(layout, target: Path, *, docs: dict[NodeKey, dict],
                     unit_dag: dict[NodeKey, set[NodeKey]]) -> None:
     """Fill the point after which no user of an item is left
     (:mod:`wavefront.opacity`): a struct's or union's ``opaque_after``, after
-    its layout users, and a function's or global's ``unreferenced_after``,
+    its layout users, and ``unmanaged_after``, after the units that apply a
+    raw allocator or releaser to it, and a function's or global's
+    ``unreferenced_after``,
     after its referrers, read off the body-deep graph and the layout-use
     table; they are the closure's units. The users themselves are not
     recorded: ``query types --layout-users`` and ``query symbols --callers``
@@ -273,11 +275,43 @@ def _release_points(layout, target: Path, *, docs: dict[NodeKey, dict],
 
     refs = opacity.referrers(edges, is_symbol, lambda k: k in units)
 
+    # Raw sites: none known without the store's raw routines, and then every
+    # struct's `unmanaged_after` stays null.
+    sites = opacity.load_raw_sites(layout)
+    managed: dict[NodeKey, set[NodeKey]] = defaultdict(set)
+    if sites is not None:
+        aggregates = [k for k, d in docs.items()
+                      if k[2] == "type" and d["source_kind"] in ("struct", "union")]
+        by_tag: dict[str, list[NodeKey]] = defaultdict(list)
+        for k in aggregates:
+            by_tag[k[0]].append(k)
+        unresolved: list = []
+        for site in sites:
+            user = (site.user[0], site.user[1], "symbol")
+            if user not in units:
+                continue
+            if not site.how:
+                unresolved.append(site)
+            for t in site.types:
+                for k in ([(t[1], t[2], "type")] if t[0] == "exact" else by_tag.get(t[1], ())):
+                    if k in docs:
+                        managed[k].add(user)
+        if unresolved:
+            kinds = Counter(s.slot.split(":", 1)[0] for s in unresolved)
+            print(f"warning: {len(unresolved)} raw allocation or release site(s) "
+                  f"hand on a type-erased value no table types ("
+                  + ", ".join(f"{n} {k}" for k, n in sorted(kinds.items()))
+                  + "): `query types --raw-sites --unresolved --closure-only` lists them",
+                  file=sys.stderr)
+
     for key, d in docs.items():
         if key[2] == "type" and d["source_kind"] in ("struct", "union"):
             found = layout_users.get(key, {})
             users = sorted((u for u in found if u in units), key=_sort_key)
             d["opaque_after"] = release(key, users)
+            if sites is not None:
+                d["unmanaged_after"] = release(
+                    key, sorted(managed.get(key, ()), key=_sort_key))
         elif is_symbol(key):
             users = sorted((u for u in refs.get(key, ()) if u in units), key=_sort_key)
             d["unreferenced_after"] = release(key, users)
@@ -499,6 +533,7 @@ def build_schedule(layout, target: Path, *, api_headers_only: bool = False,
             "type_generator_for": list(node.type_generator_for),
             "used_fields": used.get(key, []),
             "opaque_after": None,
+            "unmanaged_after": None,
             "unreferenced_after": None,
         }
         return out

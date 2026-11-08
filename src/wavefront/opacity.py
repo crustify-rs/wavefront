@@ -25,6 +25,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from pathlib import Path
+from typing import NamedTuple
 
 from compose.scope import load_csv
 from wavefront.dag import NodeKey
@@ -144,3 +145,169 @@ class Order:
             under |= self.below.get(c, 0)
         return sorted((c for c in cs if not under & self.bit.get(c, 0)),
                       key=_sort_key)
+
+
+# ------------------------------------------------------------ raw lifecycle
+#
+# A struct or union is *unmanaged* after the units that apply a raw routine to
+# it: allocate it with an allocator of untyped memory, or free or dispose of
+# it with a releaser of untyped memory. Its own constructors and destructors
+# are functions like any other, unreferenced after their callers; what keeps
+# its storage in C's allocator is C handing it to the raw routines. The raw
+# routines are the store's: a lifecycle role acting on a type-erased pointer,
+# submitted while planning. A site is a conversion `t2/arg_casts.csv` records
+# at the routine's parameter or return, and its type is what the other end of
+# the conversion holds: the value's named type, the type a slot is declared
+# to hold, or what the dependency graph says an erased slot holds. Nothing is
+# followed beyond the one conversion.
+
+#: A raw site's ways of naming its type.
+RAW_HOW = ("value", "typed slot", "erased param", "erased field")
+
+
+class RawRoutines(NamedTuple):
+    #: ``{(routine, def_file, position)}``: the erased parameters a raw
+    #: dropper, disposer or out-parameter allocator acts on.
+    into: frozenset
+    #: ``{(routine, def_file)}``: the raw allocators and cloners whose return
+    #: is a new allocation.
+    out: frozenset
+
+
+class RawSite(NamedTuple):
+    user: tuple[str, str]           # (function, def_file)
+    routine: str
+    op: str                         # "alloc" | "release"
+    how: str                        # one of RAW_HOW, or "" when unresolved
+    types: frozenset                # {("exact", name, file)} | {("tag", name)}
+    slot: str                       # the slot end, `slot_casts.slot_id` form, or ""
+    line: int
+
+
+def raw_routines(symbols, params_rows) -> RawRoutines:
+    """The raw routines among the store's ``symbols``: a role whose subject
+    is a type-erased parameter (``params.csv``'s ``is_erased``), or an
+    ``alloc`` constructor or deep cloner, whose return is new storage. A
+    routine of a typed subject is no raw routine, whatever it calls."""
+    erased = {(r["function_name"], r.get("function_def_file") or "", r["param_name"]):
+              str(r["position"]) for r in params_rows if r.get("is_erased") == "true"}
+    erased_fns = {(n, f) for n, f, _ in erased}
+    into, out = set(), set()
+    for sym in symbols:
+        roles = sym.get("lifetime")
+        name, file = sym.get("name"), sym.get("defined_in") or ""
+        for lt in (roles if isinstance(roles, list) else [roles]):
+            if not lt:
+                continue
+            ctor = lt.get("is_constructor") or {}
+            clone = lt.get("is_cloner") or {}
+            subject = lt.get("for")
+            if subject == "return":
+                if ctor.get("alloc"):
+                    out.add((name, file))
+                continue
+            pos = erased.get((name, file, subject))
+            if pos is None:
+                continue
+            if lt.get("is_dropper") or lt.get("is_disposer") or ctor.get("alloc"):
+                into.add((name, file, pos))
+            if clone.get("deep") and (name, file) in erased_fns:
+                out.add((name, file))
+    return RawRoutines(frozenset(into), frozenset(out))
+
+
+def raw_sites(rows, raw: RawRoutines, param_types: dict, fn_types: dict,
+              field_types: dict) -> list[RawSite]:
+    """Every conversion at a raw routine's parameter or return in
+    ``arg_casts`` rows, with the types its other end holds. ``param_types``
+    and ``field_types`` are what the dependency graph says an erased
+    parameter ``(fn, file, position)`` or field ``(owner, file, member)``
+    holds, and ``fn_types`` what T3 says a function's erased parameters hold.
+    An erased parameter names a type when its body reads it as exactly one,
+    or T3 names what it holds; an erased field every type it holds, since
+    freeing the field frees whatever any instance stored. A site whose erased
+    end names no type has none: unresolved."""
+    from compose.slot_casts import _VOID_PTR
+
+    out = []
+
+    def end(r: dict, side: str) -> tuple[str, frozenset, str]:
+        kind, name, file = r[f"{side}_kind"], r[f"{side}_name"], r[f"{side}_def_file"]
+        member, decl = r[f"{side}_member"], r[f"{side}_decl"]
+        if kind == "type":
+            return "value", frozenset({("exact", name, file)}), ""
+        slot = f"{kind}:{name}.{member}@{file}"
+        if decl:
+            return "typed slot", frozenset({("tag", decl)}), slot
+        if not _VOID_PTR.match(r[f"{side}_ctype"] or ""):
+            return "typed slot", frozenset(), slot     # a scalar buffer: no struct
+        if kind == "param":
+            # A parameter its body reads as several types is dispatched on
+            # (`opt_free_elem(type, void *ptr)`): which one a raw routine
+            # gets is the branch's, and no table says. T3 does.
+            tags = fn_types.get((name, file)) or param_types.get((name, file, member), set())
+            if len(tags) != 1 and (name, file) not in fn_types:
+                tags = set()
+            return ("erased param" if tags else ""), frozenset(("tag", t) for t in tags), slot
+        if kind == "field":
+            tags = field_types.get((name, file, member), set())
+            return ("erased field" if tags else ""), frozenset(("tag", t) for t in tags), slot
+        return "", frozenset(), slot                   # an erased return
+
+    for r in rows:
+        if not r.get("site_fn"):
+            continue
+        user = (r["site_fn"], r["site_file"])
+        if (r["dst_kind"] == "param"
+                and (r["dst_name"], r["dst_def_file"], r["dst_member"]) in raw.into):
+            how, types, slot = end(r, "src")
+            out.append(RawSite(user, r["dst_name"], "release", how, types, slot,
+                               int(r["line"])))
+        elif (r["src_kind"] == "ret" and (r["src_name"], r["src_def_file"]) in raw.out
+              and _VOID_PTR.match(r["src_ctype"] or "")):
+            how, types, slot = end(r, "dst")
+            out.append(RawSite(user, r["src_name"], "alloc", how, types, slot,
+                               int(r["line"])))
+    return out
+
+
+def erased_slot_types(layout) -> tuple[dict, dict, dict]:
+    """What the dependency graph says each type-erased slot holds:
+    ``(param_types, fn_types, field_types)``, as :func:`raw_sites` takes them.
+    A parameter holds what its own body reads it as, less T3 ``drop`` rows,
+    and its function's T3 ``erased_arg`` rows; a field what is stored into
+    it or read out of it, less T3 ``drop`` rows, and its T3 ``erased_field``
+    rows (``compose.deps_dag``)."""
+    from compose import slot_casts, t3
+
+    sc = slot_casts.load(layout.t2)
+    tables = t3.load(layout.t1)
+    params: dict = {}
+    for (_k, n, f, p), ts in sc.param_reads.items():
+        dropped = {(pp, b) for pp, b, _df in tables.drop_args.get((n, f), ())}
+        params[(n, f, p)] = {t for t in ts if (p, t) not in dropped}
+    fns = {k: {tag for tag, _df in v} for k, v in tables.erased_args.items()}
+    fields: dict = {}
+    for (_k, o, f, m), (stored, read_as) in sc.variants.items():
+        dropped = {(ff, b) for ff, b, _df in tables.drop_fields.get((o, f), ())}
+        fields[(o, f, m)] = {t for t in stored | read_as if (m, t) not in dropped}
+    for (o, f), refs in tables.erased_fields.items():
+        for m, t, _df in refs:
+            fields.setdefault((o, f, m), set()).add(t)
+    return params, fns, fields
+
+
+def load_raw_sites(layout) -> list[RawSite] | None:
+    """The raw sites of ``layout``'s tables, or ``None`` when the store holds
+    no raw routine: without them nothing is known, and nothing is guessed."""
+    from compose.scope import load_csv
+    from wavefront import store
+
+    symbols = [s for s in store.load(layout).get("symbols") or [] if s.get("lifetime")]
+    params = layout.t1 / "params.csv"
+    raw = raw_routines(symbols, load_csv(params) if symbols and params.is_file() else [])
+    if not raw.into and not raw.out:
+        return None
+    path = layout.t2 / "arg_casts.csv"
+    rows = load_csv(path) if path.is_file() else []
+    return raw_sites(rows, raw, *erased_slot_types(layout))

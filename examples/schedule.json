@@ -117,6 +117,7 @@
               "type_generator_for": [],
               "used_fields": [],
               "opaque_after": null,
+              "unmanaged_after": null,
               "unreferenced_after": {
                 "closure": {
                   "users": 1,
@@ -261,6 +262,7 @@
                   ]
                 }
               },
+              "unmanaged_after": null,
               "unreferenced_after": null
             }
           ]
@@ -342,6 +344,7 @@
               "type_generator_for": [],
               "used_fields": [],
               "opaque_after": null,
+              "unmanaged_after": null,
               "unreferenced_after": {
                 "closure": {
                   "users": 0,
@@ -426,6 +429,7 @@
               "type_generator_for": [],
               "used_fields": [],
               "opaque_after": null,
+              "unmanaged_after": null,
               "unreferenced_after": {
                 "closure": {
                   "users": 0,

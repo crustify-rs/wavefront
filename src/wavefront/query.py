@@ -32,6 +32,8 @@ def query(
     users: bool = False,
     field_touchers: bool = False,
     layout_users: bool = False,
+    raw_sites: bool = False,
+    unresolved: bool = False,
     update: str | None = None,
     lifetime_for: str | None = None,
     taking: str | None = None,
@@ -84,6 +86,20 @@ def query(
                 "same-named statics.")
         _call_closure(target, name_list, files,
                       direction="callees" if callees else "callers", depth=depth)
+        return
+    if unresolved and not raw_sites:
+        raise SystemExit("query: --unresolved applies to --raw-sites.")
+    if raw_sites:
+        if kind != "type":
+            raise SystemExit("query symbols: --raw-sites applies to types only.")
+        if unresolved == bool(name_list):
+            raise SystemExit(
+                "query types: --raw-sites needs exactly one --name, or --unresolved "
+                "and no --name.")
+        if len(name_list) > 1:
+            raise SystemExit("query types: --raw-sites needs exactly one --name.")
+        _raw_sites(target, name_list[0] if name_list else None, files,
+                   closure_only=closure_only)
         return
     type_facets = fields or lifecycle_ops or users or field_touchers or layout_users
     if type_facets and kind != "type":
@@ -952,6 +968,62 @@ def _layout_users(layout, target, tag: str, defined_in: str | None, *,
         })
     print(json.dumps({"name": tag, "defined_in": defined_in, "layout_users": out},
                      indent=2))
+
+
+def _raw_sites(target: Path, name: str | None, files, *,
+               closure_only: bool = False) -> None:
+    """``query types --name T --raw-sites``: every function that applies a raw
+    allocator or releaser to ``T``, the store's raw routines, with each site,
+    the routine and how the site names ``T`` (:mod:`wavefront.opacity`).
+    ``--raw-sites --unresolved``: the sites that hand a raw routine a
+    type-erased value no table types. --closure-only keeps the closure's
+    functions."""
+    from collections import defaultdict
+
+    from wavefront import opacity
+    from wavefront.layout import Layout
+
+    if name is None:
+        layout, node = Layout.discover(target), None
+    else:
+        layout, node, _ = _resolve(target, kind="type", name=name, files=files,
+                                   with_ops=False)
+    sites = opacity.load_raw_sites(layout)
+    if sites is None:
+        raise SystemExit(
+            "query types: the ownership store holds no raw routine (a lifecycle "
+            "role on a type-erased pointer), so no raw site is known.")
+    keep = None
+    if closure_only:
+        from compose import scope as _sc
+        from wavefront import scope as _scope_mod
+        sj = _scope_mod.try_build(layout, target)
+        if sj is not None:
+            keep = _sc.scope_membership(sj, _sc.CLOSURE)
+    sites = [x for x in sites if keep is None or x.user in keep]
+
+    def at(x) -> str:
+        return f"{x.user[1]}:{x.line}"
+
+    if node is None:
+        out = [{"name": x.user[0], "defined_in": x.user[1], "routine": x.routine,
+                "op": x.op, "slot": x.slot, "at": at(x)}
+               for x in sorted((x for x in sites if not x.how),
+                               key=lambda x: (x.user, x.line, x.routine))]
+        print(json.dumps({"unresolved_raw_sites": out}, indent=2))
+        return
+    mine = {("exact", node.id, node.defined_in or ""), ("tag", node.id)}
+    by_user: dict = defaultdict(list)
+    for x in sites:
+        if x.types & mine:
+            by_user[x.user].append(x)
+    out = [{"name": u[0], "defined_in": u[1],
+            "sites": [{"routine": x.routine, "op": x.op, "how": x.how,
+                       **({"slot": x.slot} if x.slot else {}), "at": at(x)}
+                      for x in sorted(xs, key=lambda x: (x.line, x.routine))]}
+           for u, xs in sorted(by_user.items())]
+    print(json.dumps({"name": node.id, "defined_in": node.defined_in,
+                      "raw_sites": out}, indent=2))
 
 
 # ----------------------------------------------------------- --update ingest

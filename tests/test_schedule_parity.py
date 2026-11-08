@@ -32,6 +32,7 @@ class _Layout:
 
     def __init__(self, directory: Path, config: dict | None = None) -> None:
         self.repo_root = directory
+        self.root = directory
         self.t1 = directory / "t1"
         self.t2 = directory / "t2"
         self._config = directory / "wavefront-config.json"
@@ -121,7 +122,7 @@ class SchedulePackingParityTests(unittest.TestCase):
         keys = {"name", "defined_in", "declared_in", "kind", "source_kind",
                 "seeded", "module", "loc", "stats", "depends_on", "depended_on_by",
                 "type_generator_for", "used_fields", "opaque_after",
-                "unreferenced_after"}
+                "unmanaged_after", "unreferenced_after"}
         for item in items:
             self.assertEqual(set(item), keys)
 

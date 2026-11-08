@@ -202,6 +202,17 @@ def _add_query_flags(p: argparse.ArgumentParser, *, facets: bool) -> None:
                                 "and those that use it through an aggregate that "
                                 "holds it by value, under `via`. --closure-only "
                                 "keeps the closure's own users.")
+        facet.add_argument("--raw-sites", action="store_true", dest="raw_sites",
+                           help="Introspect a struct or union: every function that "
+                                "applies a raw allocator or releaser to it (a "
+                                "lifecycle role on a type-erased pointer, in the "
+                                "ownership store), with each site, the routine, and "
+                                "how the site names the type. With --unresolved and "
+                                "no --name: the sites that hand a raw routine a "
+                                "type-erased value no table types.")
+        p.add_argument("--unresolved", action="store_true",
+                       help="With --raw-sites and no --name: list the unresolved "
+                            "raw sites.")
     else:
         # Symbols-only REVERSE lifecycle lookup, parameterized by a TYPE (no
         # --name): which symbols drop / dispose / clone / construct TYPE, read
@@ -484,6 +495,8 @@ def _dispatch_query(args: argparse.Namespace, target: Path) -> None:
         users=bool(getattr(args, "users", False)),
         field_touchers=bool(getattr(args, "field_touchers", False)),
         layout_users=bool(getattr(args, "layout_users", False)),
+        raw_sites=bool(getattr(args, "raw_sites", False)),
+        unresolved=bool(getattr(args, "unresolved", False)),
         update=getattr(args, "update", None),
         lifetime_for=getattr(args, "lifetime_for", None),
         taking=getattr(args, "taking", None),
