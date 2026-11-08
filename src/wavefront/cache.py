@@ -62,7 +62,11 @@ from pathlib import Path
 #: 23 — sections renamed targeted/imported -> closure/external, split by
 #:      location alone: a closure header's macro is in `closure`, and only a
 #:      closure `.c` file's macro is owned (body-walked, a unit).
-_VERSION = 23
+#: 24 — a type-erased slot's variants and reads name the file that defines
+#:      each type, and a typedef field type resolves in the file declaring it
+#:      (`field_type_uses.type_decl_file`), so same-tagged file-local types no
+#:      longer share edges.
+_VERSION = 24
 
 
 def fingerprint(layout, target) -> dict:

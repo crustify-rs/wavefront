@@ -36,7 +36,10 @@ one name in one file, two nodes.
 
 - **Types**: structs, unions and enums, keyed by tag and defining file (or
   the declaring header for a declaration-only type). A typedef of an
-  aggregate is an alias resolved onto its tag, not a node of its own; a
+  aggregate is an alias resolved onto its tag, not a node of its own: onto
+  the aggregate of that tag its own file defines, when it has one, so that
+  two file-local typedefs of one name (`ThreadInfo` in two executors) name
+  two types, and otherwise by tag, a header's definition first; a
   typedef of a primitive is no node at all, nor is an anonymous aggregate
   (it cannot be named). Only types in the config's inventory are nodes.
   C gives a tag no identity across translation units, so a forward
@@ -86,7 +89,14 @@ A type-erased slot (`void *`, `void **`, or a scalar pointer such as
 `uint8_t *` that code casts to a named type) hides the type it holds from
 the signatures and fields. Wavefront recovers it from the conversions the
 code writes at the slot (`t2/arg_casts.csv`, `t2/field_casts.csv`) and adds
-edges for it:
+edges for it. Each conversion names the file that defines its type, so a
+parameter read and a variant reach that definition, not another of its tag:
+a demuxer's and a decoder's file-local `Context` are each a variant of their
+own owner's field. The database merges identical definitions of one tag from
+several translation units into one type (forty filters each defining the same
+`ThreadData`), so a conversion, or a field, of it names every one of their
+files; it reaches the one its own translation unit sees: the definition in
+its own file, else one in a header, else the type by tag.
 
 - **parameter reads**: a function whose own body reads its `void *`
   parameter as `T` depends on `T`, as on a typed parameter
@@ -199,8 +209,9 @@ False positives (spurious edges):
   unaligned-load macro is no variant of its owner;
 - a reused slot: `Stream.priv` holding a `Packet` in one file;
 - a first-member convention (see [Polymorphism](#polymorphism));
-- casts are keyed by tag alone (`casts.csv` names no file), so two
-  unrelated types sharing a tag share their cast edges;
+- casts are keyed by tag alone (`casts.csv` names no file), and so are the
+  cast pairs a slot joins, so two unrelated types sharing a tag share their
+  cast edges;
 - a callee named without a file that matches several same-named symbols
   depends on all of them.
 

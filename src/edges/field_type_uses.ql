@@ -36,6 +36,15 @@
  *   type_def_file    : repository-relative path of the type's
  *                      definition site, or "" if no full-body
  *                      definition is in the DB
+ *   type_decl_file   : for a typedef, the file that declares it; ""
+ *                      for any other kind. A typedef of a named
+ *                      aggregate has no definition, so its
+ *                      `type_def_file` is "", and two file-local
+ *                      typedefs of one name (`ThreadInfo` in
+ *                      libavutil/executor.c and libavcodec/executor.c)
+ *                      would otherwise be one: the composer resolves
+ *                      the typedef declared in that file, onto the
+ *                      aggregate it names there.
  *
  * Consumer: `src/compose/types_manifest.py` —
  * field-driven reachability gate (scenarios 5+6 in the reach
@@ -58,6 +67,17 @@ string typeKindOf(UserType t) {
   else if t instanceof Enum then result = "enum"
   else if t instanceof TypedefType then result = "typedef"
   else result = "other"
+}
+
+/**
+ * The file declaring typedef `t`, the smallest path should C11 repeat it;
+ * "" for any other type, or a typedef no declaration entry locates. Total, so
+ * no row is dropped for want of it.
+ */
+string typedefDeclFileOf(UserType t) {
+  if exists(t.(TypedefType).getADeclarationEntry())
+  then result = min(string p | p = pathOf(t.(TypedefType).getADeclarationEntry().getFile()) | p)
+  else result = ""
 }
 
 /**
@@ -120,4 +140,5 @@ select struct_name,
        field_name,
        canonicalTypeName(t) as type_name,
        typeKindOf(t) as type_kind,
-       defFileOf(t) as type_def_file
+       defFileOf(t) as type_def_file,
+       typedefDeclFileOf(t) as type_decl_file

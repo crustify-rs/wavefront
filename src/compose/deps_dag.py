@@ -181,7 +181,7 @@ class SymNode:
         self.sig_type_refs: set[str] = set()      # raw C type strings (ptr_args/ret)
         # Types a `void *` parameter is read as (slot reads, T3 `erased_arg`):
         # signature edges, but cast ones
-        self.cast_sig_refs: set[str] = set()
+        self.cast_sig_refs: set[TypeKey] = set()
         self.subkind: str = "symbol"              # symbol|external|builtin
         self.generates: list[str] = []            # types this macro mints, if any
         self.dep_types: set[str] = set()
@@ -311,11 +311,13 @@ def _signature_refs_csv(codeql_dir: Path) -> dict[SymKey, set[str]]:
     return dict(out)
 
 
-def collect_cast_type_refs_csv(codeql_dir: Path) -> dict[SymKey, set[str]]:
+def collect_cast_type_refs_csv(codeql_dir: Path) -> dict[SymKey, set[TypeKey]]:
     """The types each type-erased parameter is read as, keyed by its
-    function. Read program-wide in every mode; an API graph keeps a ref only
-    between two nodes of its API closure (:func:`_build_edges`)."""
-    out: dict[SymKey, set[str]] = collections.defaultdict(set)
+    function, each ``(tag, def_file)`` as the cast names it, so that a tag
+    several files define resolves to the one read. Read program-wide in every
+    mode; an API graph keeps a ref only between two nodes of its API closure
+    (:func:`_build_edges`)."""
+    out: dict[SymKey, set[TypeKey]] = collections.defaultdict(set)
     tables = _t3.load(codeql_dir / "t1")
     # A type-erased parameter's REAL type: what its own body reads it as
     # (`av_vlog(void *avcl)` reads `*(AVClass **)avcl`). The signature says
@@ -323,13 +325,14 @@ def collect_cast_type_refs_csv(codeql_dir: Path) -> dict[SymKey, set[str]]:
     # AVClass first. Less what the orchestrator dropped (T3 `drop` rows).
     for (_kind, name, file, pos), types in slot_casts.load(
             codeql_dir / "t2").param_reads.items():
-        dropped = {(p, b) for p, b, _df in tables.drop_args.get((name, file), ())}
-        out[(name, file or None)].update(t for t in types if (pos, t) not in dropped)
+        drops = tables.drop_args.get((name, file), ())
+        out[(name, file or None)].update(
+            t for t in types if not slot_casts.dropped(t, pos, drops))
     # The same dependency where no cast is written in the function's own body:
     # the orchestrator chased the erased value through the calls it is handed
     # to (T3 `chased_casts.csv`, `erased_arg`).
     for (name, file), bases in tables.erased_args.items():
-        out[(name, file or None)].update(tag for tag, _df in bases)
+        out[(name, file or None)].update((tag, df or "") for tag, df in bases)
     return dict(out)
 
 
@@ -346,15 +349,15 @@ def collect_erased_field_refs_csv(codeql_dir: Path
     its base, and the orchestrator corrects them in T3: an `add` row
     for what no cast writes, a `drop` row for a pun or a reused slot
     (`AVPacket.data` read as `unaligned_32`, `AVStream.priv_data` holding an
-    `AVPacket` in one muxer). A variant is tag-keyed, so its type is
-    resolved by tag."""
+    `AVPacket` in one muxer). A variant names the file that defines it, so a
+    tag several files define resolves to the one stored or read."""
     out: dict[TypeKey, set[tuple[str, str, str]]] = collections.defaultdict(set)
     tables = _t3.load(codeql_dir / "t1")
     for (_kind, owner, file, member), (stored, read_as) in slot_casts.load(
             codeql_dir / "t2").variants.items():
-        dropped = {(f, b) for f, b, _df in tables.drop_fields.get((owner, file), ())}
-        out[(owner, file)].update((member, t, "") for t in stored | read_as
-                                  if (member, t) not in dropped)
+        drops = tables.drop_fields.get((owner, file), ())
+        out[(owner, file)].update((member, t, df) for t, df in stored | read_as
+                                  if not slot_casts.dropped((t, df), member, drops))
     for key, refs in tables.erased_fields.items():
         out[key] |= refs
     return dict(out)
@@ -370,24 +373,27 @@ def t3_stale(codeql_dir: Path) -> list[str]:
     reads = {(n, f, p): ts for (_k, n, f, p), ts in sc.param_reads.items()}
     read_any = collections.defaultdict(set)
     for (n, f, _p), ts in reads.items():
-        read_any[(n, f)] |= ts
+        read_any[(n, f)] |= {t for t, _df in ts}
     held = {(o, f, m): st | rd for (_k, o, f, m), (st, rd) in sc.variants.items()}
+
+    def matches(refs, member: str, tag: str, df: str) -> bool:
+        return any(slot_casts.dropped(r, member, [(member, tag, df)]) for r in refs)
     casts = {(r.get("from_tag"), r.get("to_tag"))
              for r in _scope.load_csv(codeql_dir / "t2" / "casts.csv")}
     casts |= set(sc.pairs)
     out = []
     for (n, f), rows in tables.drop_args.items():
         out += [f"drop erased_arg {n}.{p} -> {b}: no such read"
-                for p, b, _df in sorted(rows) if b not in reads.get((n, f, p), ())]
+                for p, b, df in sorted(rows) if not matches(reads.get((n, f, p), ()), p, b, df)]
     for (n, f), rows in tables.erased_args.items():
         out += [f"add erased_arg {n} -> {b}: already read in its body"
                 for b, _df in sorted(rows) if b in read_any.get((n, f), ())]
     for (o, f), rows in tables.drop_fields.items():
         out += [f"drop erased_field {o}.{m} -> {b}: no such variant"
-                for m, b, _df in sorted(rows) if b not in held.get((o, f, m), ())]
+                for m, b, df in sorted(rows) if not matches(held.get((o, f, m), ()), m, b, df)]
     for (o, f), rows in tables.erased_fields.items():
         out += [f"add erased_field {o}.{m} -> {b}: already a variant"
-                for m, b, _df in sorted(rows) if b in held.get((o, f, m), ())]
+                for m, b, df in sorted(rows) if matches(held.get((o, f, m), ()), m, b, df)]
     for (d, _f), rows in tables.drop_bases.items():
         out += [f"drop base_derived {b} / {d}: no cast between them"
                 for b, _df in sorted(rows)
@@ -630,6 +636,11 @@ def collect_types_csv(codeql_dir: Path, api_paths: set[str] | None = None):
     t1, t2 = codeql_dir / "t1", codeql_dir / "t2"
     meta: dict[TypeKey, dict] = {}
     alias: dict[str, str] = {}          # typedef name -> underlying tag
+    # (typedef name, declaring file) -> underlying tag: two file-local
+    # typedefs of one name (`ThreadInfo` in libavutil/executor.c and
+    # libavcodec/executor.c) are two aliases, each of the aggregate its file
+    # defines.
+    alias_at: dict[TypeKey, str] = {}
     floating: dict[str, list] = collections.defaultdict(list)
     _fams = _mf.load(codeql_dir, api_paths)
     _gen_of = _mf.generated_by(_fams)          # (tag, def_file) -> macro
@@ -647,6 +658,8 @@ def collect_types_csv(codeql_dir: Path, api_paths: set[str] | None = None):
         if (r.get("kind") or "") == "typedef":
             if under:
                 alias.setdefault(n, under)
+                for d in row[0]:
+                    alias_at.setdefault((n, d), under)
                 continue
             # A typedef of a PRIMITIVE (`typedef int SSL_TICKET_STATUS;`) names
             # no underlying tag and is a Rust primitive, never a node. The
@@ -705,13 +718,47 @@ def collect_types_csv(codeql_dir: Path, api_paths: set[str] | None = None):
     for f, t in slot_casts.load(t2).pairs:
         cast(f, t)
 
+    def field_type(r: dict) -> TypeKey:
+        # A typedef of a named aggregate has no definition, so CodeQL gives it
+        # no `type_def_file`; the file declaring it (`type_decl_file`) names
+        # the typedef, and its alias chain, followed in that file, the
+        # aggregate it names there. A chain that leaves the file resolves by
+        # name, as an older table without the column does.
+        tn, tdf = r.get("type_name") or "", r.get("type_def_file") or ""
+        decl = r.get("type_decl_file") or ""
+        if r.get("type_kind") == "typedef" and not tdf and decl:
+            cur, seen = tn, set()
+            while (cur, decl) in alias_at and cur not in seen:
+                seen.add(cur)
+                cur = alias_at[(cur, decl)]
+                if (cur, decl) in meta:
+                    return cur, decl
+        return tn, tdf
+
     edges: dict[TypeKey, list[tuple[str, str, str]]] = collections.defaultdict(list)
     for r in _scope.load_csv(t2 / "field_type_uses.csv"):
         sn, tn = r.get("struct_name"), r.get("type_name")
         if not (sn and tn):
             continue
         edges[(sn, r.get("struct_def_file") or "")].append(
-            (r.get("field_name") or "", tn, r.get("type_def_file") or ""))
+            (r.get("field_name") or "", *field_type(r)))
+    # CodeQL merges identical definitions of a tag from several translation
+    # units into one type, so a field of it names each definition's file. The
+    # owner's translation unit sees one: the definition in the owner's file,
+    # else those in a header, else the tag alone (`slot_casts.narrow`).
+    for (sn, sdf), refs in edges.items():
+        by_use: dict[tuple[str, str], set[str]] = collections.defaultdict(set)
+        for fname, tn, tdf in refs:
+            by_use[(fname, tn)].add(tdf)
+        if all(len(fs) < 2 for fs in by_use.values()):
+            continue
+        narrowed = []
+        for (fname, tn), fs in by_use.items():
+            if len(fs) > 1:
+                fs = ({sdf} & fs) or {f for f in fs if f and not f.endswith(_C_TU_SUFFIXES)} \
+                    or {""}
+            narrowed += [(fname, tn, f) for f in sorted(fs)]
+        edges[(sn, sdf)] = narrowed
     return meta, dict(edges), dict(casts), alias, _gen_of
 
 

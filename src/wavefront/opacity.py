@@ -226,7 +226,8 @@ def raw_sites(rows, raw: RawRoutines, param_types: dict, fn_types: dict,
     An erased parameter names a type when its body reads it as exactly one,
     or T3 names what it holds; an erased field every type it holds, since
     freeing the field frees whatever any instance stored. A site whose erased
-    end names no type has none: unresolved."""
+    end names no type has none: unresolved. A held type is ``(tag,
+    def_file)``: exact when the file is known, by tag when it is not."""
     from compose.slot_casts import _VOID_PTR
 
     out = []
@@ -245,13 +246,13 @@ def raw_sites(rows, raw: RawRoutines, param_types: dict, fn_types: dict,
             # A parameter its body reads as several types is dispatched on
             # (`opt_free_elem(type, void *ptr)`): which one a raw routine
             # gets is the branch's, and no table says. T3 does.
-            tags = fn_types.get((name, file)) or param_types.get((name, file, member), set())
-            if len(tags) != 1 and (name, file) not in fn_types:
-                tags = set()
-            return ("erased param" if tags else ""), frozenset(("tag", t) for t in tags), slot
+            refs = fn_types.get((name, file)) or param_types.get((name, file, member), set())
+            if len(refs) != 1 and (name, file) not in fn_types:
+                refs = set()
+            return ("erased param" if refs else ""), _held(refs), slot
         if kind == "field":
-            tags = field_types.get((name, file, member), set())
-            return ("erased field" if tags else ""), frozenset(("tag", t) for t in tags), slot
+            refs = field_types.get((name, file, member), set())
+            return ("erased field" if refs else ""), _held(refs), slot
         return "", frozenset(), slot                   # an erased return
 
     for r in rows:
@@ -271,6 +272,11 @@ def raw_sites(rows, raw: RawRoutines, param_types: dict, fn_types: dict,
     return out
 
 
+def _held(refs) -> frozenset:
+    """A raw site's types from the ``(tag, def_file)`` refs a slot holds."""
+    return frozenset(("exact", t, f) if f else ("tag", t) for t, f in refs)
+
+
 def erased_slot_types(layout) -> tuple[dict, dict, dict]:
     """What the dependency graph says each type-erased slot holds:
     ``(param_types, fn_types, field_types)``, as :func:`raw_sites` takes them.
@@ -284,22 +290,24 @@ def erased_slot_types(layout) -> tuple[dict, dict, dict]:
     tables = t3.load(layout.t1)
     params: dict = {}
     for (_k, n, f, p), ts in sc.param_reads.items():
-        dropped = {(pp, b) for pp, b, _df in tables.drop_args.get((n, f), ())}
-        params[(n, f, p)] = {t for t in ts if (p, t) not in dropped}
-    fns = {k: {tag for tag, _df in v} for k, v in tables.erased_args.items()}
+        drops = tables.drop_args.get((n, f), ())
+        params[(n, f, p)] = {t for t in ts if not slot_casts.dropped(t, p, drops)}
+    fns = {k: {(tag, df or "") for tag, df in v} for k, v in tables.erased_args.items()}
     fields: dict = {}
     for (_k, o, f, m), (stored, read_as) in sc.variants.items():
-        dropped = {(ff, b) for ff, b, _df in tables.drop_fields.get((o, f), ())}
-        fields[(o, f, m)] = {t for t in stored | read_as if (m, t) not in dropped}
+        drops = tables.drop_fields.get((o, f), ())
+        fields[(o, f, m)] = {t for t in stored | read_as
+                             if not slot_casts.dropped(t, m, drops)}
     for (o, f), refs in tables.erased_fields.items():
-        for m, t, _df in refs:
-            fields.setdefault((o, f, m), set()).add(t)
+        for m, t, df in refs:
+            fields.setdefault((o, f, m), set()).add((t, df or ""))
     return params, fns, fields
 
 
 def load_raw_sites(layout) -> list[RawSite] | None:
     """The raw sites of ``layout``'s tables, or ``None`` when the store holds
     no raw routine: without them nothing is known, and nothing is guessed."""
+    from compose import slot_casts
     from compose.scope import load_csv
     from wavefront import store
 
@@ -309,5 +317,5 @@ def load_raw_sites(layout) -> list[RawSite] | None:
     if not raw.into and not raw.out:
         return None
     path = layout.t2 / "arg_casts.csv"
-    rows = load_csv(path) if path.is_file() else []
+    rows = slot_casts.narrow(load_csv(path)) if path.is_file() else []
     return raw_sites(rows, raw, *erased_slot_types(layout))

@@ -75,7 +75,7 @@ class SlotCastComposeTests(unittest.TestCase):
             _rows(FIXTURE / "arg_casts.csv") + _rows(FIXTURE / "field_casts.csv"))
         self.assertNotIn(("CtxA", "Class"), composed.pairs)
         self.assertEqual({k[1]: sorted(v) for k, v in composed.param_reads.items()},
-                         {"vlog": ["Class"]})
+                         {"vlog": [("Class", "slots.c")]})
 
     def test_typed_slot_downcast_and_erased_return(self) -> None:
         pairs = self._golden_pairs()
@@ -120,7 +120,7 @@ class SlotCastComposeTests(unittest.TestCase):
             "type" if k in ("type", "field") else "param"])
         self.assertEqual(sorted(composed.pairs), [("Obj", "Odb")])
         self.assertEqual({k[1]: sorted(v) for k, v in composed.param_reads.items()},
-                         {"pub": ["Odb"]})
+                         {"pub": [("Odb", "")]})
 
     def test_public_keep_reads_the_inventory(self) -> None:
         # Pub is defined in the API header, Handle only declared there, Priv
@@ -206,7 +206,7 @@ class SlotCastComposeTests(unittest.TestCase):
         rows[0]["src_ctype"], rows[0]["dst_ctype"] = "unsigned int *", "void *"
         rows[1]["src_ctype"] = "void *"
         reads = slot_casts.compose(rows).param_reads
-        self.assertEqual({k[1]: sorted(v) for k, v in reads.items()}, {"g": ["R"]})
+        self.assertEqual({k[1]: sorted(v) for k, v in reads.items()}, {"g": [("R", "")]})
 
     def test_by_type_mirrors_pairs(self) -> None:
         to, from_ = slot_casts.by_type(self._golden_pairs())

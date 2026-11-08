@@ -185,24 +185,25 @@ class RawSiteTests(unittest.TestCase):
     def test_an_erased_parameter_names_a_type_only_when_read_as_one(self) -> None:
         one = ("param", "free_one", "a.c", "0", "", "void *")
         two = ("param", "free_any", "a.c", "1", "", "void *")
-        params = {("free_one", "a.c", "0"): {"T"}, ("free_any", "a.c", "1"): {"T", "U"}}
+        params = {("free_one", "a.c", "0"): {("T", "t.h")},
+                  ("free_any", "a.c", "1"): {("T", "t.h"), ("U", "")}}
         got = self.sites(_cast("forward", one, FREE, ("free_one", "a.c")),
                          _cast("forward", two, FREE, ("free_any", "a.c")), params=params)
         self.assertEqual([(x.how, x.types) for x in got],
-                         [("erased param", {("tag", "T")}), ("", frozenset())])
+                         [("erased param", {("exact", "T", "t.h")}), ("", frozenset())])
         # T3 names what a function's erased parameters hold, whatever the reads.
         got = self.sites(_cast("forward", two, FREE, ("free_any", "a.c")), params=params,
-                         fns={("free_any", "a.c"): {"U"}})
+                         fns={("free_any", "a.c"): {("U", "")}})
         self.assertEqual(got[0].types, {("tag", "U")})
 
     def test_an_erased_field_names_every_type_it_holds(self) -> None:
         field = ("field", "Ctx", "c.h", "priv", "", "void *")
         got = self.sites(_cast("forward", field, FREE, ("close", "c.c")),
                          _cast("forward", MALLOC, field, ("open", "c.c")),
-                         fields={("Ctx", "c.h", "priv"): {"A", "B"}})
+                         fields={("Ctx", "c.h", "priv"): {("A", "a.c"), ("B", "")}})
         self.assertEqual([(x.op, x.how, x.types) for x in got], [
-            ("release", "erased field", {("tag", "A"), ("tag", "B")}),
-            ("alloc", "erased field", {("tag", "A"), ("tag", "B")})])
+            ("release", "erased field", {("exact", "A", "a.c"), ("tag", "B")}),
+            ("alloc", "erased field", {("exact", "A", "a.c"), ("tag", "B")})])
 
     def test_an_erased_end_nothing_types_is_unresolved(self) -> None:
         got = self.sites(

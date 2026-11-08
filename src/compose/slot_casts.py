@@ -30,6 +30,17 @@ when BOTH sides are named: a `Base *` field read as `Derived *`
 ERASED field is recorded instead -- the types `stored` into it and the
 types it is `read_as` -- as the field's variants, never as pairs.
 
+A variant, and a type a `void *` parameter is read as, is a `TypeRef`, its
+tag with the file that defines it, as the row names it: two file-local
+structs of one tag (`APEContext` in a demuxer and in a decoder) are two
+types. A pair stays tag-keyed, like the raw cast graph.
+
+CodeQL merges identical definitions of one tag from several translation units
+into one type, so a cast to it is one row per definition file: forty filters
+each define `typedef struct ThreadData { AVFrame *in, *out; } ThreadData;`,
+and a cast in one of them names all forty. `narrow` keeps the definition the
+cast's own translation unit sees, before anything is composed.
+
 PROJECTION. With `keep`, every edge with an end outside it is dropped
 BEFORE joining -- in API mode, every node not on the public API: an
 internal function's parameters, an internal type, an internal struct's
@@ -54,9 +65,13 @@ from typing import NamedTuple
 #: `void *`, `const void *`, `void **`, ... -- a C type that names nothing.
 _VOID_PTR = re.compile(r"^(?:(?:const|volatile)\s+)*void\s*(?:\*\s*(?:const\s*)?)+$")
 
-#: A slot: (kind, name, file, member). Types are keyed by tag alone, as in
-#: the raw cast graph (`casts.csv` names no file).
+#: A slot: (kind, name, file, member). A pair's types are keyed by tag alone,
+#: as in the raw cast graph (`casts.csv` names no file).
 Slot = tuple[str, str, str, str]
+
+#: A type at a slot: (tag, def_file), the file "" when only declared or when
+#: the row does not name one (a slot's declared type).
+TypeRef = tuple[str, str]
 
 
 def slot_id(slot: Slot) -> str:
@@ -78,17 +93,57 @@ class Composed(NamedTuple):
     #: A parameter path gives `(entry, exit)`, a named field or return `(slot,)`.
     pairs: dict[tuple[str, str], tuple[Slot, ...]]
     #: `{field slot: (stored, read_as)}` for every type-erased field.
-    variants: dict[Slot, tuple[frozenset[str], frozenset[str]]]
+    variants: dict[Slot, tuple[frozenset[TypeRef], frozenset[TypeRef]]]
     #: `{param slot: types}` for every `void *` parameter: the named types its
     #: own body reads its value as. This is the type the signature erases
     #: (`av_vlog.0` -> AVClass). A typed scalar pointer (`unsigned *flags`)
     #: erases nothing, so it carries none.
-    param_reads: dict[Slot, frozenset[str]]
+    param_reads: dict[Slot, frozenset[TypeRef]]
 
 
 def _keep(pairs: dict, key: tuple[str, str], witness: tuple[Slot, ...]) -> None:
     if key[0] != key[1] and (key not in pairs or witness < pairs[key]):
         pairs[key] = witness
+
+
+_C_TU_SUFFIXES = (".c", ".cc", ".cpp", ".cxx", ".cu")
+
+
+def narrow(rows: Iterable[dict]) -> list[dict]:
+    """The rows of a cast whose type end names several definitions of its tag,
+    narrowed to the one the cast's translation unit sees: the definition in
+    its own file (`site_file`), else those in a header. Another file's
+    definition is visible to no translation unit but its own, so when neither
+    is there the type end keeps its tag alone (file ""), resolved by tag as a
+    declaration-only type is. A type end naming one definition is kept."""
+    rows = list(rows)
+    files: dict[tuple, set[str]] = defaultdict(set)
+
+    def key(r: dict, side: str) -> tuple:
+        return (side, *(v for c, v in sorted(r.items()) if c != f"{side}_def_file"))
+
+    for r in rows:
+        for side in ("src", "dst"):
+            if r.get(f"{side}_kind") == "type":
+                files[key(r, side)].add(r.get(f"{side}_def_file") or "")
+    out, seen = [], set()
+    for r in rows:
+        r = dict(r)
+        for side in ("src", "dst"):
+            fs = files.get(key(r, side)) if r.get(f"{side}_kind") == "type" else None
+            if not fs or len(fs) < 2:
+                continue
+            site = r.get("site_file") or ""
+            pick = ({site} & fs) or {f for f in fs if f and not f.endswith(_C_TU_SUFFIXES)}
+            if pick and r[f"{side}_def_file"] not in pick:
+                r = None
+                break
+            if not pick:
+                r[f"{side}_def_file"] = ""
+        if r is not None and (k := tuple(sorted(r.items()))) not in seen:
+            seen.add(k)
+            out.append(r)
+    return out
 
 
 def compose(rows: Iterable[dict], keep: Callable[[str, str, str], bool] | None = None
@@ -98,23 +153,25 @@ def compose(rows: Iterable[dict], keep: Callable[[str, str, str], bool] | None =
     several witnesses exist, the smallest is kept, so the result is
     deterministic."""
     ok = keep or (lambda _k, _n, _f: True)
+    rows = narrow(rows)
 
     def node(kind: str, end) -> bool:
         return ok("type", end, "") if kind == "type" else ok(kind, end[1], end[2])
 
     enters: dict[str, set[Slot]] = defaultdict(set)     # D -> params it enters
-    exits: dict[Slot, set[str]] = defaultdict(set)      # param -> T it is read as
+    exits: dict[Slot, set[TypeRef]] = defaultdict(set)  # param -> T it is read as
     decls: dict[Slot, str] = {}                         # param -> its named decl
     void_params: set[Slot] = set()                      # params declared `void *`
     pairs: dict[tuple[str, str], tuple[Slot, ...]] = {}
-    stored: dict[Slot, set[str]] = defaultdict(set)
-    read_as: dict[Slot, set[str]] = defaultdict(set)
+    stored: dict[Slot, set[TypeRef]] = defaultdict(set)
+    read_as: dict[Slot, set[TypeRef]] = defaultdict(set)
     erased: set[Slot] = set()
 
     for r in rows:
         rel = r["rel"]
         sk, src, sdecl = _end(r, "src")
         dk, dst, ddecl = _end(r, "dst")
+        sfile, dfile = r.get("src_def_file") or "", r.get("dst_def_file") or ""
         if rel == "forward":
             # A hand-off is a cast only when the value handed on is NAMED: its
             # static type is converted at the store, like any `from`. An
@@ -126,7 +183,7 @@ def compose(rows: Iterable[dict], keep: Callable[[str, str, str], bool] | None =
                         and ok("type", sdecl, "") and ok("type", ddecl, "")):
                     _keep(pairs, (sdecl, ddecl), (src, dst))
                 continue
-            rel, sk, src = "from", "type", sdecl
+            rel, sk, src, sfile = "from", "type", sdecl, ""
         if not (node(sk, src) and node(dk, dst)):
             continue
         for side, kind, end, decl in (("src", sk, src, sdecl), ("dst", dk, dst, ddecl)):
@@ -144,21 +201,21 @@ def compose(rows: Iterable[dict], keep: Callable[[str, str, str], bool] | None =
                 if ok("type", ddecl, ""):
                     _keep(pairs, (src, ddecl), (dst,))
             elif dk == "field":
-                stored[dst].add(src)
+                stored[dst].add((src, sfile))
         elif rel == "to" and dk == "type":
             if sk == "param":
-                exits[src].add(dst)
+                exits[src].add((dst, dfile))
             elif sdecl:                                 # named field / return
                 if ok("type", sdecl, ""):
                     _keep(pairs, (sdecl, dst), (src,))
             elif sk == "field":
-                read_as[src].add(dst)
+                read_as[src].add((dst, dfile))
 
     for p, d in decls.items():                          # a param holds its decl
         enters[d].add(p)
     for d, entries in enters.items():
         for p in entries:
-            for t in exits.get(p, ()):
+            for t, _f in exits.get(p, ()):
                 _keep(pairs, (d, t), (p,))
 
     variants = {f: (frozenset(stored.get(f, ())), frozenset(read_as.get(f, ())))
@@ -253,9 +310,19 @@ def by_type(pairs: dict[tuple[str, str], tuple[Slot, ...]]
     return dict(to), dict(from_)
 
 
-def by_field(variants: dict[Slot, tuple[frozenset[str], frozenset[str]]]
+def by_field(variants: dict[Slot, tuple[frozenset[TypeRef], frozenset[TypeRef]]]
              ) -> dict[tuple[str, str], dict]:
     """Erased-field variants keyed `(owner tag, field name)` as the field's
     `erased_as` record: `{stored: [tags], read_as: [tags]}`, sorted."""
-    return {(name, member): {"stored": sorted(st), "read_as": sorted(rd)}
+    return {(name, member): {"stored": sorted({t for t, _f in st}),
+                             "read_as": sorted({t for t, _f in rd})}
             for (_k, name, _f, member), (st, rd) in variants.items()}
+
+
+def dropped(ref: TypeRef, member: str, rows) -> bool:
+    """Whether a T3 `drop` row `(member, tag, def_file)` removes `ref` from
+    the slot `member`: a row naming no file drops the tag wherever it is
+    defined."""
+    tag, file = ref
+    return any(m == member and b == tag and (not df or not file or df == file)
+               for m, b, df in rows)
