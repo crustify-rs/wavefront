@@ -130,7 +130,7 @@ consumer when the unit is no longer needed in its original form:
   it only through pointers. A type held by value inside another is also used
   by every layout user of its holder, transitively, since they depend on the
   holder's layout and so on its own;
-- a struct or union is **unmanaged** after its **raw sites**: the functions
+- a struct or union's memory is **unmanaged** after its **raw sites**: the functions
   that allocate it with an allocator of untyped memory, or free or dispose
   of it with a releaser of untyped memory. Once all of them are processed,
   no C hands its storage to C's allocator, and a consumer may move it to
@@ -146,12 +146,12 @@ sites, `t2/arg_casts.csv`. Only the closure's units count: an external function,
 or a macro, whose uses are recorded where it is expanded, is no user.
 
 A schedule made with `--api-headers-only` has no release points: its items'
-`opaque_after`, `unmanaged_after` and `unreferenced_after` are `null`. It binds what the
+`opaque_after`, `memory_unmanaged_after` and `unreferenced_after` are `null`. It binds what the
 headers publish and keeps the C behind it, so nothing it schedules retires a
 layout or an export, and its order, the API graph's, does not hold most of
 the users.
 
-Each item records its release points, `opaque_after` and `unmanaged_after`
+Each item records its release points, `opaque_after` and `memory_unmanaged_after`
 or `unreferenced_after`
 ([`artifacts/schedule.md`](artifacts/schedule.md#release-points)); their
 users are a query away, `query types --layout-users`, `query types
@@ -189,7 +189,7 @@ type-erased pointer ([`type-lifecycle.md`](type-lifecycle.md)), a dropper,
 a disposer or an out-parameter allocator acting on its `void *` parameter,
 an allocator or a deep cloner returning new untyped storage. They are the
 `void` lifecycle, established while planning; a store without them knows no
-raw site, and `unmanaged_after` is `null`. A role on a typed pointer is no
+raw site, and `memory_unmanaged_after` is `null`. A role on a typed pointer is no
 raw routine, whatever it calls.
 
 A raw site is one conversion `t2/arg_casts.csv` records at a raw routine's

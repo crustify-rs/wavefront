@@ -196,7 +196,7 @@ def _release_points(layout, target: Path, *, docs: dict[NodeKey, dict],
                     unit_dag: dict[NodeKey, set[NodeKey]]) -> None:
     """Fill the point after which no user of an item is left
     (:mod:`wavefront.opacity`): a struct's or union's ``opaque_after``, after
-    its layout users, and ``unmanaged_after``, after the units that apply a
+    its layout users, and ``memory_unmanaged_after``, after the units that apply a
     raw allocator or releaser to it, and a function's or global's
     ``unreferenced_after``,
     after its referrers, read off the body-deep graph and the layout-use
@@ -276,7 +276,7 @@ def _release_points(layout, target: Path, *, docs: dict[NodeKey, dict],
     refs = opacity.referrers(edges, is_symbol, lambda k: k in units)
 
     # Raw sites: none known without the store's raw routines, and then every
-    # struct's `unmanaged_after` stays null.
+    # struct's `memory_unmanaged_after` stays null.
     sites = opacity.load_raw_sites(layout)
     managed: dict[NodeKey, set[NodeKey]] = defaultdict(set)
     if sites is not None:
@@ -310,7 +310,7 @@ def _release_points(layout, target: Path, *, docs: dict[NodeKey, dict],
             users = sorted((u for u in found if u in units), key=_sort_key)
             d["opaque_after"] = release(key, users)
             if sites is not None:
-                d["unmanaged_after"] = release(
+                d["memory_unmanaged_after"] = release(
                     key, sorted(managed.get(key, ()), key=_sort_key))
         elif is_symbol(key):
             users = sorted((u for u in refs.get(key, ()) if u in units), key=_sort_key)
@@ -533,7 +533,7 @@ def build_schedule(layout, target: Path, *, api_headers_only: bool = False,
             "type_generator_for": list(node.type_generator_for),
             "used_fields": used.get(key, []),
             "opaque_after": None,
-            "unmanaged_after": None,
+            "memory_unmanaged_after": None,
             "unreferenced_after": None,
         }
         return out

@@ -319,7 +319,7 @@ class ReleasePointTests(unittest.TestCase):
             "closure": {"users": 2, "items": last, "modules": None},
             "scheduled": {"users": 2, "items": last, "waves": [w], "modules": None}})
 
-    def test_a_type_is_unmanaged_after_its_last_raw_sites(self) -> None:
+    def test_a_types_memory_is_unmanaged_after_its_last_raw_sites(self) -> None:
         # a1 allocates T raw and b1 frees it, without either using its layout.
         sites = [_site(("a1", "a.c"), "alloc", {("exact", "T", "h.c")}),
                  _site(("b1", "b.c"), "release", {("tag", "T")}),
@@ -329,19 +329,19 @@ class ReleasePointTests(unittest.TestCase):
         items = _items(schedule)
         wa1, wb1 = _wave(schedule, "a1"), _wave(schedule, "b1")
         last = [_item("a1", "a.c", "symbol", "A", wa1), _item("b1", "b.c", "symbol", "B", wb1)]
-        self.assertEqual(items["T"]["unmanaged_after"], {
+        self.assertEqual(items["T"]["memory_unmanaged_after"], {
             "closure": {"users": 2, "items": last, "modules": ["A"]},
             "scheduled": {"users": 2, "items": last, "waves": sorted([wa1, wb1]),
                           "modules": ["A"]}})
-        self.assertIsNone(items["a1"]["unmanaged_after"])
+        self.assertIsNone(items["a1"]["memory_unmanaged_after"])
 
     def test_without_raw_routines_nothing_is_known(self) -> None:
         with patch("wavefront.opacity.load_raw_sites", return_value=None):
             schedule = _run(self.config)
-        self.assertIsNone(_items(schedule)["T"]["unmanaged_after"])
+        self.assertIsNone(_items(schedule)["T"]["memory_unmanaged_after"])
         with patch("wavefront.opacity.load_raw_sites", return_value=[]):
             schedule = _run(self.config)
-        self.assertEqual(_items(schedule)["T"]["unmanaged_after"]["closure"]["users"], 0)
+        self.assertEqual(_items(schedule)["T"]["memory_unmanaged_after"]["closure"]["users"], 0)
 
     def test_an_api_schedule_has_no_release_points(self) -> None:
         # a2 is the API; it reaches every other unit.
@@ -357,7 +357,7 @@ class ReleasePointTests(unittest.TestCase):
         for item in _scheduled_items(schedule):
             self.assertIsNone(item["opaque_after"], item["name"])
             self.assertIsNone(item["unreferenced_after"], item["name"])
-            self.assertIsNone(item["unmanaged_after"], item["name"])
+            self.assertIsNone(item["memory_unmanaged_after"], item["name"])
 
     def test_the_closure_frontier_follows_the_units_order(self) -> None:
         # b1 and a2 both refer to x, and a2 depends on b1: only a2 is last,

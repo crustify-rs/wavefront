@@ -149,7 +149,7 @@ class Order:
 
 # ------------------------------------------------------------ raw lifecycle
 #
-# A struct or union is *unmanaged* after the units that apply a raw routine to
+# A struct or union's memory is *unmanaged* after the units that apply a raw routine to
 # it: allocate it with an allocator of untyped memory, or free or dispose of
 # it with a releaser of untyped memory. Its own constructors and destructors
 # are functions like any other, unreferenced after their callers; what keeps

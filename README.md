@@ -183,7 +183,7 @@ changing the order. Each unit carries its module, its `defined_in` and
 `declared_in` files, and the statistics a consumer weighs its work by. A
 struct or union also carries the point after which none of its layout users
 is left to process, `opaque_after`, and after which no C allocates or frees
-it with a raw routine, `unmanaged_after`; a function or global the point
+it with a raw routine, `memory_unmanaged_after`; a function or global the point
 after which none of its referrers is, `unreferenced_after`
 ([Release points](docs/batching.md#release-points)).
 

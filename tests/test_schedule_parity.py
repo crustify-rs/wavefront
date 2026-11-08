@@ -122,7 +122,7 @@ class SchedulePackingParityTests(unittest.TestCase):
         keys = {"name", "defined_in", "declared_in", "kind", "source_kind",
                 "seeded", "module", "loc", "stats", "depends_on", "depended_on_by",
                 "type_generator_for", "used_fields", "opaque_after",
-                "unmanaged_after", "unreferenced_after"}
+                "memory_unmanaged_after", "unreferenced_after"}
         for item in items:
             self.assertEqual(set(item), keys)
 

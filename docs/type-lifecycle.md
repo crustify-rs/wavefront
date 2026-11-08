@@ -38,7 +38,7 @@ The lifecycle is read back from the routines:
 
 Lifecycle roles never change the dependency graph
 ([`graph.md`](graph.md#nodes)) or the order a schedule is made in. A
-schedule reads only the `void` roles below, for its items' `unmanaged_after`
+schedule reads only the `void` roles below, for its items' `memory_unmanaged_after`
 ([`batching.md`](batching.md#raw-sites)): the raw routines are established
 while planning, before the schedule is made.
 
