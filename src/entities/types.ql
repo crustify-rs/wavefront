@@ -110,11 +110,7 @@ string declFilesOf(UserType t) {
 }
 
 string kindOf(UserType t) {
-  if t instanceof Struct then result = "struct"
-  else if t instanceof Union then result = "union"
-  else if t instanceof Enum then result = "enum"
-  else if t instanceof TypedefType then result = "typedef"
-  else result = "other"
+  result = userTypeKind(t)
 }
 
 /**
@@ -178,9 +174,8 @@ string unaliasedKindOf(TypedefType td) {
     exists(UserType b |
       unwrappedUserType(td.getBaseType(), b) and
       b.getName().prefix(1) = "(" |
-      if b instanceof Struct then result = "struct_anonymous"
-      else if b instanceof Union then result = "union_anonymous"
-      else if b instanceof Enum then result = "enum_anonymous"
+      if b instanceof Struct or b instanceof Enum
+      then result = userTypeKind(b) + "_anonymous"
       else result = "other_anonymous"
     )
     or

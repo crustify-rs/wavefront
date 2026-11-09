@@ -62,11 +62,7 @@ import cpp
 import identity
 
 string typeKindOf(UserType t) {
-  if t instanceof Struct then result = "struct"
-  else if t instanceof Union then result = "union"
-  else if t instanceof Enum then result = "enum"
-  else if t instanceof TypedefType then result = "typedef"
-  else result = "other"
+  result = userTypeKind(t)
 }
 
 /**

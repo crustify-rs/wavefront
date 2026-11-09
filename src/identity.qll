@@ -58,6 +58,21 @@ predicate isAnonNamed(string n) { n = "" or n.matches("(unnamed%") }
 predicate isAnonymous(UserType t) { isAnonNamed(t.getName()) }
 
 /**
+ * The C kind of `t`: "struct", "union", "enum", "typedef", or "other".
+ *
+ * `Union` is a subclass of `Struct` in `cpp-all`, so a union also satisfies
+ * `instanceof Struct`: it must be tested first, or every union reads as a
+ * struct. The one definition every query classifies a type by.
+ */
+string userTypeKind(UserType t) {
+  if t instanceof Union then result = "union"
+  else if t instanceof Struct then result = "struct"
+  else if t instanceof Enum then result = "enum"
+  else if t instanceof TypedefType then result = "typedef"
+  else result = "other"
+}
+
+/**
  * Strip `DerivedType` wrappers (pointer / cv-qualified / array) off `t` and
  * bind every `UserType` reached on the way down, including `t` itself.
  */
