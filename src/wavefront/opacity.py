@@ -1,17 +1,19 @@
-"""When each unit's last user is processed: the layout users of a struct or
-union, and the referrers of a function or global, and the point of a
-schedule after which none of them is left to process.
+"""When each unit's last user is processed: the layout users of a struct,
+union or enum, and the referrers of a function, global or macro, and the
+point of a schedule after which none of them is left to process.
 
 A type is *opaque* after its layout users: once every unit that reads its
-members, size or alignment, or holds it by value, has been processed, what
-comes after holds it only through pointers. A function or global is
-*unreferenced* after its referrers: once every unit that calls it, takes its
-address or reads it has been processed. Both are objective-neutral facts of
-the order; what a consumer does at that point is its own.
+members, size or alignment, names an enum's enumerators, or holds it by value,
+has been processed, what comes after holds it only through pointers. A
+function, global or macro is *unreferenced* after its referrers: once every
+unit that calls it, takes its address, reads it or expands it has been
+processed. Both are objective-neutral facts of the order; what a consumer
+does at that point is its own.
 
 The users are units of the closure, scheduled or not: an entity that is no
-unit, such as an external function, a test the closure leaves out, or a macro
-expanded where it is used, does not count. A type that another holds by value
+unit, such as an external function or a test the closure leaves out, does
+not count. A macro's layout uses are recorded where it is expanded, so a
+macro is never a layout user; the units that expand it are. A type that another holds by value
 is also used by every layout user of its holder, so the layout users close
 over embedding.
 
@@ -32,7 +34,7 @@ from wavefront.dag import NodeKey
 from wavefront.order import _sort_key
 
 #: The layout-use kinds of ``t2/layout_uses.csv``.
-USE_KINDS = ("field", "size", "value", "index", "embed")
+USE_KINDS = ("field", "size", "value", "index", "embed", "constant")
 
 
 def load_layout_uses(t2: Path) -> dict[NodeKey, dict[NodeKey, set[str]]]:
@@ -96,7 +98,8 @@ def referrers(edges: dict[NodeKey, set[NodeKey]], is_target, is_referrer
     """``{symbol: {referrer}}`` over the body-deep graph's edges: every node
     ``is_referrer`` admits that depends on a node ``is_target`` admits, itself
     aside. Signature edges reach types and callbacks only, so between
-    functions and globals every edge is a reference."""
+    functions and globals every edge is a reference; an edge into a macro is
+    an expansion, from a function's body or a type's declaration."""
     out: dict[NodeKey, set[NodeKey]] = defaultdict(set)
     for u, ds in edges.items():
         if not is_referrer(u):

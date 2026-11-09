@@ -278,7 +278,9 @@ def _target_entities(t1_dir: Path, candidate_files: set[str]) -> dict[str, list[
             tgt_macros.append(_ent(r))
     # Types split: a callback is a function-pointer typedef — symbol-shaped, not
     # a layout type — so it is bucketed with `functions` (untagged), matching how
-    # import_closure emits external callbacks. Everything else is a real type.
+    # import_closure emits external callbacks, and so is a typedef of its own
+    # (`scope.own_typedef`). An alias of a callback folds into it, and is no
+    # entity. Everything else is a real type.
     tgt_types = []
     for r in types_rows:
         if _scope.classify_type(r, by_name, candidate_files) != _scope.CLOSURE:
@@ -292,10 +294,16 @@ def _target_entities(t1_dir: Path, candidate_files: set[str]) -> dict[str, list[
         # anonymous member into its named parent under a qualified name.
         if str(r.get("name") or "").startswith("("):
             continue
-        if r.get("unaliased_kind") == "callback":
+        bucket = _typedef_bucket(r, by_name)
+        if bucket == "functions":
             tgt_funcs.append(_ent(r))
-        else:
+        elif bucket == "types":
             tgt_types.append(_ent(r, kind=r["kind"]))
+    # A function pointer written inline is homed in the file it is written in.
+    for fp in inline_function_pointers(t1_dir):
+        if _scope.classify(fp["defined_in"], fp["declared_in"],
+                           candidate_files) == _scope.CLOSURE:
+            tgt_funcs.append(fp)
     keyf = lambda e: (e["defined_in"], e["name"])
     return {
         "functions": sorted(tgt_funcs, key=keyf),
@@ -303,6 +311,32 @@ def _target_entities(t1_dir: Path, candidate_files: set[str]) -> dict[str, list[
         "macros": sorted(tgt_macros, key=keyf),
         "types": sorted(tgt_types, key=keyf),
     }
+
+
+def _typedef_bucket(row: dict, by_name: dict[str, dict]) -> str | None:
+    """The inventory bucket of a type row: ``functions`` for a function-pointer
+    typedef that declares one and for a typedef of its own, ``None`` for an
+    alias of a function-pointer typedef, which folds into it, and ``types``
+    for every other."""
+    cls = _scope.typedef_class(row, by_name)
+    if cls is not None and cls[0] == _scope.FOLDS_CALLBACK:
+        return "functions" if cls[1] is row else None
+    if _scope.own_typedef(row, by_name):
+        return "functions"
+    return "types"
+
+
+def inline_function_pointers(t1_dir: Path) -> list[dict]:
+    """Every function pointer written inline (``t2/function_pointer_uses.csv``),
+    one entity per signature and home file, as inventory entries: the
+    signature is its name."""
+    path = Path(t1_dir).parent / "t2" / "function_pointer_uses.csv"
+    if not path.is_file():
+        return []
+    seen = {(r["signature"], r["def_file"]) for r in _scope.load_csv(path)
+            if r.get("signature") and r.get("def_file")}
+    return [{"name": sig, "defined_in": home, "declared_in": [home]}
+            for sig, home in sorted(seen)]
 
 
 def _api_entities(t1_dir: Path, api_files: set[str]) -> dict[str, list[dict]]:
@@ -343,16 +377,22 @@ def _api_entities(t1_dir: Path, api_files: set[str]) -> dict[str, list[dict]]:
         for r in _scope.load_csv(t1_dir / csv_name):
             if _published(r):
                 out[bucket].append(_ent(r))
-    for r in _scope.load_csv(t1_dir / "types.csv"):
+    type_rows = _scope.load_csv(t1_dir / "types.csv")
+    by_name = _scope.build_types_index(type_rows)
+    for r in type_rows:
         if not _published(r) or str(r.get("name") or "").startswith("("):
             continue
-        # Same callback carve-out the closure section applies: a
-        # function-pointer typedef is signature-shaped, so it buckets with
-        # `functions` rather than `types`.
-        if r.get("unaliased_kind") == "callback":
+        # Same carve-out the closure section applies: a function-pointer
+        # typedef, and a typedef of its own, are symbol-shaped, so they bucket
+        # with `functions` rather than `types`.
+        bucket = _typedef_bucket(r, by_name)
+        if bucket == "functions":
             out["functions"].append(_ent(r))
-        else:
+        elif bucket == "types":
             out["types"].append(_ent(r, kind=r["kind"]))
+    for fp in inline_function_pointers(t1_dir):
+        if fp["defined_in"] in api_files:
+            out["functions"].append(fp)
     keyf = lambda e: (e["defined_in"], e["name"])
     return {k: sorted(v, key=keyf) for k, v in out.items()}
 

@@ -1,8 +1,10 @@
 """Per-item statistics a consumer weighs an item's work by.
 
-Counts only, read off the T1/T2 tables: what an item is made of (fields,
+Read off the T1/T2 tables: the properties of the item's declaration (its
+linkage, `inline`, `const`, a function-like macro, what a typedef names, a
+type named only by its typedef), what it is made of (fields,
 parameters, body lines) and how much of the codebase touches it (callers,
-field touchers, users). A use counts only when it sits in one of the config's
+field touchers, users). A property the tables do not record is `null`. A use counts only when it sits in one of the config's
 files, whatever a schedule selects: code the closure does not name,
 such as a test suite or the system headers, would skew them. They are
 objective-neutral: a consumer decides what each count costs for its own work,
@@ -31,12 +33,42 @@ def _type() -> dict:
     return {"fields": 0, "pointer_fields": 0, "erased_fields": 0}
 
 
+def top_level_const(ctype: str) -> bool:
+    """Whether a declared C type is itself `const`: `const int` and
+    `char *const` are, `const char *` is not, its pointee being. An array of
+    `const` elements is, as nothing of it can be written."""
+    outer = ctype.rsplit("*", 1)[1] if "*" in ctype else ctype
+    return "const" in re.findall(r"\w+", outer)
+
+
+def _flag(row: dict, column: str):
+    """A `0`/`1` column, or `None` when the table predates it."""
+    value = row.get(column)
+    return None if value in (None, "") else _true(value)
+
+
 class Stats:
     """The statistics of every node of one set of tables, keyed by
     ``(name, defined_in, kind)`` as the dag keys its nodes."""
 
     def __init__(self, t1: Path, t2: Path, files: set[str]) -> None:
         """``files``: the config's files, where a use counts."""
+        # A struct, union or enum without a tag of its own, named by the
+        # typedef that is its identity (`typedef struct { ... } T;`).
+        self._anonymous = {
+            (row["name"], row.get("def_file") or "")
+            for row in _csv(t1 / "types.csv")
+            if row.get("kind") == "typedef" and row.get("unaliased_kind") in (
+                "struct_anonymous", "union_anonymous", "enum_anonymous")}
+        # What a typedef of its own names, as C writes it.
+        self._base_types = {
+            row["name"]: row.get("base_type") or row.get("aliases") or None
+            for row in _csv(t1 / "types.csv") if row.get("kind") == "typedef"}
+        self._function_like = {
+            (row["name"], row.get("def_file") or ""):
+                (row.get("head") or "").startswith(row["name"] + "(")
+            for row in _csv(t1 / "macros.csv")}
+
         self._types: dict[tuple[str, str], dict] = defaultdict(_type)
         for row in _csv(t1 / "fields.csv"):
             entry = self._types[(row["struct_name"], row.get("struct_def_file") or "")]
@@ -63,7 +95,12 @@ class Stats:
         for row in _csv(t1 / "functions.csv"):
             key = (row["name"], row.get("def_file") or "")
             head = (row.get("signature") or "").split(row["name"] + "(", 1)[0]
+            static = _flag(row, "is_static")
+            inline = _flag(row, "is_inline")
             self._functions[key] = {
+                "static": static,
+                "exported": None if static is None else not static,
+                "inline": inline,
                 "loc": int(row.get("loc") or 0),
                 "params": 0, "pointer_params": 0, "erased_params": 0,
                 "returns_pointer": "*" in head,
@@ -100,7 +137,11 @@ class Stats:
         for row in _csv(t1 / "globals.csv"):
             key = (row["name"], row.get("def_file") or "")
             ctype = row.get("type") or ""
+            static = row.get("linkage") == "global_static"
             self._globals[key] = {
+                "static": static,
+                "exported": not static,
+                "const": top_level_const(ctype),
                 "pointer": "*" in ctype,
                 "erased": _QUALIFIERS.sub(" ", ctype).split() == ["void", "*"],
                 "users": len(users.get(key, ())),
@@ -108,15 +149,24 @@ class Stats:
 
     def of(self, name: str, defined_in: str | None, kind: str,
            source_kind: str | None) -> dict:
+        """The item's statistics. ``source_kind`` is the class the tables give
+        the C entity (``function_static``, ``global_extern``, ``struct``,
+        ``macro``, ``callback``, ...), which picks them; it is no statistic,
+        its linkage being the properties ``static`` and ``exported``."""
         home = defined_in or ""
+        sub = source_kind or ""
+        out: dict = {}
         if kind == "type":
-            out = dict(self._types.get((name, home)) or _type())
+            out["anonymous"] = (name, home) in self._anonymous
+            out.update(self._types.get((name, home)) or _type())
             out["field_touchers"] = self._touchers.get((name, home), 0)
             out["field_accesses"] = self._accesses.get((name, home), 0)
-            return out
-        sub = source_kind or ""
-        if sub.startswith("function"):
-            return dict(self._functions.get((name, home)) or {})
-        if sub.startswith("global"):
-            return dict(self._globals.get((name, home)) or {})
-        return {}
+        elif sub.startswith("function"):
+            out.update(self._functions.get((name, home)) or {})
+        elif sub.startswith("global"):
+            out.update(self._globals.get((name, home)) or {})
+        elif sub.startswith("macro"):
+            out["function_like"] = self._function_like.get((name, home))
+        elif sub == "typedef":
+            out["base_type"] = self._base_types.get(name)
+        return out

@@ -9,21 +9,13 @@ reads the dependency graph of the closure ([`graph.md`](graph.md)) and its seeds
 ## Units
 
 The units are every node the closure owns
-([`scoping.md`](scoping.md#closure)): every node of the closure section but
-the macros its headers define, which C still built may include and which
-stay C's. With `--api-headers-only`, they are the owned nodes the api view
+([`scoping.md`](scoping.md#closure)), its enums included, and every macro the
+closure's files define, a header's included: a header macro is not owned, since
+C still built may include it, but its Rust counterpart is still to be written.
+With `--api-headers-only`, they are the owned nodes the api view
 publishes, closed over the public-signature graph: a private type a public
-signature names is a unit too. External nodes are never units; they stay
-dependencies of the units that reach them.
-
-Enums and macros are no units either, but for a type generator, which mints
-types and is one wherever the closure defines it, a header included: an enum has no fields or
-lifecycle to process, and a macro is expanded where it is used.
-`--with-enums` makes the enums units, and `--with-macros` every macro the
-closure's files define, a header's included.
-They are leaves of the graph, so leaving them out cuts nothing, but it can
-lower the layer of what depends on them: two schedules agree on layers when
-they are made with the same flags, which each records.
+signature names is a unit too, as is a macro it reaches. External nodes are
+never units; they stay dependencies of the units that reach them.
 
 ## Order
 
@@ -80,9 +72,9 @@ the previous layer's wave.
 
 ## Batches
 
-Without caps, a wave holds one batch per route: a `type` batch of its types
-and generator macros, then a `symbol` batch of its functions, globals and
-callbacks. Its consumer splits them by the items' statistics
+Without caps, a wave holds two batches: one of its structs, unions, enums
+and generator macros, then one of its functions, globals, other macros,
+function pointers and typedefs. Its consumer splits them by the items' statistics
 ([`artifacts/schedule.md`](artifacts/schedule.md#items)).
 
 Any cap packs each wave into batches, in name order, and lets a module's
@@ -123,13 +115,15 @@ schedule lists the fields the config's own functions access.
 A unit's users are processed in the order too, and each one's place tells a
 consumer when the unit is no longer needed in its original form:
 
-- a struct or union is **opaque** after its **layout users**: the functions,
-  globals and aggregates that read its members, take its size, alignment or
-  an offset into it, hold it by value, or step a pointer over it
-  (`t2/layout_uses.csv`). Once all of them are processed, what remains holds
-  it only through pointers. A type held by value inside another is also used
-  by every layout user of its holder, transitively, since they depend on the
-  holder's layout and so on its own;
+- a struct, union or enum is **opaque** after its **layout users**: the
+  functions, globals and aggregates that read its members, name an enum's
+  enumerators, take its size, alignment or an offset into it, hold it by
+  value, or step a pointer over it (`t2/layout_uses.csv`). Once all of them
+  are processed, what remains holds it only through pointers. A type held by
+  value inside another is also used by every layout user of its holder,
+  transitively, since they depend on the holder's layout and so on its own.
+  An enum is used whole wherever it is used at all, so once it is opaque C
+  holds it, if at all, only through a pointer;
 - a struct or union's memory is **unmanaged** after its **raw sites**: the functions
   that allocate it with an allocator of untyped memory, or free or dispose
   of it with a releaser of untyped memory. Once all of them are processed,
@@ -137,13 +131,16 @@ consumer when the unit is no longer needed in its original form:
   another. Its own constructors, destructors and cloners are functions like
   any other, unreferenced after their callers: what they call does not
   matter to C, which only calls them;
-- a function or global is **unreferenced** after its **referrers**: the units
-  that call it, take its address or access it, the edges of the body-deep
-  graph between functions and globals.
+- a function, global or macro is **unreferenced** after its **referrers**:
+  the units that call it, take its address, access it or expand it, the
+  edges of the body-deep graph into it. A macro's referrers are the
+  functions whose bodies expand it, through another macro's expansion too,
+  and the types whose declarations do (`char buf[GIT_OID_MAX_SIZE]`).
 
 Users are read off the body-deep graph, the layout-use table and, for raw
-sites, `t2/arg_casts.csv`. Only the closure's units count: an external function, a test the closure leaves out,
-or a macro, whose uses are recorded where it is expanded, is no user.
+sites, `t2/arg_casts.csv`. Only the closure's units count: an external
+function or a test the closure leaves out is no user. A macro is no layout
+user either, since its uses are recorded where it is expanded.
 
 A schedule made with `--api-headers-only` has no release points: its items'
 `opaque_after`, `memory_unmanaged_after` and `unreferenced_after` are `null`. It binds what the
@@ -154,8 +151,8 @@ the users.
 Each item records its release points, `opaque_after` and `memory_unmanaged_after`
 or `unreferenced_after`
 ([`artifacts/schedule.md`](artifacts/schedule.md#release-points)); their
-users are a query away, `query types --layout-users`, `query types
---raw-sites` and `query symbols --callers`.
+users are a query away, `query structs --layout-users`, `query structs
+--raw-sites` and `query functions --callers`.
 The point is a frontier rather than one wave: the waves are listed in one
 topological order, which puts a wave after others it does not depend on, so
 the point is, of the unit's own wave and its scheduled users', those no other
@@ -207,6 +204,6 @@ nothing being followed further:
 A raw site on a type-erased end that names no type is unresolved: a byte
 buffer in a `void *` field, a raw routine wrapping another, a generic
 container's storage. A schedule warns of how many there are, and
-`query types --raw-sites --unresolved` lists them; T3 rows type those that
+`query structs --raw-sites --unresolved` lists them; T3 rows type those that
 hold a struct. A named type's conversion carries no pointer depth, so the
 storage of a `T **` array of pointers counts as `T`'s, which errs late.

@@ -60,14 +60,16 @@ schedule holds its seeds and every unit they depend on, so that it is complete
 on its own. A config without `schedule_seeds` seeds every unit.
 
 Each item is `{"name": ..., "kind": ...}`, an entity its file defines or
-declares: its name, and its kind, `type` for a struct, union or enum tag or a
-typedef, `symbol` for a function, global, macro or callback typedef. C keeps
-tags apart from ordinary identifiers, so a struct and a function or global may
-share a name in one file, as `static const struct typelen {...} typelen[]`
-does; the kind tells them apart. `included` seeds only the entities it names
-of its file, `excluded` none of those it names; an item that names no such
-entity, or that both lists name, is an error, as is a file outside the
-closure. A directory names the closure's files under it, and takes no items;
+declares: its name, and its kind, what it is in C: `function`, `global`,
+`macro`, `struct`, `union`, `enum`, `function_pointer` or `typedef`. A
+typedef folds into the struct, union, enum or function pointer it names, and
+is a `typedef` only when it names none ([`graph.md`](graph.md#nodes)); a
+function pointer written inline is named by its signature. C keeps tags apart from ordinary identifiers, so a struct and a
+function or global may share a name in one file, as `static const struct
+typelen {...} typelen[]` does; the kind tells them apart. `included` seeds
+only the entities it names of its file, `excluded` none of those it names; an
+item that names no such entity, gives it a kind it is not, or that both lists
+name, is an error, as is a file outside the closure. A directory names the closure's files under it, and takes no items;
 one that holds none is an error.
 
 The seeds never change the order: a schedule orders every unit of the

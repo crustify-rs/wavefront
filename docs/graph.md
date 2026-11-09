@@ -39,17 +39,30 @@ one name in one file, two nodes.
   aggregate is an alias resolved onto its tag, not a node of its own: onto
   the aggregate of that tag its own file defines, when it has one, so that
   two file-local typedefs of one name (`ThreadInfo` in two executors) name
-  two types, and otherwise by tag, a header's definition first; a
-  typedef of a primitive is no node at all, nor is an anonymous aggregate
-  (it cannot be named). Only types in the config's inventory are nodes.
+  two types, and otherwise by tag, a header's definition first. A typedef
+  that names an untagged aggregate is that aggregate's identity
+  (`typedef struct { ... } T;`), and an anonymous aggregate no typedef
+  names is no node (it cannot be named). Each type lists the typedefs that
+  fold into it, a same-named one included. Only types in the config's
+  inventory are nodes.
   C gives a tag no identity across translation units, so a forward
   declaration is matched to a definition by its tag: the database may record
   it as an entity of its own, which folds into the definition of its tag.
   When the tag has several definitions, as file-local structs of one tag
   have, it folds into each, and Wavefront warns.
-- **Symbols**: functions, globals, macros and callbacks (function-pointer
-  typedefs), keyed by defining file, or the canonical declaration file for
-  one that is declared but never defined.
+- **Symbols**: functions, globals and macros, keyed by defining file, or
+  the canonical declaration file for one that is declared but never defined;
+  and, a typedef name being an ordinary identifier:
+  - function pointers: one a typedef declares (`typedef int (*visit_cb)(...)`)
+    is keyed by that typedef and its declaring header, and an alias of it
+    (`typedef visit_cb visit_alias_cb;`) folds into it, listed among its
+    typedefs; one written inline, as a field, parameter, return, local,
+    global or cast, is keyed by its signature (`int (*)(struct ctx *, void
+    *)`) and the file it is homed in, its user's definition file;
+  - typedefs that fold into no struct, union, enum or function pointer, a
+    primitive's, an array's or a `void *`'s (`typedef int64_t git_off_t;`),
+    keyed by name and declaring header. One a system header declares
+    (`size_t`) is a primitive to Rust, and no node.
 - **External leaves**: a function or type something depends on that the
   database never defines (libc, a compiler builtin) is a leaf with subkind
   `external` or `builtin`, so the order is complete.
@@ -65,8 +78,8 @@ users judge droppers or cloners.
 
 | edge | from | to | graphs |
 |---|---|---|---|
-| field | a struct | each non-scalar field type; the types in a function-pointer field's signature; a callback typedef a field has | both |
-| signature | a function or callback | the types of its parameters and return | both |
+| field | a struct | each non-scalar field type; the function pointer or typedef a field has, inline or named; the types in a function-pointer field's signature | both |
+| signature | a function, function pointer or typedef | the types of its parameters and return, function pointers and typedefs among them; a typedef, the typedef it names when that one is a node | both |
 | body | a function, global or `.c` macro the config owns | the functions, globals and macros it references; the types its body uses | default |
 | generator | a type a T3 generator mints | the generator macro | both |
 | cast | see [Type erasure](#type-erasure) and [Polymorphism](#polymorphism) | | both |

@@ -1,12 +1,10 @@
 {
-  "schema_version": 5,
+  "schema_version": 6,
   "oracle_config": {
     "path": "examples/wavefront-config.json",
     "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
   },
   "api_headers_only": false,
-  "with_enums": false,
-  "with_macros": false,
   "caps": {
     "max_syms": null,
     "max_loc": null,
@@ -67,7 +65,6 @@
       "unit_count": 1,
       "batches": [
         {
-          "kind": "symbol",
           "items": [
             {
               "name": "widget_alloc",
@@ -76,12 +73,15 @@
                 "src/mem.c",
                 "src/mem.h"
               ],
-              "kind": "symbol",
-              "source_kind": "function_exported",
+              "kind": "function",
+              "typedefs": [],
               "seeded": true,
               "module": "src/mem.c",
               "loc": 9,
               "stats": {
+                "static": false,
+                "exported": true,
+                "inline": false,
                 "loc": 9,
                 "params": 1,
                 "pointer_params": 0,
@@ -93,26 +93,18 @@
                 "field_accesses": 0
               },
               "depends_on": {
-                "scheduled": {
-                  "types": [],
-                  "symbols": [
-                    {
-                      "name": "malloc",
-                      "defined_in": "/usr/include/stdlib.h",
-                      "scope": "external"
-                    }
-                  ]
-                },
-                "cut": {
-                  "types": [],
-                  "symbols": []
-                }
+                "scheduled": [
+                  {
+                    "name": "malloc",
+                    "defined_in": "/usr/include/stdlib.h",
+                    "kind": "function",
+                    "scope": "external"
+                  }
+                ],
+                "cut": []
               },
               "depended_on_by": {
-                "cut": {
-                  "types": [],
-                  "symbols": []
-                }
+                "cut": []
               },
               "type_generator_for": [],
               "used_fields": [],
@@ -125,7 +117,7 @@
                     {
                       "name": "widget_new",
                       "defined_in": "src/widget.c",
-                      "kind": "symbol",
+                      "kind": "function",
                       "module": "src/widget.c",
                       "wave": 2
                     }
@@ -140,7 +132,7 @@
                     {
                       "name": "widget_new",
                       "defined_in": "src/widget.c",
-                      "kind": "symbol",
+                      "kind": "function",
                       "module": "src/widget.c",
                       "wave": 2
                     }
@@ -169,7 +161,6 @@
       "unit_count": 1,
       "batches": [
         {
-          "kind": "type",
           "items": [
             {
               "name": "widget_st",
@@ -177,12 +168,15 @@
               "declared_in": [
                 "include/widget.h"
               ],
-              "kind": "type",
-              "source_kind": "struct",
+              "kind": "struct",
+              "typedefs": [
+                "widget_t"
+              ],
               "seeded": true,
               "module": "src/widget.c",
               "loc": 5,
               "stats": {
+                "anonymous": false,
                 "fields": 5,
                 "pointer_fields": 2,
                 "erased_fields": 0,
@@ -190,20 +184,11 @@
                 "field_accesses": 9
               },
               "depends_on": {
-                "scheduled": {
-                  "types": [],
-                  "symbols": []
-                },
-                "cut": {
-                  "types": [],
-                  "symbols": []
-                }
+                "scheduled": [],
+                "cut": []
               },
               "depended_on_by": {
-                "cut": {
-                  "types": [],
-                  "symbols": []
-                }
+                "cut": []
               },
               "type_generator_for": [],
               "used_fields": [
@@ -220,14 +205,14 @@
                     {
                       "name": "widget_free",
                       "defined_in": "src/widget.c",
-                      "kind": "symbol",
+                      "kind": "function",
                       "module": "src/widget.c",
                       "wave": 2
                     },
                     {
                       "name": "widget_new",
                       "defined_in": "src/widget.c",
-                      "kind": "symbol",
+                      "kind": "function",
                       "module": "src/widget.c",
                       "wave": 2
                     }
@@ -242,14 +227,14 @@
                     {
                       "name": "widget_free",
                       "defined_in": "src/widget.c",
-                      "kind": "symbol",
+                      "kind": "function",
                       "module": "src/widget.c",
                       "wave": 2
                     },
                     {
                       "name": "widget_new",
                       "defined_in": "src/widget.c",
-                      "kind": "symbol",
+                      "kind": "function",
                       "module": "src/widget.c",
                       "wave": 2
                     }
@@ -283,7 +268,6 @@
       "unit_count": 2,
       "batches": [
         {
-          "kind": "symbol",
           "items": [
             {
               "name": "widget_new",
@@ -292,12 +276,15 @@
                 "include/widget.h",
                 "src/widget.c"
               ],
-              "kind": "symbol",
-              "source_kind": "function_exported",
+              "kind": "function",
+              "typedefs": [],
               "seeded": true,
               "module": "src/widget.c",
               "loc": 36,
               "stats": {
+                "static": false,
+                "exported": true,
+                "inline": false,
                 "loc": 36,
                 "params": 2,
                 "pointer_params": 1,
@@ -309,37 +296,30 @@
                 "field_accesses": 6
               },
               "depends_on": {
-                "scheduled": {
-                  "types": [
-                    {
-                      "name": "widget_st",
-                      "defined_in": "include/widget.h",
-                      "scope": "scheduled"
-                    }
-                  ],
-                  "symbols": [
-                    {
-                      "name": "WIDGET_INIT",
-                      "defined_in": "include/widget.h",
-                      "scope": "closure"
-                    },
-                    {
-                      "name": "widget_alloc",
-                      "defined_in": "src/mem.c",
-                      "scope": "scheduled"
-                    }
-                  ]
-                },
-                "cut": {
-                  "types": [],
-                  "symbols": []
-                }
+                "scheduled": [
+                  {
+                    "name": "widget_st",
+                    "defined_in": "include/widget.h",
+                    "kind": "struct",
+                    "scope": "scheduled"
+                  },
+                  {
+                    "name": "WIDGET_INIT",
+                    "defined_in": "include/widget.h",
+                    "kind": "macro",
+                    "scope": "closure"
+                  },
+                  {
+                    "name": "widget_alloc",
+                    "defined_in": "src/mem.c",
+                    "kind": "function",
+                    "scope": "scheduled"
+                  }
+                ],
+                "cut": []
               },
               "depended_on_by": {
-                "cut": {
-                  "types": [],
-                  "symbols": []
-                }
+                "cut": []
               },
               "type_generator_for": [],
               "used_fields": [],
@@ -352,7 +332,7 @@
                     {
                       "name": "widget_new",
                       "defined_in": "src/widget.c",
-                      "kind": "symbol",
+                      "kind": "function",
                       "module": "src/widget.c",
                       "wave": 2
                     }
@@ -367,7 +347,7 @@
                     {
                       "name": "widget_new",
                       "defined_in": "src/widget.c",
-                      "kind": "symbol",
+                      "kind": "function",
                       "module": "src/widget.c",
                       "wave": 2
                     }
@@ -388,12 +368,15 @@
                 "include/widget.h",
                 "src/widget.c"
               ],
-              "kind": "symbol",
-              "source_kind": "function_exported",
+              "kind": "function",
+              "typedefs": [],
               "seeded": true,
               "module": "src/widget.c",
               "loc": 14,
               "stats": {
+                "static": false,
+                "exported": true,
+                "inline": false,
                 "loc": 14,
                 "params": 1,
                 "pointer_params": 1,
@@ -405,26 +388,18 @@
                 "field_accesses": 3
               },
               "depends_on": {
-                "scheduled": {
-                  "types": [
-                    {
-                      "name": "widget_st",
-                      "defined_in": "include/widget.h",
-                      "scope": "scheduled"
-                    }
-                  ],
-                  "symbols": []
-                },
-                "cut": {
-                  "types": [],
-                  "symbols": []
-                }
+                "scheduled": [
+                  {
+                    "name": "widget_st",
+                    "defined_in": "include/widget.h",
+                    "kind": "struct",
+                    "scope": "scheduled"
+                  }
+                ],
+                "cut": []
               },
               "depended_on_by": {
-                "cut": {
-                  "types": [],
-                  "symbols": []
-                }
+                "cut": []
               },
               "type_generator_for": [],
               "used_fields": [],
@@ -437,7 +412,7 @@
                     {
                       "name": "widget_free",
                       "defined_in": "src/widget.c",
-                      "kind": "symbol",
+                      "kind": "function",
                       "module": "src/widget.c",
                       "wave": 2
                     }
@@ -452,7 +427,7 @@
                     {
                       "name": "widget_free",
                       "defined_in": "src/widget.c",
-                      "kind": "symbol",
+                      "kind": "function",
                       "module": "src/widget.c",
                       "wave": 2
                     }

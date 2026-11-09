@@ -20,7 +20,7 @@ the functions that touch the type by whether they access a field:
 Both footprints carry the COMPLETE cross-codebase set for port AND wrap
 types — scope-agnostic, like the manifest as a whole. The per-target scope
 view (narrowing to the in-scope universe) is applied at READ time by
-`query types --users`, never baked here. The footprints are the deterministic
+`query structs --users`, never baked here. The footprints are the deterministic
 candidate pool from which the type wrapper derives lifecycle + per-field
 accessors (no `ops` list on a concrete type).
 
@@ -525,7 +525,7 @@ def _build_struct_entry(
     # Consumer footprints, partitioned opaque vs non-opaque — the COMPLETE
     # cross-codebase footprint for both port and wrap types (scope-agnostic,
     # like the manifest as a whole). The per-target scope view is applied at
-    # READ time by `query types --users` (filter to in-memory inventory), not baked here.
+    # READ time by `query structs --users` (filter to in-memory inventory), not baked here.
     entry["opaque_in"], entry["non_opaque_in"] = _type_consumers(
         reach, name, def_file, by_name, None,
     )
@@ -846,7 +846,7 @@ _COMMENT = (
     "footprint. The agent fills each pointer field's `ptr` ownership block and "
     "any guarded field's `locked_by`; a type stores NO lifecycle of its own -- "
     "which routines drop/dispose/clone/construct it is reverse-derived from the acting "
-    "symbols (`query symbols --lifetime-for <TAG>`). "
+    "symbols (`query functions --lifetime-for <TAG>`). "
     "`casted` {to,from} is the composer-filled raw struct<->struct cast graph "
     "(see _comment_casted) — engine erasure, downcasts "
     "and ASN1 punning all coexist there, unclassified. "

@@ -31,9 +31,9 @@ cloner.
 
 The lifecycle is read back from the routines:
 
-- `query types --name T --lifecycle-ops` lists the routines acting on `T`,
+- `query structs --name T --lifecycle-ops` lists the routines acting on `T`,
   lifecycle roles first;
-- `query symbols --lifetime-for T` lists the routines with a role on `T`,
+- `query functions --lifetime-for T` lists the routines with a role on `T`,
   `void` or `string`.
 
 Lifecycle roles never change the dependency graph
@@ -57,7 +57,7 @@ The routines worth recording are those that release, dispose of, copy or
 construct storage: heap allocations, and the fields of a type embedded by
 value or held on the stack. Record a routine when more than one caller uses
 it, or when the API publishes it. A helper that only lifecycle routines
-call need not be recorded. `query symbols --callers` and `--callees` show
+call need not be recorded. `query functions --callers` and `--callees` show
 who uses a routine.
 
 ### `void`
@@ -102,5 +102,5 @@ Include routines that handle arrays as well as single objects.
    enclosing type's disposer.
 
 Include routines that handle arrays as well as single objects. Submit the
-roles with `query symbols --update`, on each routine; a type's own record
+roles with `query functions --update`, on each routine; a type's own record
 holds no lifecycle.

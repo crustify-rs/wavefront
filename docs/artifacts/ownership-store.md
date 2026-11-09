@@ -8,13 +8,14 @@ refcount and locking bindings, and the user's notes, each keyed to the C
 entity it describes.
 
 The structural half of each record (field layout, signatures, footprints,
-casts) is composed from the CodeQL tables on demand. `query types` and
-`query symbols` merge the store into it, so a reader sees one whole record,
+casts) is composed from the CodeQL tables on demand. Each kind's `query`
+subject (`query structs`, `query functions`, ...) merges the store into it, so a reader sees one whole record,
 and a re-extraction rewrites nothing in the store.
 
 Records show each entity's findings in the shape users submit them
 ([`findings.md`](findings.md)); the store keeps them in the shape below.
-`query types --update` and `query symbols --update` write the store. They
+`query <kind> --update`, such as `query structs --update` or `query functions
+--update`, writes the store. They
 validate each submission against the composed record and replace the
 judgements they name; the file itself carries no validation, so it should
 not be edited by hand. Concurrent updates are serialized, and each one is

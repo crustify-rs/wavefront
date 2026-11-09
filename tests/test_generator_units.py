@@ -1,8 +1,7 @@
-"""A type generator mints types and is routed as one, so it is a unit wherever
-the closure defines it, a header included, as libgit2's `GIT_HASHMAP_STRUCT`
-in `src/util/hashmap.h` is; any other macro is a unit only with macros, an enum
-only with enums, and nothing the closure does not define is one
-(docs/batching.md#units)."""
+"""A macro is a unit wherever the closure defines it, a header included, as
+libgit2's type generator `GIT_HASHMAP_STRUCT` in `src/util/hashmap.h` is; an
+enum the closure owns is one too, and nothing the closure does not define is
+one (docs/batching.md#units)."""
 from __future__ import annotations
 
 import unittest
@@ -35,17 +34,22 @@ class GeneratorUnitTests(unittest.TestCase):
                     [("entries", "src/libgit2/cache.c", "type")])
         self.assertFalse(self.unit(gen))
 
-    def test_other_macros_need_with_macros(self) -> None:
+    def test_every_closure_macro_is_a_unit(self) -> None:
         mac = _node("GIT_OID_MAX_SIZE", "symbol", "macro_object", "include/git2/oid.h")
-        self.assertFalse(self.unit(mac))
-        self.assertTrue(self.unit(mac, with_macros=True))
+        self.assertTrue(self.unit(mac))
         local = _node("CACHE_LOCAL", "symbol", "macro_object", "src/libgit2/cache.c")
-        self.assertFalse(self.unit(local))
+        self.assertTrue(self.unit(local))
 
-    def test_enums_need_with_enums(self) -> None:
+    def test_a_macro_outside_the_closure_is_not(self) -> None:
+        mac = _node("INT_MAX", "symbol", "macro_object", "/usr/include/limits.h")
+        self.assertFalse(self.unit(mac))
+
+    def test_an_owned_enum_is_a_unit(self) -> None:
         enum = _node("git_oid_t", "type", "enum", "include/git2/oid.h")
         self.assertFalse(self.unit(enum))
-
+        owned = is_unit(enum, owned=OWNED | {("git_oid_t", "include/git2/oid.h")},
+                        closure_files=CLOSURE)
+        self.assertTrue(owned)
 
 if __name__ == "__main__":
     unittest.main()

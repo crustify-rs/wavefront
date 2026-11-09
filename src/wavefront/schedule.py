@@ -26,24 +26,23 @@ def is_generator(node: Node) -> bool:
             and bool(node.type_generator_for))
 
 
-def is_unit(node: Node, *, owned: set, closure_files: set[str],
-            with_enums: bool = False, with_macros: bool = False) -> bool:
+def c_kind(node: Node) -> str | None:
+    """The node's ``kind`` (:mod:`wavefront.kinds`); ``None`` for an external
+    placeholder, which is never a unit."""
+    from wavefront import kinds
+    return kinds.of(node.subkind, node.node_kind)
+
+
+def is_unit(node: Node, *, owned: set, closure_files: set[str]) -> bool:
     """Whether a node of the graph is a unit of a schedule.
 
-    An enum is one only ``with_enums``. A type generator, which mints types and
-    is routed as one, is one wherever the closure defines it, a header
-    included. Any other macro is one only ``with_macros``, then every one the
-    closure's files define. Everything else is one when the target owns it
-    (``owned``: the closure's entities, a header macro aside), or, for an
-    entity defined nowhere, when its node sits at a declaration in the
-    closure."""
-    if node.node_kind == "type" and node.subkind == "enum":
-        if not with_enums:
-            return False
-    elif is_generator(node):
+    A macro, a type generator among them, is one wherever the closure defines
+    it, a header included. Everything else, an enum included, is one when the
+    target owns it (``owned``: the closure's entities, a header macro aside),
+    or, for an entity defined nowhere, when its node sits at a declaration in
+    the closure."""
+    if node.node_kind == "symbol" and (node.subkind or "").startswith("macro"):
         return (node.defined_in or "") in closure_files
-    elif (node.subkind or "").startswith("macro") and node.node_kind == "symbol":
-        return with_macros and (node.defined_in or "") in closure_files
     if (node.id, node.defined_in or "") in owned:
         return True
     # The declaration-only key stands for an entity defined nowhere, whose
@@ -64,7 +63,7 @@ class Unit:
     def route(self) -> str:
         if self.node.node_kind == "type" or is_generator(self.node):
             return "type"
-        if self.node.subkind == "callback":
+        if self.node.subkind in ("callback", "function_pointer"):
             return "callback"
         return "symbol"
 
@@ -195,13 +194,14 @@ def _release_points(layout, target: Path, *, docs: dict[NodeKey, dict],
                     owner: dict[NodeKey, int], group_order: tuple,
                     unit_dag: dict[NodeKey, set[NodeKey]]) -> None:
     """Fill the point after which no user of an item is left
-    (:mod:`wavefront.opacity`): a struct's or union's ``opaque_after``, after
-    its layout users, and ``memory_unmanaged_after``, after the units that apply a
-    raw allocator or releaser to it, and a function's or global's
+    (:mod:`wavefront.opacity`): a struct's, union's or enum's
+    ``opaque_after``, after its layout users, a struct's or union's
+    ``memory_unmanaged_after``, after the units that apply a raw allocator or
+    releaser to it, and a function's, global's or macro's
     ``unreferenced_after``,
     after its referrers, read off the body-deep graph and the layout-use
     table; they are the closure's units. The users themselves are not
-    recorded: ``query types --layout-users`` and ``query symbols --callers``
+    recorded: ``query structs --layout-users`` and ``query functions --callers``
     list them.
 
     Each point has two records: ``closure``, over every user, in the order
@@ -236,7 +236,7 @@ def _release_points(layout, target: Path, *, docs: dict[NodeKey, dict],
         return index_of_module.get(name) if name is not None else None
 
     def entry(k: NodeKey) -> dict:
-        out = {"name": k[0], "defined_in": k[1], "kind": k[2],
+        out = {"name": k[0], "defined_in": k[1], "kind": c_kind(by_key[k]),
                "module": mods[owner[k]].name if k in owner else None}
         if k in wave_of:
             out["wave"] = wave_of[k]
@@ -271,7 +271,7 @@ def _release_points(layout, target: Path, *, docs: dict[NodeKey, dict],
     def is_symbol(k: NodeKey) -> bool:
         n = by_key.get(k)
         return (k[2] == "symbol" and n is not None
-                and (n.subkind.startswith("function") or n.subkind.startswith("global")))
+                and n.subkind.startswith(("function", "global", "macro")))
 
     refs = opacity.referrers(edges, is_symbol, lambda k: k in units)
 
@@ -281,7 +281,7 @@ def _release_points(layout, target: Path, *, docs: dict[NodeKey, dict],
     managed: dict[NodeKey, set[NodeKey]] = defaultdict(set)
     if sites is not None:
         aggregates = [k for k, d in docs.items()
-                      if k[2] == "type" and d["source_kind"] in ("struct", "union")]
+                      if d["kind"] in ("struct", "union")]
         by_tag: dict[str, list[NodeKey]] = defaultdict(list)
         for k in aggregates:
             by_tag[k[0]].append(k)
@@ -301,15 +301,15 @@ def _release_points(layout, target: Path, *, docs: dict[NodeKey, dict],
             print(f"warning: {len(unresolved)} raw allocation or release site(s) "
                   f"hand on a type-erased value no table types ("
                   + ", ".join(f"{n} {k}" for k, n in sorted(kinds.items()))
-                  + "): `query types --raw-sites --unresolved --closure-only` lists them",
+                  + "): `query structs --raw-sites --unresolved --closure-only` lists them",
                   file=sys.stderr)
 
     for key, d in docs.items():
-        if key[2] == "type" and d["source_kind"] in ("struct", "union"):
+        if d["kind"] in ("struct", "union", "enum"):
             found = layout_users.get(key, {})
             users = sorted((u for u in found if u in units), key=_sort_key)
             d["opaque_after"] = release(key, users)
-            if sites is not None:
+            if sites is not None and d["kind"] != "enum":
                 d["memory_unmanaged_after"] = release(
                     key, sorted(managed.get(key, ()), key=_sort_key))
         elif is_symbol(key):
@@ -318,17 +318,14 @@ def _release_points(layout, target: Path, *, docs: dict[NodeKey, dict],
 
 
 def build_schedule(layout, target: Path, *, api_headers_only: bool = False,
-                   with_enums: bool = False, with_macros: bool = False,
                    caps: dict | None = None) -> dict:
     """Order every unit of the closure, and schedule those the config's
     ``schedule_seeds`` names with every unit they depend on, one wave per layer
     of the order.
 
     The units are the closure's owned nodes, or with ``api_headers_only``
-    what the published declarations reach of them over the API graph; an
-    enum only ``with_enums``, a type generator wherever the closure defines
-    it, and any other macro only ``with_macros``, then every macro the
-    closure's files define. Their
+    what the published declarations reach of them over the API graph, and
+    every macro the closure's files define, a header's included. Their
     cycles are cut and they are layered over all of them, so that a narrow
     selection keeps the order and the cuts of the whole closure. Without caps
     a wave holds one batch per route; with any, each layer is packed, and
@@ -336,7 +333,7 @@ def build_schedule(layout, target: Path, *, api_headers_only: bool = False,
     from compose import scope as compose_scope
     from compose.scope_manifest import closure_candidates
     from wavefront import dag as dag_mod, manifests, scope
-    from wavefront import modules, selection
+    from wavefront import kinds as c_kinds, modules, selection
     from wavefront.order import _cut, _full_edges, _layers, _sort_key
     from wavefront.stats import Stats
 
@@ -362,7 +359,7 @@ def build_schedule(layout, target: Path, *, api_headers_only: bool = False,
     # The closure's entities the target owns: a macro a closure header
     # defines is in the `closure` section, but a header `#define` cannot be
     # re-exported Rust->C, so only a closure `.c` file's TU-local macro is the
-    # target's own (`compose.scope.owned_macro`). A type generator is a unit
+    # target's own (`compose.scope.owned_macro`). Every macro is a unit
     # wherever the closure defines it (`is_unit`).
     owned = set().union(*(compose_scope.owned_entities(inventory, kind)
                           for kind in kinds))
@@ -370,8 +367,7 @@ def build_schedule(layout, target: Path, *, api_headers_only: bool = False,
                                                     kind) for kind in kinds))
 
     def unit_node(node: Node) -> bool:
-        return is_unit(node, owned=owned, closure_files=closure_files,
-                       with_enums=with_enums, with_macros=with_macros)
+        return is_unit(node, owned=owned, closure_files=closure_files)
 
     def is_seed(node: Node) -> bool:
         if not unit_node(node):
@@ -380,10 +376,12 @@ def build_schedule(layout, target: Path, *, api_headers_only: bool = False,
                 or bool({(node.id, node.defined_in or ""), (node.id, "")} & api))
 
     unit_keys = {k for k, n in by_key.items() if unit_node(n)}
+    kind_of = {k: c_kind(n) for k, n in by_key.items()}
     if entries is not None:
-        selection.check(entries, decls, unit_keys)
+        selection.check(entries, decls, unit_keys, kind_of)
     if mods:
-        selection.check([e for m in mods for e in m.entries], decls, unit_keys)
+        selection.check([e for m in mods for e in m.entries], decls, unit_keys,
+                        kind_of)
         modules.check(mods, decls, unit_keys)
         # Claimed over every unit of the closure, whatever the graph: a module
         # that claims none of them is a config error, not an API-mode gap.
@@ -494,21 +492,20 @@ def build_schedule(layout, target: Path, *, api_headers_only: bool = False,
             return "closure"
         return "external"
 
-    def ref(key: NodeKey) -> dict:
-        return {"name": key[0], "defined_in": key[1], "scope": scope_of(key)}
+    index = c_kinds.Index(layout.t1)
 
-    def route(key: NodeKey) -> str:
-        """A key's side of a reference list: a generator macro is a type, as
-        its item is."""
+    def kind_of(key: NodeKey) -> str | None:
+        """A unit's kind is its node's; an external one's, the tables'."""
         node = by_key.get(key)
-        return "type" if node is not None and is_generator(node) else key[2]
+        return ((c_kind(node) if node is not None else None)
+                or index.kind(key[0], key[1], key[2]))
 
-    def refs(keys, kind=None):
-        return [ref(k) for k in sorted(keys, key=_sort_key)
-                if kind is None or route(k) == kind]
+    def ref(key: NodeKey) -> dict:
+        return {"name": key[0], "defined_in": key[1], "kind": kind_of(key),
+                "scope": scope_of(key)}
 
-    def sides(keys) -> dict:
-        return {"types": refs(keys, "type"), "symbols": refs(keys, "symbol")}
+    def refs(keys) -> list[dict]:
+        return [ref(k) for k in sorted(keys, key=_sort_key)]
 
     docs: dict[NodeKey, dict] = {}
 
@@ -520,16 +517,15 @@ def build_schedule(layout, target: Path, *, api_headers_only: bool = False,
             "name": node.id,
             "defined_in": node.defined_in,
             "declared_in": sorted(decls.get(key, ())),
-            "kind": ("type" if node.node_kind == "type" or is_generator(node)
-                     else "callback" if node.subkind == "callback" else "symbol"),
-            "source_kind": node.subkind,
+            "kind": c_kind(node),
+            "typedefs": index.typedefs(node.id, key[2]),
             "seeded": key in seeds,
             "module": mods[owner[key]].name if key in owner else None,
             "loc": node.loc,
             "stats": stats.of(node.id, node.defined_in, node.node_kind,
                               node.subkind),
-            "depends_on": {"scheduled": sides(deps), "cut": sides(higher)},
-            "depended_on_by": {"cut": sides(lower.get(key, ()))},
+            "depends_on": {"scheduled": refs(deps), "cut": refs(higher)},
+            "depended_on_by": {"cut": refs(lower.get(key, ()))},
             "type_generator_for": list(node.type_generator_for),
             "used_fields": used.get(key, []),
             "opaque_after": None,
@@ -549,10 +545,10 @@ def build_schedule(layout, target: Path, *, api_headers_only: bool = False,
             for k in keys:
                 routes.setdefault("type" if unit(k).route == "type" else "symbol",
                                   []).append(k)
-            return [{"kind": route, "items": [doc(k) for k in ks]}
+            return [{"items": [doc(k) for k in ks]}
                     for route, ks in sorted(routes.items(),
                                             key=lambda r: r[0] != "type")]
-        return [{"kind": b.route, "source_file": b.file,
+        return [{"source_file": b.file,
                  "items": [doc(u.node.key) for u in b.units]}
                 for b in _pack([unit(k) for k in keys], **budgets)]
 
@@ -694,7 +690,7 @@ def build_schedule(layout, target: Path, *, api_headers_only: bool = False,
             if is_cut:
                 out["items"] = [{"from": {"name": u[0], "defined_in": u[1]},
                                  "to": {"name": v[0], "defined_in": v[1]},
-                                 "kind": route(v)} for u, v in es]
+                                 "kind": c_kind(by_key[v])} for u, v in es]
             else:
                 out["via_dependency"] = [{"name": k[0], "defined_in": k[1]} for k in
                               sorted({u for u, _ in through[j]}, key=_sort_key)]
@@ -722,11 +718,9 @@ def build_schedule(layout, target: Path, *, api_headers_only: bool = False,
     listed = sorted({owner[k] for k in chosen if k in owner},
                     key=lambda i: (stage[("module", i)], mods[i].name))
     return {
-        "schema_version": 5,
+        "schema_version": 6,
         "oracle_config": layout.config_provenance(),
         "api_headers_only": api_headers_only,
-        "with_enums": with_enums,
-        "with_macros": with_macros,
         "caps": caps,
         "summary": {
             "unit_count": len(chosen),

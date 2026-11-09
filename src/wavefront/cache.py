@@ -66,7 +66,11 @@ from pathlib import Path
 #:      each type, and a typedef field type resolves in the file declaring it
 #:      (`field_type_uses.type_decl_file`), so same-tagged file-local types no
 #:      longer share edges.
-_VERSION = 24
+#: 25 — a typedef that folds into no struct, union, enum or function pointer
+#:      is a symbol entry of its own (`kind: typedef`), a function pointer
+#:      written inline one too (`kind: function_pointer`), and a callback's
+#:      aliases fold into its entry, under `typedef`.
+_VERSION = 25
 
 
 def fingerprint(layout, target) -> dict:

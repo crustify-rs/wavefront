@@ -5,7 +5,7 @@ fingerprinted private cache. Scheduling and ``query dag`` share this node model,
 type metadata, and canonical lifecycle-operation ordering.
 
 The ordering in particular is shared ON PURPOSE — :func:`ordered_ops` is the one
-definition both the scheduler and ``query types --lifecycle-ops`` consume, so the two
+definition both the scheduler and ``query structs --lifecycle-ops`` consume, so the two
 never disagree on a type's op set or its order.
 """
 from __future__ import annotations
@@ -157,13 +157,15 @@ def select(
     its kind and defining file, so the caller can tell them apart; what needs
     one entity picks it with :func:`ambiguous`.
     """
+    from wavefront import kinds
+
     file_set = set(files or [])
     keys: list[NodeKey] = []
     unknown: list[str] = []
     for nm in dict.fromkeys(names or []):
         hit = [k for k in dict.fromkeys(by_name.get(nm, []))
                if (not file_set or (by_key[k].defined_in or "") in file_set)
-               and (kind is None or k[2] == kind)]
+               and (kind is None or kinds.of(by_key[k].subkind, k[2]) == kind)]
         (keys.extend(hit) if hit else unknown.append(nm))
     return keys, unknown
 
@@ -195,7 +197,7 @@ def ordered_ops(node: Node, by_key: dict[SymKey, Node], lifecycle: set[str],
     """A type's ops as the **canonical, windowable list**: the symbol nodes named
     by ``lifecycle`` that are ``in_scope``, ordered **lifecycle-first**
     (droppers/disposers/cloners/constructors) then alphabetical. This is the
-    ordering ``query types --name T --lifecycle-ops`` reports.
+    ordering ``query structs --name T --lifecycle-ops`` reports.
 
     Membership comes from ``lifecycle`` — the op-name set reverse-derived from
     the analysis tree's ``lifetime`` records (``_resolve`` in query) — and not

@@ -1,0 +1,4 @@
+"signature","type_name","type_kind","type_def_file","position"
+"void (*)(ctx *)","ctx","struct","fp.c","param_0"
+"int (*)(ctx *, void *)","ctx","struct","fp.c","param_0"
+"int (*)(ctx *, const char *)","ctx","struct","fp.c","param_0"

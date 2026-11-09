@@ -1,7 +1,9 @@
 /**
- * Enumerate every use of a struct's or union's LAYOUT: code that needs the
- * aggregate's members, size or alignment, and so cannot hold it through a
- * pointer it never looks behind.
+ * Enumerate every use of a struct's, union's or enum's LAYOUT: code that needs
+ * the type's members, enumerators, size or alignment, and so cannot hold it
+ * through a pointer it never looks behind. An enum is used whole wherever it
+ * is used at all, so what holds one only through a pointer is the only use of
+ * it without a row.
  *
  * `use_kind` is one of:
  *
@@ -18,9 +20,13 @@
  *   - "index" : pointer arithmetic over it: `p + n`, `p - q`, `++p`, `p += n`,
  *               and indexing `p[i]`, all of which step by its size;
  *   - "embed" : a member of another aggregate that holds it by value, alone
- *               or as an array. The user is the embedding aggregate.
+ *               or as an array. The user is the embedding aggregate;
+ *   - "constant" : an enum's enumerator named (`GIT_OBJECT_BLOB`), on the enum
+ *               that declares it. An enumerator is no value of the enum here:
+ *               naming one is this use, not a "value" one.
  *
- * An array of the aggregate counts as the aggregate in every kind. Uses that
+ * "field" is a struct's or union's only, and "constant" an enum's. An array
+ * of the type counts as the type in every kind. Uses that
  * hold the type only through a pointer -- a parameter of `T *`, a cast to
  * `T *`, a pointer comparison -- are no layout use and have no row. A macro's
  * uses are recorded where it is expanded, against the enclosing function.
@@ -31,10 +37,10 @@
  *   user_def_file  : the user's definition file, or "" when the database holds
  *                    no definition
  *   user_kind      : "function" | "global" | "type"
- *   type_name      : the aggregate's identity, `identity.qll`'s `ownerOf`: its
- *                    tag, or the typedef naming an untagged aggregate
- *   type_def_file  : the aggregate's definition file
- *   use_kind       : "field" | "size" | "value" | "index" | "embed"
+ *   type_name      : the type's identity, `typeOwnerOf`: its tag, or the
+ *                    typedef naming an untagged aggregate or enum
+ *   type_def_file  : the type's definition file
+ *   use_kind       : "field" | "size" | "value" | "index" | "embed" | "constant"
  *   use_file       : the file of the use
  *   use_line       : 1-indexed line of the use
  *
@@ -46,23 +52,46 @@
 import cpp
 import identity
 
-/** The aggregate a value of type `t` holds: `t` with typedefs, qualifiers and
- * array dimensions stripped, but never a pointer. */
-Class valueAggregate(Type t) {
+/** The aggregate or enum a value of type `t` holds: `t` with typedefs,
+ * qualifiers and array dimensions stripped, but never a pointer. */
+UserType valueAggregate(Type t) {
   exists(Type u | u = t.getUnspecifiedType() |
-    (u instanceof Struct or u instanceof Union) and result = u
+    (u instanceof Struct or u instanceof Union or u instanceof Enum) and result = u
     or
     result = valueAggregate(u.(ArrayType).getBaseType())
   )
 }
 
-/** The aggregate a pointer (or array, which decays to one) of type `t` steps
- * over. */
-Class steppedAggregate(Type t) {
+/** The aggregate or enum a pointer (or array, which decays to one) of type
+ * `t` steps over. */
+UserType steppedAggregate(Type t) {
   exists(Type u | u = t.getUnspecifiedType() |
     result = valueAggregate(u.(PointerType).getBaseType())
     or
     result = valueAggregate(u.(ArrayType).getBaseType())
+  )
+}
+
+/**
+ * The identity `entities/types.ql` keys `t` by: `ownerOf` for a struct or
+ * union, and for an enum its tag, or the typedef that names an untagged one,
+ * at the enum's definition file. `ownerOf` stays an aggregate's only, since
+ * the field-keyed queries share it.
+ */
+predicate typeOwnerOf(UserType t, string name, string file) {
+  t instanceof Class and ownerOf(t, name, file)
+  or
+  t instanceof Enum and
+  file = defFileOf(t) and
+  (
+    not isAnonymous(t) and name = t.getName()
+    or
+    isAnonymous(t) and
+    exists(TypedefType td |
+      unwrappedUserType(td.getBaseType(), t) and
+      not isAnonNamed(td.getName()) and
+      name = td.getName()
+    )
   )
 }
 
@@ -101,9 +130,10 @@ predicate unevaluated(Expr e) {
   e.getParent+() instanceof BuiltInOperationBuiltInOffsetOf
 }
 
-/** An expression of an aggregate type used whole, not looked into. */
-predicate wholeValue(Expr e, Class agg) {
+/** An expression of an aggregate or enum type used whole, not looked into. */
+predicate wholeValue(Expr e, UserType agg) {
   agg = valueAggregate(e.getType()) and
+  not e instanceof EnumConstantAccess and
   not e = any(FieldAccess fa).getQualifier() and
   not e = any(AddressOfExpr a).getOperand() and
   // `p[i].x` and `&p[i]` step over the aggregate: an index use. So does an
@@ -124,7 +154,7 @@ predicate wholeValue(Expr e, Class agg) {
 Type usedType(Expr e) { result = e.getFullyConverted().getType() }
 
 /** A pointer step over the aggregate. */
-predicate stepOver(Expr e, Class agg) {
+predicate stepOver(Expr e, UserType agg) {
   agg = steppedAggregate(usedType(e.(PointerArithmeticOperation).getAnOperand()))
   or
   agg = steppedAggregate(usedType(e.(CrementOperation).getOperand()))
@@ -136,7 +166,7 @@ predicate stepOver(Expr e, Class agg) {
   agg = steppedAggregate(usedType(e.(ArrayExpr).getArrayBase()))
 }
 
-predicate sizeOf(Expr e, Class agg) {
+predicate sizeOf(Expr e, UserType agg) {
   agg = valueAggregate(e.(SizeofTypeOperator).getTypeOperand())
   or
   agg = valueAggregate(usedType(e.(SizeofExprOperator).getExprOperand()))
@@ -149,8 +179,10 @@ predicate sizeOf(Expr e, Class agg) {
 }
 
 /** A layout use at an expression. */
-predicate exprUse(Expr e, Class agg, string kind) {
+predicate exprUse(Expr e, UserType agg, string kind) {
   agg = e.(FieldAccess).getTarget().getDeclaringType() and kind = "field"
+  or
+  agg = e.(EnumConstantAccess).getTarget().getDeclaringEnum() and kind = "constant"
   or
   sizeOf(e, agg) and kind = "size"
   or
@@ -160,7 +192,7 @@ predicate exprUse(Expr e, Class agg, string kind) {
 }
 
 /** A declaration that holds the aggregate by value. */
-predicate declUse(Element d, Class agg, string uname, string ufile, string ukind) {
+predicate declUse(Element d, UserType agg, string uname, string ufile, string ukind) {
   exists(LocalScopeVariable v | d = v and agg = valueAggregate(v.getType()) |
     exists(Function fn |
       fn = v.(LocalVariable).getFunction() or fn = v.(Parameter).getFunction()
@@ -178,10 +210,10 @@ predicate declUse(Element d, Class agg, string uname, string ufile, string ukind
   )
 }
 
-from Class agg, string uname, string ufile, string ukind, string tname, string tfile,
+from UserType agg, string uname, string ufile, string ukind, string tname, string tfile,
      string kind, Location loc
 where
-  ownerOf(agg, tname, tfile) and
+  typeOwnerOf(agg, tname, tfile) and
   (
     exists(Expr e |
       exprUse(e, agg, kind) and exprUser(e, uname, ufile, ukind) and loc = e.getLocation()

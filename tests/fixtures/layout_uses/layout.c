@@ -50,3 +50,16 @@ struct Handle *opaque_pass(struct Handle *h) { return h; }
 struct Point *opaque_cast(void *p) { return (struct Point *)p; }
 void opaque_null(struct Point **pp) { *pp = NULL; }
 int opaque_compare(struct Point *a, struct Point *b) { return a == b; }
+
+/* enums: every use but a pointer's is one, an enumerator's named included */
+enum Color { RED, GREEN };
+typedef enum { MODE_A, MODE_B } Mode;       /* shape A: named by its typedef */
+struct Pixel { enum Color c; Mode m; };
+
+int enum_constant(void) { return GREEN; }
+int enum_value(enum Color c) { return c == RED; }
+Mode enum_return(void) { return MODE_B; }
+size_t enum_size(void) { return sizeof(Mode); }
+enum Color *enum_index(enum Color *p) { return p + 1; }
+enum Color *enum_opaque(enum Color *p) { return p; }
+int enum_field(struct Pixel *px) { return px->c; }

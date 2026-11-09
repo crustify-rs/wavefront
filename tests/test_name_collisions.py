@@ -51,7 +51,7 @@ class NameCollisionTests(unittest.TestCase):
                                self.by_key, self.by_name)
         self.assertEqual(len(keys), 4)
         self.assertEqual(unknown, ["nope"])
-        keys, _ = select(["typelen"], self.by_key, self.by_name, kind="type")
+        keys, _ = select(["typelen"], self.by_key, self.by_name, kind="struct")
         self.assertEqual(keys, [("typelen", "src/date.c", "type")])
         keys, _ = select(["set_error"], self.by_key, self.by_name,
                          files={"src/errors.c"})

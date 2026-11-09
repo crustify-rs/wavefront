@@ -113,6 +113,65 @@ def _is_callback_typedef(type_name: str, by_name: dict[str, dict]) -> bool:
     return terminal.get("unaliased_kind", "") == "callback"
 
 
+def _callback_base(type_name: str, by_name: dict[str, dict]) -> str | None:
+    """The function-pointer typedef a type name's chain ends at: itself when
+    it declares one, the one it aliases when it is an alias
+    (`typedef git_trace_cb git_trace_callback;`), which folds into it.
+    ``None`` for any other type."""
+    row = by_name.get(type_name)
+    if row is None:
+        return None
+    cls = scope.typedef_class(row, by_name)
+    if cls is None or cls[0] != scope.FOLDS_CALLBACK:
+        return None
+    return cls[1]["name"]
+
+
+def _typedef_record(row: dict) -> dict[str, Any]:
+    """A `depends_on.syms` record of a typedef entry: homed at its
+    declaration, as a callback is."""
+    return {
+        "name": row["name"],
+        "defined_in": None,
+        "declared_in": sorted(_decls_list(row.get("decl_files", ""))),
+    }
+
+
+def _typedef_deps(type_names, by_name: dict[str, dict]) -> list[dict[str, Any]]:
+    """The typedefs of their own (`scope.own_typedef`) among ``type_names``,
+    as `depends_on.syms` records: a typedef is an ordinary identifier, a
+    symbol, like a callback. Every other typedef folds into what it names, and
+    a use of it is that entity's."""
+    out = []
+    for t in sorted(set(type_names)):
+        row = by_name.get(t)
+        if row is not None and scope.own_typedef(row, by_name):
+            out.append(_typedef_record(row))
+    return out
+
+
+def _load_function_pointer_uses(csv_dir_t2: Path) -> dict[tuple[str, str, str], set]:
+    """``{(user, user_def_file, user_kind): {(signature, home)}}`` from
+    `t2/function_pointer_uses.csv`: the inline function pointers each entity
+    writes."""
+    out: dict[tuple[str, str, str], set] = {}
+    path = csv_dir_t2 / "function_pointer_uses.csv"
+    if not path.is_file():
+        return out
+    for r in scope.load_csv(path):
+        out.setdefault((r["user_name"], r.get("user_def_file") or "", r["user_kind"]),
+                       set()).add((r["signature"], r["def_file"]))
+    return out
+
+
+def _function_pointer_deps(fp_uses, name: str, def_file: str,
+                           kind: str) -> list[dict[str, Any]]:
+    """The inline function pointers an entity writes, as `depends_on.syms`
+    records: each homed where it is written, its signature its name."""
+    return [{"name": sig, "defined_in": home, "declared_in": [home]}
+            for sig, home in sorted((fp_uses or {}).get((name, def_file or "", kind), ()))]
+
+
 def _callback_deps(
     reach: Reach,
     name: str,
@@ -148,9 +207,11 @@ def _callback_deps(
     """
     if sig_types is None:
         sig_types = reach.types_in_signature_of(name, def_file)
-    names = {t for t, _k, _f, _p in sig_types if _is_callback_typedef(t, by_name)}
+    # An alias of a callback is the callback it names.
+    names = {_callback_base(t, by_name) for t, _k, _f, _p in sig_types} - {None}
     if invoked:
-        names |= reach.callbacks_invoked_by(name, def_file)
+        names |= {_callback_base(n, by_name) or n
+                  for n in reach.callbacks_invoked_by(name, def_file)}
     out: list[dict[str, Any]] = []
     for cb in sorted(names):
         row = by_name.get(cb) or {}
@@ -479,6 +540,7 @@ def _port_additions_function(
     by_name: dict[str, dict],
     sym_index: dict[tuple[str, str], dict[str, Any]],
     field_access_index: "FieldAccessIndex",
+    fp_uses: dict | None = None,
 ) -> dict[str, Any]:
     name = row["name"]
     def_file = row["def_file"]
@@ -504,6 +566,11 @@ def _port_additions_function(
             "syms": (
                 _compose_dep_syms(forward_syms, sym_index)
                 + _callback_deps(reach, name, def_file, by_name)
+                + _typedef_deps(
+                    [t for t, *_ in reach.types_in_signature_of(name, def_file)]
+                    + [t for t, *_ in reach.types_in_body_of(name, def_file)],
+                    by_name)
+                + _function_pointer_deps(fp_uses, name, def_file, "function")
             ),
             "types": _compose_dep_types(
                 reach, name, def_file, by_name, field_access_index,
@@ -532,6 +599,7 @@ def _port_additions_global(
     reach: Reach,
     by_name: dict[str, dict],
     sym_index: dict[tuple[str, str], dict[str, Any]],
+    fp_uses: dict | None = None,
 ) -> dict[str, Any]:
     """Global additions. Forward deps come from two places:
 
@@ -570,10 +638,8 @@ def _port_additions_global(
         seen.add(tag)
         dep_types.append({"type": tag, "fields": []})
 
-    cb_types = [
-        t for t, _k, _f in reach.types_in_global_type(name, def_file)
-        if _is_callback_typedef(t, by_name)
-    ]
+    global_types = [t for t, _k, _f in reach.types_in_global_type(name, def_file)]
+    cb_types = [b for t in global_types if (b := _callback_base(t, by_name))]
     dep_syms = _compose_dep_syms(forward, sym_index)
     for cb in sorted(set(cb_types)):
         r = by_name.get(cb) or {}
@@ -582,6 +648,8 @@ def _port_additions_global(
             "defined_in": None,
             "declared_in": sorted(_decls_list(r.get("decl_files", ""))),
         })
+    dep_syms += _typedef_deps(global_types, by_name)
+    dep_syms += _function_pointer_deps(fp_uses, name, def_file, "global")
     return {
         "used_by": {"call": None, "ref": sorted(accessors)},
         "depends_on": {"syms": dep_syms, "types": dep_types},
@@ -658,10 +726,15 @@ def _base_callback(
     # same way any consumer does — as a sym, not a type.
     dep_syms = _callback_deps(
         reach, name, decl_file, by_name, sig_types=cb_sig_types, invoked=False,
-    )
+    ) + _typedef_deps([t for t, *_ in cb_sig_types], by_name)
     return {
         "name": name,
         "kind": "callback",
+        # Every typedef that names this function pointer through it, the
+        # declaring one aside: what folds into it.
+        "typedef": sorted(a for a, r in by_name.items()
+                          if a != name and r.get("kind") == "typedef"
+                          and _callback_base(a, by_name) == name),
         "declared_in": sorted(_decls_list(row["decl_files"])),
         "defined_in": None,
         # No C signature string is extracted for a callback; the structured
@@ -675,6 +748,80 @@ def _base_callback(
         "lifetime": _null_lifetime(),
         "used_by": {"call": sorted(callsites), "ref": sorted(declarers - callsites)},
         "depends_on": {"syms": dep_syms, "types": dep_types},
+    }
+
+
+def _base_typedef(row: dict, reach: Reach, by_name: dict[str, dict]) -> dict[str, Any]:
+    """Symbol-shaped entry for a typedef of its own (``kind:"typedef"``): a
+    typedef that names no struct, union, enum or function pointer, such as
+    `typedef int64_t git_off_t;`. Homed at its declaration, as a callback is;
+    `type` is what it names as C writes it, and it depends on the typedef it
+    aliases when that one is an entity of its own too."""
+    name = row["name"]
+    alias = row.get("aliases") or ""
+    nxt = by_name.get(alias) if alias else None
+    deps = ([_typedef_record(nxt)]
+            if nxt is not None and scope.own_typedef(nxt, by_name) else [])
+    return {
+        "name": name,
+        "kind": "typedef",
+        "declared_in": sorted(_decls_list(row.get("decl_files", ""))),
+        "defined_in": None,
+        "type": row.get("base_type") or alias or None,
+        "loc": 0,
+        "used_by": {"call": None,
+                    "ref": sorted({fn for fn, _ in reach.functions_using_type(name, "")})},
+        "depends_on": {"syms": deps, "types": []},
+    }
+
+
+def _load_function_pointer_sig_types(csv_dir_t2: Path) -> dict[str, list[tuple]]:
+    """``{signature: [(type_name, type_kind, type_def_file, position)]}`` from
+    `t2/function_pointer_signature_types.csv`."""
+    out: dict[str, list[tuple]] = {}
+    path = csv_dir_t2 / "function_pointer_signature_types.csv"
+    if not path.is_file():
+        return out
+    for r in scope.load_csv(path):
+        out.setdefault(r["signature"], []).append(
+            (r["type_name"], r["type_kind"], r.get("type_def_file") or "", r["position"]))
+    return out
+
+
+def _base_function_pointer(sig: str, home: str, sig_types: list[tuple],
+                           users: list[str], by_name: dict[str, dict]) -> dict[str, Any]:
+    """Symbol-shaped entry for a function pointer written inline
+    (``kind:"function_pointer"``): its signature is its name, and it is homed
+    in the file it is written in. It depends on what its signature names:
+    structs, unions and enums as types, function-pointer typedefs and
+    typedefs of their own as symbols."""
+    types: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for t, _k, _f, _p in sig_types:
+        if (_is_scalar_typedef(t, by_name) or _callback_base(t, by_name)
+                or (by_name.get(t) is not None
+                    and scope.own_typedef(by_name[t], by_name))):
+            continue
+        tag = _resolve_dep_type_tag(t, by_name)
+        if not tag or tag.startswith("(") or tag in seen:
+            continue
+        seen.add(tag)
+        types.append({"type": tag, "fields": []})
+    names = [t for t, *_ in sig_types]
+    callbacks = {_callback_base(t, by_name) for t in names} - {None}
+    syms = [{"name": cb, "defined_in": None,
+             "declared_in": sorted(_decls_list((by_name.get(cb) or {}).get("decl_files", "")))}
+            for cb in sorted(callbacks)]
+    return {
+        "name": sig,
+        "kind": "function_pointer",
+        "declared_in": [home],
+        "defined_in": home,
+        "type": sig,
+        "typedef": [],
+        "loc": 0,
+        "used_by": {"call": None, "ref": users},
+        "depends_on": {"syms": syms + _typedef_deps(names, by_name), "types": types},
     }
 
 
@@ -819,6 +966,7 @@ def compose(
             _deffiles[_r["name"]].add(_r["def_file"])
     multidef = {n for n, fs in _deffiles.items() if len(fs) > 1}
     field_access_index = _load_field_access_index(csv_dir_t2, multidef)
+    fp_uses = _load_function_pointer_uses(csv_dir_t2)
 
     # (name, def_file) → row index over functions, globals, macros.
     sym_index: dict[tuple[str, str], dict[str, Any]] = {}
@@ -855,7 +1003,7 @@ def compose(
         # index is already repo-wide, so this is a few dict hits per record and
         # the cost stays bounded by what we emit.
         port_add = _port_additions_function(
-            r, reach, by_name, sym_index, field_access_index,
+            r, reach, by_name, sym_index, field_access_index, fp_uses,
         )
         # `forward` drives the one-hop closure -- that IS emission, so it stays
         # gated on port scope.
@@ -881,7 +1029,7 @@ def compose(
                 continue
         base = _base_global(r)
         # content: codebase-wide
-        port_add = _port_additions_global(r, reach, by_name, sym_index)
+        port_add = _port_additions_global(r, reach, by_name, sym_index, fp_uses)
         # A global's initializer references drive the closure exactly like a
         # function's callees do (a dispatch table pulls in its handlers).
         fwd = ({(n, df or "") for n, df in reach.addr_targets_of(r["name"], r["def_file"])}
@@ -944,7 +1092,9 @@ def compose(
     from .types_manifest import _import_reachable  # noqa: E402 (avoid import cycle)
     seen_cb: set[str] = set()
     for r in types:
-        if r["kind"] != "typedef" or not _is_callback_typedef(r["name"], by_name):
+        # The typedef that declares the function pointer; an alias of it folds
+        # into its entry, under `typedef`.
+        if r["kind"] != "typedef" or r.get("unaliased_kind") != "callback":
             continue
         name = r["name"]
         if not name or name.startswith("(") or name in seen_cb:
@@ -963,6 +1113,51 @@ def compose(
             "forward": None,          # type-deps don't expand the symbol closure
             "key": (base["name"], ""),
             "target_file": _first_decl(r["decl_files"]),
+        })
+
+    # Typedefs of their own (`scope.own_typedef`): a typedef that folds into
+    # no struct, union, enum or function pointer, a primitive's or a
+    # pointer's, is an entity, homed at its declaration as a callback is. A
+    # closure's is admitted outright; another only on the external surface.
+    seen_td: set[str] = set()
+    for r in types:
+        name = r["name"]
+        if name in seen_td or not scope.own_typedef(r, by_name):
+            continue
+        seen_td.add(name)
+        if scope_enabled and not seed_mode and not unscoped \
+                and (name, "") not in imp_keys and (name, "") not in tgt_funcs:
+            continue
+        base = _base_typedef(r, reach, by_name)
+        candidates.append({
+            "base": base,
+            "port_add": None,
+            "in_target": False,
+            "forward": None,
+            "key": (name, ""),
+            "target_file": scope.typedef_home(r),
+        })
+
+    # Function pointers written inline: one entity per signature and home
+    # file, the signature its name. Admitted as their home's.
+    fp_sig_types = _load_function_pointer_sig_types(csv_dir_t2)
+    fp_users: dict[tuple[str, str], set[str]] = {}
+    for (user, _udf, _uk), fps in fp_uses.items():
+        for fp in fps:
+            fp_users.setdefault(fp, set()).add(user)
+    for sig, home in sorted(fp_users):
+        if scope_enabled and not seed_mode and not unscoped \
+                and (sig, home) not in tgt_funcs:
+            continue
+        base = _base_function_pointer(sig, home, fp_sig_types.get(sig, []),
+                                      sorted(fp_users[(sig, home)]), by_name)
+        candidates.append({
+            "base": base,
+            "port_add": None,
+            "in_target": False,
+            "forward": None,
+            "key": (sig, home),
+            "target_file": home,
         })
 
     # Pass 2: identify seeds (seed mode only). When in-memory inventory is

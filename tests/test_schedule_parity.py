@@ -96,7 +96,7 @@ class SchedulePackingParityTests(unittest.TestCase):
         root = Path(__file__).resolve().parents[1]
         schedule = json.loads((root / "examples" / "schedule.json").read_text())
 
-        self.assertEqual(schedule["schema_version"], 5)
+        self.assertEqual(schedule["schema_version"], 6)
         items = _scheduled_items(schedule)
         waves = schedule["waves"]
         summary = schedule["summary"]
@@ -119,7 +119,7 @@ class SchedulePackingParityTests(unittest.TestCase):
         for module in schedule["modules"]:
             for index in module["waves"]:
                 self.assertEqual(waves[index]["module"], module["name"])
-        keys = {"name", "defined_in", "declared_in", "kind", "source_kind",
+        keys = {"name", "defined_in", "declared_in", "kind", "typedefs",
                 "seeded", "module", "loc", "stats", "depends_on", "depended_on_by",
                 "type_generator_for", "used_fields", "opaque_after",
                 "memory_unmanaged_after", "unreferenced_after"}
@@ -273,7 +273,7 @@ class SchedulePackingParityTests(unittest.TestCase):
 
         wave = _schedule(graph, inventory, api_headers_only=True)
 
-        self.assertEqual(wave["schema_version"], 5)
+        self.assertEqual(wave["schema_version"], 6)
         self.assertEqual([w["layer"] for w in wave["waves"]], [0, 1])
         self.assertEqual(
             [item["name"] for item in _scheduled_items(wave)],
@@ -287,7 +287,7 @@ class SchedulePackingParityTests(unittest.TestCase):
         )
         dependencies = {
             item["name"]: item["scope"]
-            for item in public_item["depends_on"]["scheduled"]["symbols"]
+            for item in public_item["depends_on"]["scheduled"]
             if item["name"] == macro.id
         }
         self.assertEqual(
@@ -322,8 +322,8 @@ class SchedulePackingParityTests(unittest.TestCase):
             items = _scheduled_items(
                 _schedule(graph, inventory, api_headers_only=api))
             self.assertEqual([item["name"] for item in items], ["Holder"])
-            self.assertEqual(items[0]["depends_on"]["scheduled"]["types"], [
-                {"name": "Option", "defined_in": "include/opt.h",
+            self.assertEqual(items[0]["depends_on"]["scheduled"], [
+                {"name": "Option", "defined_in": "include/opt.h", "kind": "struct",
                  "scope": "external"}])
 
 

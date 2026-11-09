@@ -82,13 +82,14 @@ Run `extract-ql` again only when the database changes.
 ### 2. Query
 
 ```sh
-wavefront REPO_ROOT --config PATH query {types,symbols,files,dag} [FLAGS]
+wavefront REPO_ROOT --config PATH query [SUBJECT] [FLAGS]
 ```
 
 | Subject | Output |
 |---|---|
-| `types` | Type records: fields, casts, users, and findings. |
-| `symbols` | Symbol records: signatures, callers and callees, and findings. |
+| none | Every entity, one `name`, `kind`, `defined_in`, `declared_in` line each, grouped by kind. `--closure-only`, `--external-only`, `--api-only` and `--file` narrow it. |
+| `functions`, `globals`, `macros`, `function_pointers`, `typedefs` | Records of that kind: signatures, callers and callees, and findings. A function pointer is a typedef declaring one, its aliases folded in, or one written inline, named by its signature. A typedef is one that names no struct, union, enum or function pointer. |
+| `structs`, `unions`, `enums` | Records of that kind: fields, casts, users, and findings. |
 | `files` | The closure, external, and API file sets. |
 | `dag` | Dependency closures, graph layers, and cycle twins. |
 
@@ -96,14 +97,14 @@ Common flags:
 
 | Flag | Effect |
 |---|---|
-| `--name NAME ...` | Select entities by name. Without it, `types` and `symbols` list names. |
+| `--name NAME ...` | Select entities by name. Without it, a kind's subject lists its names. |
 | `--file FILE ...` | Narrow named entities to those defined in these files. |
 | `--closure-only`, `--external-only` | Keep entities defined in the closure's files, or the external ones it reaches. |
 | `--api-only` | Keep entities the `api_headers` publish. |
 | `--update FINDINGS` | Submit findings for one named entity (`-` reads stdin). |
 | `--in-tree`, `--out-of-tree` | Listing only: keep entities defined inside, or outside, the repository. |
 
-Type views (one `--name`):
+Struct, union and enum views (one `--name`):
 
 | Flag | Effect |
 |---|---|
@@ -114,7 +115,7 @@ Type views (one `--name`):
 | `--layout-users` | Print every function, global and aggregate that depends on the type's layout, with the sites of each use. |
 | `--raw-sites` | Print every function that allocates or frees the type with a raw routine (a lifecycle role on a `void *`, in the ownership store), with each site. With `--unresolved` and no `--name`: the raw sites on type-erased values no table types. |
 
-Symbol searches:
+Function searches (`--callees` and `--callers` also take a global, macro or typedef):
 
 | Flag | Effect |
 |---|---|
@@ -135,22 +136,22 @@ Graph views (`query dag`):
 | `--layer N` | Print every node in layer `N`. |
 | `--scc hi-deps\|lo-deps` | With `--name`, print the cycle twins recorded in `fallback` or `back_fill`. |
 | `--loc` | Report estimated lines of code. |
-| `--kind type\|symbol` | With `--name`, keep its type or its symbol nodes. A name that names several nodes resolves to all of them, listed under `matches` with their kinds and files. |
+| `--kind KIND` | With `--name`, keep its nodes of this kind (`function`, `struct`, ...). A name that names several nodes resolves to all of them, listed under `matches` with their kinds and files. |
 | `--api-headers-only` | Use the public-signature graph. |
 
 Examples:
 
 ```sh
-# List the published types.
-wavefront /src/widget --config wavefront-config.json query types --api-only
+# List everything the headers publish, by kind.
+wavefront /src/widget --config wavefront-config.json query --api-only
 
 # Show one type's fields.
 wavefront /src/widget --config wavefront-config.json \
-  query types --name widget_st --fields
+  query structs --name widget_st --fields
 
 # Find functions that take widget_st and reach widget_release within 3 calls.
 wavefront /src/widget --config wavefront-config.json \
-  query symbols --taking widget_st --calling widget_release --depth 3
+  query functions --taking widget_st --calling widget_release --depth 3
 
 # Show the dependencies of widget_new.
 wavefront /src/widget --config wavefront-config.json \
@@ -181,25 +182,24 @@ needs. A narrow schedule keeps the order and cuts of the whole
 closure, so a consumer can schedule parts of a library in turn without
 changing the order. Each unit carries its module, its `defined_in` and
 `declared_in` files, and the statistics a consumer weighs its work by. A
-struct or union also carries the point after which none of its layout users
-is left to process, `opaque_after`, and after which no C allocates or frees
-it with a raw routine, `memory_unmanaged_after`; a function or global the point
-after which none of its referrers is, `unreferenced_after`
+struct, union or enum also carries the point after which none of its layout
+users is left to process, `opaque_after`, and a struct or union the point
+after which no C allocates or frees it with a raw routine,
+`memory_unmanaged_after`; a function, global or macro the point after which
+none of its referrers is, `unreferenced_after`
 ([Release points](docs/batching.md#release-points)).
 
 | Flag | Default | Effect |
 |---|---:|---|
 | `--output PATH` | | Required. Output file; its directory must exist. |
 | `--api-headers-only` | | Schedule the public API from the public-signature graph. |
-| `--with-enums` | | Schedule enums, which are otherwise dependencies only. |
-| `--with-macros` | | Schedule every macro the closure's files define; otherwise only the type generators it defines. |
 | `--max-types N` | none | Types per type batch. |
 | `--min-fields N` | none | Declared fields that close a type batch. |
 | `--max-syms N` | none | Symbols per symbol batch. |
 | `--max-loc N` | none | Body lines per symbol batch; `0` disables the limit. |
 
-Without a cap, a wave holds one batch per route, types and symbols, for the
-consumer to split.
+Without a cap, a wave holds two batches, its types and generator macros, then
+everything else, for the consumer to split.
 
 Example:
 

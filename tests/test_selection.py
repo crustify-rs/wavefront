@@ -87,10 +87,11 @@ class OrderTests(unittest.TestCase):
                                           ("b2", "b.c")])
         items = {i["name"]: i for i in _scheduled_items(
             _schedule(graph, inventory, config=_config()))}
-        self.assertEqual([r["name"] for r in items["a1"]["depends_on"]["cut"]["symbols"]], ["b2"])
-        self.assertEqual([r["name"] for r in items["b2"]["depended_on_by"]["cut"]["symbols"]], ["a1"])
-        self.assertEqual(items["a1"]["depends_on"]["scheduled"]["symbols"],
-                         [{"name": "b1", "defined_in": "b.c", "scope": "scheduled"}])
+        self.assertEqual([r["name"] for r in items["a1"]["depends_on"]["cut"]], ["b2"])
+        self.assertEqual([r["name"] for r in items["b2"]["depended_on_by"]["cut"]], ["a1"])
+        self.assertEqual(items["a1"]["depends_on"]["scheduled"],
+                         [{"name": "b1", "defined_in": "b.c", "kind": "function",
+                           "scope": "scheduled"}])
         self.assertEqual(_names(_schedule(graph, inventory, config=_config())),
                          [["b1"], ["a1"], ["b2"]])
 
@@ -116,12 +117,30 @@ class SelectionTests(unittest.TestCase):
         self.assertEqual(_names(schedule), [["T", "b1"]])
 
     def test_items_narrow_a_file(self) -> None:
-        only = {"path": "h.h", "items": {"included": [{"name": "b1", "kind": "symbol"}]}}
+        only = {"path": "h.h", "items": {"included": [{"name": "b1", "kind": "function"}]}}
         self.assertEqual(_names(_schedule(GRAPH, INVENTORY, config=_config(only))),
                          [["b1"]])
-        less = {"path": "h.h", "items": {"excluded": [{"name": "b1", "kind": "symbol"}]}}
+        less = {"path": "h.h", "items": {"excluded": [{"name": "b1", "kind": "function"}]}}
         self.assertEqual(_names(_schedule(GRAPH, INVENTORY, config=_config(less))),
                          [["T"]])
+
+    def test_an_item_gives_what_it_names_in_c(self) -> None:
+        only = {"path": "h.h", "items": {"included": [{"name": "b1", "kind": "function"},
+                                                      {"name": "T", "kind": "struct"}]}}
+        self.assertEqual(_names(_schedule(GRAPH, INVENTORY, config=_config(only))),
+                         [["T", "b1"]])
+
+    def test_an_item_of_the_wrong_kind_is_refused(self) -> None:
+        for name, kind, actual in (("T", "union", "struct"), ("b1", "global", "function")):
+            wrong = {"path": "h.h", "items": {"included": [{"name": name, "kind": kind}]}}
+            with self.subTest(kind), self.assertRaisesRegex(
+                    SystemExit, f"{name} is a {actual}, not a {kind}"):
+                _schedule(GRAPH, INVENTORY, config=_config(wrong))
+
+    def test_an_unknown_kind_is_refused(self) -> None:
+        bad = {"path": "h.h", "items": {"included": [{"name": "T", "kind": "class"}]}}
+        with self.assertRaisesRegex(SystemExit, "its kind one of function"):
+            _schedule(GRAPH, INVENTORY, config=_config(bad))
 
     def test_a_directory_selects_the_closure_files_under_it(self) -> None:
         # The closure decides what src/ holds, not the disk, where it is empty.
@@ -138,8 +157,9 @@ class SelectionTests(unittest.TestCase):
         items = {i["name"]: i for i in _scheduled_items(schedule)}
         self.assertEqual({n: i["seeded"] for n, i in items.items()},
                          {"a1": True, "a2": True, "b1": False})
-        self.assertEqual(items["a1"]["depends_on"]["scheduled"]["symbols"],
-                         [{"name": "b1", "defined_in": "b.c", "scope": "scheduled"}])
+        self.assertEqual(items["a1"]["depends_on"]["scheduled"],
+                         [{"name": "b1", "defined_in": "b.c", "kind": "function",
+                           "scope": "scheduled"}])
         self.assertEqual((schedule["summary"]["unit_count"],
                           schedule["summary"]["seeded_count"]), (3, 2))
 
@@ -156,12 +176,12 @@ class SelectionTests(unittest.TestCase):
     def test_errors(self) -> None:
         cases = {
             "no owned entity": _config(
-                {"path": "h.h", "items": {"included": [{"name": "V", "kind": "type"}]}}),
+                {"path": "h.h", "items": {"included": [{"name": "V", "kind": "struct"}]}}),
             "no owned entity ": _config(
-                {"path": "h.h", "items": {"included": [{"name": "T", "kind": "symbol"}]}}),
+                {"path": "h.h", "items": {"included": [{"name": "T", "kind": "function"}]}}),
             "both lists name": _config({"path": "h.h", "items": {
-                "included": [{"name": "T", "kind": "type"}],
-                "excluded": [{"name": "T", "kind": "type"}]}}),
+                "included": [{"name": "T", "kind": "struct"}],
+                "excluded": [{"name": "T", "kind": "struct"}]}}),
             "c.c is no file of the closure": _config("c.c"),
             "src/ holds no file of the closure": _config("src/"),
             "a directory": _config({"path": "src/", "items": {}}),
@@ -211,12 +231,12 @@ class ModuleTests(unittest.TestCase):
                            "via_dependency": []}])
         self.assertEqual(modules["B"]["depends_on"]["cut"][0]["items"], [
             {"from": {"name": "b2", "defined_in": "b.c"},
-             "to": {"name": "a1", "defined_in": "a.c"}, "kind": "symbol"}])
+             "to": {"name": "a1", "defined_in": "a.c"}, "kind": "function"}])
         items = {i["name"]: i for i in _scheduled_items(schedule)}
         self.assertEqual(items["a2"]["module"], "A")
         self.assertEqual({m: modules[m]["layer"] for m in modules},
                          {"B": 0, "H": 0, "A": 1})
-        self.assertEqual([r["name"] for r in items["b2"]["depends_on"]["cut"]["symbols"]], ["a1"])
+        self.assertEqual([r["name"] for r in items["b2"]["depends_on"]["cut"]], ["a1"])
 
     def test_units_no_module_claims_are_ordered_alone(self) -> None:
         config = _modules(_config("a.c", "h.h"), ("A", "a.c"))
@@ -245,7 +265,7 @@ class ModuleTests(unittest.TestCase):
         # Once B claims it, nothing is warned of: b2, which no seed reaches,
         # needs no module.
         config = _modules(_config("a.c"), ("A", "a.c"), ("B", {"path": "b.c", "items": {
-            "included": [{"name": "b1", "kind": "symbol"}]}}))
+            "included": [{"name": "b1", "kind": "function"}]}}))
         err = io.StringIO()
         with contextlib.redirect_stderr(err):
             _schedule(GRAPH, INVENTORY, config=config)
@@ -302,7 +322,7 @@ class ModuleTests(unittest.TestCase):
                          [{"module": "B", "unique_edges": 1, "total_edges": 1,
                            "via_dependency": []}])
         config["schedule_seeds"] = [
-            {"path": "a.c", "items": {"included": [{"name": "a1", "kind": "symbol"}]}}]
+            {"path": "a.c", "items": {"included": [{"name": "a1", "kind": "function"}]}}]
         narrow = _schedule(graph, inventory, config=config)
         self.assertEqual([m["name"] for m in narrow["modules"]], ["A"])
         self.assertEqual(narrow["modules"][0]["depends_on"],
@@ -319,7 +339,7 @@ class ModuleTests(unittest.TestCase):
                                types=[("S", "h.h", "h.h"), ("U", "h.h", "h.h")])
 
         def only(name):
-            return {"path": "h.h", "items": {"included": [{"name": name, "kind": "type"}]}}
+            return {"path": "h.h", "items": {"included": [{"name": name, "kind": "struct"}]}}
         config = _modules(_config(), ("A", "a.c", only("S")), ("B", "b.c", only("U")))
         self.assertEqual(_waves(_schedule(graph, inventory, config=config)), [
             ("A", ["S"], [], 0), ("B", ["U"], [], 0),
@@ -332,8 +352,8 @@ class ModuleTests(unittest.TestCase):
                                                     ("release", "a.c")])]]}
         inventory = _inventory(functions=[("alloc", "a.c"), ("release", "a.c"),
                                           ("f", "a.c")])
-        lifecycle = [{"name": "alloc", "kind": "symbol"},
-                     {"name": "release", "kind": "symbol"}]
+        lifecycle = [{"name": "alloc", "kind": "function"},
+                     {"name": "release", "kind": "function"}]
         config = _modules(_config(),
                           ("F", {"path": "a.c", "items": {"included": lifecycle}}),
                           ("A", {"path": "a.c", "items": {"excluded": lifecycle}}))
@@ -344,7 +364,7 @@ class ModuleTests(unittest.TestCase):
 
     def test_an_item_its_file_only_declares_is_an_error(self) -> None:
         # h.h declares b1, which b.c defines: H would claim nothing.
-        b1 = {"path": "h.h", "items": {"included": [{"name": "b1", "kind": "symbol"}]}}
+        b1 = {"path": "h.h", "items": {"included": [{"name": "b1", "kind": "function"}]}}
         config = _modules(_config(), ("H", b1), ("A", "a.c"))
         with self.assertRaisesRegex(SystemExit, r"H: h\.h items\.included: "
                                                 r"symbol b1 is homed in b\.c"):
@@ -439,22 +459,11 @@ class KindTests(unittest.TestCase):
     ], [_rec("f", "a.c", types=[("E", "a.c")], syms=[("M", "a.c")])]]}
     INVENTORY = _inventory(functions=[("f", "a.c")], types=[("E", "a.c")])
 
-    def test_enums_and_macros_are_dependencies_by_default(self) -> None:
+    def test_enums_and_macros_are_units(self) -> None:
         schedule = _schedule(self.GRAPH, self.INVENTORY, config=_config())
-        self.assertEqual(_names(schedule), [["f"]])
-        self.assertEqual(schedule["waves"][0]["layer"], 0)
-        f = _scheduled_items(schedule)[0]
-        self.assertEqual([r["scope"] for r in f["depends_on"]["scheduled"]["types"] + f["depends_on"]["scheduled"]["symbols"]],
-                         ["closure", "closure"])
-
-    def test_flags_make_them_units(self) -> None:
-        enums = _schedule(self.GRAPH, self.INVENTORY, config=_config(),
-                          with_enums=True)
-        self.assertEqual(_names(enums), [["E"], ["f"]])
-        both = _schedule(self.GRAPH, self.INVENTORY, config=_config(),
-                         with_enums=True, with_macros=True)
-        self.assertEqual(_names(both), [["E", "M"], ["f"]])
-        self.assertEqual((both["with_enums"], both["with_macros"]), (True, True))
+        self.assertEqual(_names(schedule), [["E", "M"], ["f"]])
+        self.assertNotIn("with_enums", schedule)
+        self.assertNotIn("with_macros", schedule)
 
     def test_a_generator_is_a_type_dependency(self) -> None:
         # GEN mints T, which uses it: T lists GEN among its types, as GEN's
@@ -468,10 +477,10 @@ class KindTests(unittest.TestCase):
             {"name": "GEN", "defined_in": "a.c", "declared_in": []}]
         items = {i["name"]: i for i in
                  _scheduled_items(_schedule(graph, inventory, config=_config()))}
-        self.assertEqual(items["GEN"]["kind"], "type")
+        self.assertEqual(items["GEN"]["kind"], "macro")
         self.assertEqual(items["T"]["depends_on"]["scheduled"],
-                         {"types": [{"name": "GEN", "defined_in": "a.c",
-                                     "scope": "scheduled"}], "symbols": []})
+                         [{"name": "GEN", "defined_in": "a.c", "kind": "macro",
+                           "scope": "scheduled"}])
 
 
 class CapTests(unittest.TestCase):
@@ -485,9 +494,9 @@ class CapTests(unittest.TestCase):
                                             "max_types": None,
                                             "min_fields": None})
         self.assertEqual(
-            [(b["kind"], [i["name"] for i in b["items"]])
+            [[(i["kind"], i["name"]) for i in b["items"]]
              for b in schedule["waves"][0]["batches"]],
-            [("type", ["T"]), ("symbol", ["f", "g"])])
+            [[("struct", "T")], [("function", "f"), ("function", "g")]])
         capped = _schedule(graph, inventory, caps={"max_syms": 1})
         self.assertEqual(len(capped["waves"][0]["batches"]), 3)
         self.assertEqual(_schedule(graph, inventory, caps={"max_loc": 0})["caps"]
@@ -525,6 +534,171 @@ class StatsTests(unittest.TestCase):
                          ["callers"], 2)
         self.assertEqual(stats.of("S", "a.h", "type", "struct")
                          ["field_touchers"], 1)
+
+
+def _stats(tables: dict) -> Stats:
+    with tempfile.TemporaryDirectory() as directory:
+        root = Path(directory)
+        for name, rows in tables.items():
+            (root / name).parent.mkdir(exist_ok=True)
+            with (root / name).open("w", newline="") as out:
+                writer = csv.DictWriter(out, fieldnames=list(rows[0]))
+                writer.writeheader()
+                writer.writerows(rows)
+        return Stats(root / "t1", root / "t2", {"a.c", "a.h"})
+
+
+def _fn(name, linkage, **extra):
+    return {"name": name, "linkage": linkage, "def_file": "a.c", "decl_files": "",
+            "signature": f"int {name}(void)", "loc": 1, "is_variadic": 0, **extra}
+
+
+class PropertyTests(unittest.TestCase):
+    """`stats` gives the properties of an item's declaration, its linkage
+    among them, before its counts."""
+
+    def test_a_functions_linkage_and_inline_are_apart(self) -> None:
+        stats = _stats({"t1/functions.csv": [
+            _fn("e", "function_exported", is_static=0, is_inline=0),
+            _fn("s", "function_static", is_static=1, is_inline=0),
+            _fn("si", "function_inline_header", is_static=1, is_inline=1),
+            _fn("ei", "function_inline_header", is_static=0, is_inline=1)]})
+        got = {n: (stats.of(n, "a.c", "symbol", k)["exported"],
+                   stats.of(n, "a.c", "symbol", k)["static"],
+                   stats.of(n, "a.c", "symbol", k)["inline"])
+               for n, k in (("e", "function_exported"), ("s", "function_static"),
+                            ("si", "function_inline_header"),
+                            ("ei", "function_inline_header"))}
+        self.assertEqual(got, {"e": (True, False, False),
+                               "s": (False, True, False),
+                               "si": (False, True, True),
+                               "ei": (True, False, True)})
+
+    def test_without_the_columns_linkage_is_unknown(self) -> None:
+        i = _stats({"t1/functions.csv": [_fn("i", "function_inline_tu")]}).of(
+            "i", "a.c", "symbol", "function_inline_tu")
+        self.assertEqual((i["static"], i["exported"], i["inline"]), (None, None, None))
+
+    def test_a_global_is_const_only_at_its_top_level(self) -> None:
+        stats = _stats({"t1/globals.csv": [
+            {"name": n, "linkage": k, "type": t, "def_file": "a.c", "decl_files": ""}
+            for n, k, t in (("c", "global_static", "const int"),
+                            ("p", "global_extern", "const char *"),
+                            ("q", "global_extern", "char *const"))]})
+        got = {n: (stats.of(n, "a.c", "symbol", k)["static"],
+                   stats.of(n, "a.c", "symbol", k)["const"])
+               for n, k in (("c", "global_static"), ("p", "global_extern"),
+                            ("q", "global_extern"))}
+        self.assertEqual({n: stats.of(n, "a.c", "symbol", k)["exported"]
+                          for n, k in (("c", "global_static"), ("p", "global_extern"))},
+                         {"c": False, "p": True})
+        got = {n: (stats.of(n, "a.c", "symbol", k)["static"],
+                   stats.of(n, "a.c", "symbol", k)["const"])
+               for n, k in (("c", "global_static"), ("p", "global_extern"),
+                            ("q", "global_extern"))}
+        self.assertEqual(got, {"c": (True, True), "p": (False, False),
+                               "q": (False, True)})
+
+    def test_a_macro_says_whether_it_takes_arguments(self) -> None:
+        stats = _stats({"t1/macros.csv": [
+            {"name": "MAX", "head": "MAX(a, b)", "body": "", "def_file": "a.h"},
+            {"name": "N", "head": "N", "body": "4", "def_file": "a.h"}]})
+        self.assertTrue(stats.of("MAX", "a.h", "symbol", "macro")["function_like"])
+        self.assertFalse(stats.of("N", "a.h", "symbol", "macro")["function_like"])
+
+    def test_a_type_named_by_its_typedef_is_anonymous(self) -> None:
+        stats = _stats({"t1/types.csv": [
+            {"name": "T", "kind": "typedef", "def_file": "a.h", "decl_files": "a.h",
+             "aliases": "", "unaliased_kind": "union_anonymous"},
+            {"name": "S", "kind": "struct", "def_file": "a.h", "decl_files": "a.h",
+             "aliases": "", "unaliased_kind": ""}]})
+        t, s = stats.of("T", "a.h", "type", "union"), stats.of("S", "a.h", "type", "struct")
+        self.assertEqual((t["anonymous"], s["anonymous"]), (True, False))
+        self.assertNotIn("source_kind", t)
+
+    def test_a_typedef_says_what_it_names(self) -> None:
+        stats = _stats({"t1/types.csv": [
+            {"name": "off_t2", "kind": "typedef", "def_file": "", "decl_files": "a.h",
+             "aliases": "int64_t", "unaliased_kind": "", "base_type": "int64_t"}]})
+        self.assertEqual(stats.of("off_t2", None, "symbol", "typedef"),
+                         {"base_type": "int64_t"})
+        self.assertEqual(stats.of("cb", "a.h", "symbol", "callback"), {})
+
+
+class CKindTests(unittest.TestCase):
+    def test_an_items_kind_is_what_it_is_in_c(self) -> None:
+        from wavefront.dag import Node
+        from wavefront.schedule import c_kind
+
+        def node(kind, sub, gen=()):
+            n = Node(id="x", node_kind=kind, subkind=sub, defined_in="a.c",
+                     layer=0, dep_types=[], dep_syms=[])
+            n.type_generator_for = list(gen)
+            return n
+
+        cases = [(("symbol", "function_static"), "function"),
+                 (("symbol", "function_inline_header"), "function"),
+                 (("symbol", "global_extern"), "global"),
+                 (("symbol", "macro"), "macro"),
+                 (("symbol", "callback"), "function_pointer"),
+                 (("symbol", "function_pointer"), "function_pointer"),
+                 (("symbol", "typedef"), "typedef"),
+                 (("type", "struct"), "struct"), (("type", "union"), "union"),
+                 (("type", "enum"), "enum"), (("type", "external"), None),
+                 (("symbol", "external"), None)]
+        for (kind, sub), want in cases:
+            with self.subTest(sub=sub):
+                self.assertEqual(c_kind(node(kind, sub)), want)
+        self.assertEqual(c_kind(node("symbol", "macro", [("T", "a.c", "type")])), "macro")
+
+
+class KindIndexTests(unittest.TestCase):
+    def test_the_tables_give_every_entitys_kind(self) -> None:
+        from wavefront.kinds import Index
+        tables = {
+            "functions.csv": [{"name": "f", "def_file": "", "decl_files": "/usr/x.h"}],
+            "globals.csv": [{"name": "g", "def_file": "a.c", "decl_files": ""}],
+            "macros.csv": [{"name": "M", "def_file": "a.h"}],
+            "types.csv": [
+                {"name": "S", "kind": "struct", "def_file": "a.h", "decl_files": "a.h",
+                 "unaliased_kind": ""},
+                {"name": "W", "kind": "typedef", "def_file": "a.h", "decl_files": "a.h",
+                 "unaliased_kind": "union_anonymous"},
+                {"name": "cb", "kind": "typedef", "def_file": "a.h", "decl_files": "a.h",
+                 "unaliased_kind": "callback"},
+                {"name": "n", "kind": "typedef", "def_file": "a.h", "decl_files": "a.h",
+                 "unaliased_kind": "primitive"},
+                {"name": "S", "kind": "typedef", "def_file": "", "decl_files": "a.h",
+                 "aliases": "S", "unaliased_kind": ""},
+                {"name": "S_t", "kind": "typedef", "def_file": "", "decl_files": "a.h",
+                 "aliases": "S", "unaliased_kind": ""},
+                {"name": "cb_alias", "kind": "typedef", "def_file": "", "decl_files": "a.h",
+                 "aliases": "cb", "unaliased_kind": ""},
+                {"name": "size_t", "kind": "typedef", "def_file": "",
+                 "decl_files": "/usr/stddef.h", "aliases": "", "unaliased_kind": "primitive"}],
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            for name, rows in tables.items():
+                with (Path(directory) / name).open("w", newline="") as out:
+                    writer = csv.DictWriter(
+                        out, fieldnames=list(dict.fromkeys(k for r in rows for k in r)),
+                        restval="")
+                    writer.writeheader()
+                    writer.writerows(rows)
+            index = Index(directory)
+        got = {(n, h, ns): index.kind(n, h, ns) for n, h, ns in (
+            ("f", "/usr/x.h", "symbol"), ("f", "/other.h", "symbol"),
+            ("g", "a.c", "symbol"), ("M", "a.h", "symbol"), ("S", "a.h", "type"),
+            ("W", "a.h", "type"), ("cb", "a.h", "symbol"), ("n", "a.h", "symbol"),
+            ("S_t", "a.h", "symbol"), ("cb_alias", "a.h", "symbol"),
+            ("size_t", "/usr/stddef.h", "symbol"), ("__builtin_expect", "", "symbol"))}
+        self.assertEqual(list(got.values()), [
+            "function", "function", "global", "macro", "struct", "union",
+            "function_pointer", "typedef", None, None, None, "function"])
+        # An alias folds into what it names, a same-named one too.
+        self.assertEqual(index.typedefs("S", "type"), ["S", "S_t"])
+        self.assertEqual(index.typedefs("cb", "symbol"), ["cb_alias"])
+        self.assertEqual(index.typedefs("W", "type"), [])
 
 
 class GraphTests(unittest.TestCase):

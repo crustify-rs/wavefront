@@ -114,7 +114,7 @@ class TypeNode:
     __slots__ = ("tag", "def_file", "kind", "defined_in", "declared_in",
                  "ctype_refs", "dep_types", "dep_syms",
                  "cast_to", "cast_from", "nfields", "generated_by", "chased_bases",
-                 "cast_field_refs")
+                 "cast_field_refs", "fp_refs")
 
     def __init__(self, tag: str, def_file: str = "") -> None:
         self.tag = tag
@@ -123,6 +123,7 @@ class TypeNode:
         self.defined_in: str | None = None
         self.declared_in: str | None = None
         self.ctype_refs: set = set()        # (type_name, type_def_file) field edges
+        self.fp_refs: set = set()           # inline function pointers its fields write
         self.dep_types: set[str] = set()    # resolved canonical tags
         self.dep_syms: set[str] = set()     # resolved free-symbol names
         self.cast_to: set[str] = set()      # casted.to tags (this -> T)
@@ -161,7 +162,7 @@ class SymNode:
     __slots__ = ("name", "file", "kind", "defined_in", "declared_in",
                  "has_dep", "dep_on_types", "dep_on_syms",
                  "sig_type_refs", "subkind", "dep_types", "dep_syms", "loc",
-                 "generates", "cast_sig_refs")
+                 "generates", "cast_sig_refs", "typedefs", "fp_refs")
 
     def __init__(self, name: str, file: str | None) -> None:
         self.name = name
@@ -187,6 +188,10 @@ class SymNode:
         self.dep_types: set[str] = set()
         self.dep_syms: set[SymKey] = set()        # resolved (name, file) keys
         self.loc: int = 0                         # body line span (port LoC budget)
+        # A callback's aliases, which fold into it (`syms_manifest`): a use
+        # of one is a use of the callback.
+        self.typedefs: set[str] = set()
+        self.fp_refs: set[SymKey] = set()         # inline function pointers it writes
 
     @property
     def key(self) -> "TypeKey":
@@ -498,7 +503,7 @@ def _collect(analysis_root: Path,
         # dispatches on `node.subkind` and accepts only struct/union/enum, so
         # emitting the raw kind made 411 of 727 type nodes undispatchable -- a
         # whole wave died with `unsupported manifest kind 'typedef'`. Resolve
-        # through `uak` so a node agrees with `query types --name`.
+        # through `uak` so a node agrees with `query structs --name`.
         _k = m["kind"]
         if _k == "typedef" and (m.get("uak") or "") in _AGGREGATE_UAK:
             _k = m["uak"].split("_")[0]        # struct_anonymous -> struct
@@ -560,6 +565,7 @@ def _collect(analysis_root: Path,
                 n.declared_in = _canonical_decl(e.get("declared_in"))
             if e.get("loc"):
                 n.loc = max(n.loc, int(e["loc"]))
+            n.typedefs |= set(e.get("typedef") or ())
             if "depends_on" in e:
                 n.has_dep = True
                 dep = e["depends_on"] or {}
@@ -591,6 +597,20 @@ def _collect(analysis_root: Path,
                 n.sig_type_refs |= signature_refs.get(key, set())
             if cast_refs is not None:
                 n.cast_sig_refs |= cast_refs.get(key, set())
+    # A function pointer written inline is used by what writes it: a struct's
+    # field, a function's parameter, return, local or cast, a global. Read
+    # straight off the table, whatever a target owns, as the exact signature
+    # refs are, so a struct and a wrapped function order after it too.
+    if codeql_dir is not None:
+        fp_path = codeql_dir / "t2" / "function_pointer_uses.csv"
+        for r in (_scope.load_csv(fp_path) if fp_path.is_file() else []):
+            fp = (r["signature"], r["def_file"])
+            if fp not in syms:
+                continue
+            user = (r["user_name"], r.get("user_def_file") or "")
+            node = types.get(user) if r["user_kind"] == "type" else syms.get(user)
+            if node is not None:
+                node.fp_refs.add(fp)
     # Polymorphic pairs the orchestrator chased through type-erased slots
     # (T3 `chased_casts.csv`, `base_derived`): directed, derived -> base.
     if codeql_dir is not None:
@@ -861,9 +881,17 @@ def _build_edges(types, syms, amap, cast_scope: tuple[set, set] | None = None):
     # be dropped. This is the type-side counterpart of the composer's
     # `_callback_deps` — on the symbol side the composer already emits the
     # callback under `depends_on.syms`, so nothing here special-cases it.
+    #
+    # A typedef of its own (`kind: typedef`) is a symbol the same way, and so is
+    # an alias of a callback, which folds into it: each name resolves to its
+    # node.
     cb_keys: dict[str, SymKey] = {
-        key[0]: key for key, n in syms.items() if n.kind == "callback"
+        key[0]: key for key, n in syms.items() if n.kind in ("callback", "typedef")
     }
+    for key, n in sorted(syms.items()):
+        if n.kind == "callback":
+            for alias in sorted(n.typedefs):
+                cb_keys.setdefault(alias, key)
 
     def res_type_tag(tag: str, dt: set):
         """A depends_on.types TAG (no def_file — the symbol side still stores
@@ -949,6 +977,7 @@ def _build_edges(types, syms, amap, cast_scope: tuple[set, set] | None = None):
             # field never names the typedef in its own signature, so its
             # ordering runs struct -> callback, and it depends on the struct.
             res_ctype(ref, n.dep_types, n.dep_syms)
+        n.dep_syms |= n.fp_refs
         # What a type-erased field holds depends on its owner, as a derived
         # type on its base: the owner is the generic container
         # (`AVFrameSideData`), each variant one instance of it
@@ -1051,6 +1080,7 @@ def _build_edges(types, syms, amap, cast_scope: tuple[set, set] | None = None):
                 t = _resolve_ctype(ref, amap, types)
                 if t in keep_t:
                     n.dep_types.add(t)
+        n.dep_syms |= n.fp_refs
         n.dep_syms.discard(key)          # no self-edge
 
     return ext_syms, ext_types

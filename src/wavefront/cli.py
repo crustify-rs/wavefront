@@ -1,8 +1,9 @@
 """Command line interface for semantic queries, findings, and scheduling.
 
     wavefront <repo_root> --config PATH extract-ql
-    wavefront <repo_root> --config PATH query types   --name X [...]
-    wavefront <repo_root> --config PATH query symbols --name X [...]
+    wavefront <repo_root> --config PATH query                          (every entity, by kind)
+    wavefront <repo_root> --config PATH query structs   --name X [...]
+    wavefront <repo_root> --config PATH query functions --name X [...]
     wavefront <repo_root> --config PATH query dag     [...]
     wavefront <repo_root> --config PATH query files   [...]
 
@@ -75,13 +76,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="Seed from published declarations and stop symbol traversal at signatures.",
     )
     schedule.add_argument(
-        "--with-enums", action="store_true",
-        help="Schedule enums, which are skipped by default.")
-    schedule.add_argument(
-        "--with-macros", action="store_true",
-        help="Schedule every macro the closure's files define; by default only "
-             "type generators are.")
-    schedule.add_argument(
         "--max-syms", type=int, default=None,
         help="Maximum symbols per batch (default: no cap).")
     schedule.add_argument(
@@ -98,7 +92,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def _add_query_flags(p: argparse.ArgumentParser, *, facets: bool) -> None:
-    """Flags for `query types`/`query syms` — the read-only oracle, resolved
+    """Flags for each kind's `query` subject — the read-only oracle, resolved
     from composed records (dag-free). With no `--name` they enumerate (filtered by
     scope / `--file`) as a name list; with `--name T` they
     introspect one entry — always the WHOLE record (several names → several
@@ -194,11 +188,11 @@ def _add_query_flags(p: argparse.ArgumentParser, *, facets: bool) -> None:
                                 "set of functions that access it.")
         facet.add_argument("--layout-users", action="store_true",
                            dest="layout_users",
-                           help="Introspect a struct or union: every function, "
+                           help="Introspect a struct, union or enum: every function, "
                                 "global and aggregate that depends on its layout "
-                                "(reads a member, takes its size, alignment or an "
-                                "offset, holds it by value, or steps a pointer "
-                                "over it), with the sites of each kind of use, "
+                                "(reads a member, names an enumerator, takes its "
+                                "size, alignment or an offset, holds it by value, "
+                                "or steps a pointer over it), with the sites of each kind of use, "
                                 "and those that use it through an aggregate that "
                                 "holds it by value, under `via`. --closure-only "
                                 "keeps the closure's own users.")
@@ -297,13 +291,30 @@ def _add_query_command(sub) -> None:
     query_p = sub.add_parser(
         "query",
         help=(
-            "Read-only oracle. `types`/`symbols` enumerate (filtered, as a name "
-            "list) or introspect one (--name) as the whole record. "
+            "Read-only oracle. With no subject, every entity, grouped by kind. "
+            "`functions`/`globals`/`macros`/`structs`/`unions`/`enums`/"
+            "`typedefs` enumerate one kind (filtered, as a name list) or "
+            "introspect one (--name) as the whole record. "
             "`files` lists the closure / external section file sets. "
             "`dag` does the graph walks (closure / layer / scc)."
         ),
+        description=(
+            "With no subject, list every entity, one `name<TAB>kind<TAB>"
+            "defined_in<TAB>declared_in` line each, grouped by kind. The flags "
+            "below narrow that listing; a subject takes its own."),
     )
-    query_sub = query_p.add_subparsers(dest="subject", required=True)
+    # The bare listing's flags, under their own dests: a subject's parser
+    # resets the dests it defines, so sharing them would drop these.
+    query_p.add_argument("--closure-only", action="store_true", dest="all_closure_only",
+                         help="Only the CLOSURE section's entities.")
+    query_p.add_argument("--external-only", action="store_true",
+                         dest="all_external_only",
+                         help="Only the EXTERNAL section's entities.")
+    query_p.add_argument("--api-only", action="store_true", dest="all_api_only",
+                         help="Only what the `api_headers` publish.")
+    query_p.add_argument("--file", nargs="+", dest="all_files", metavar="PATH",
+                         help="Only entities these files define.")
+    query_sub = query_p.add_subparsers(dest="subject", required=False)
     # The semantics below are NOT derivable from the flag list, and each one is
     # a mistake an agent otherwise makes: reading `lifetime: null` as "no role",
     # guessing at an ambiguous tag, and assuming scope narrows a lookup or an
@@ -334,17 +345,15 @@ def _add_query_command(sub) -> None:
         "would step between unrelated functions at every hop. Submit through "
         "--update, never by editing a file."
     )
-    _add_query_flags(
-        query_sub.add_parser(
-            "types", help="Types: enumerate, or introspect one (--name).",
-            description=_add_query_flags.__doc__ + _SEMANTICS),
-        facets=True)
-    _add_query_flags(
-        query_sub.add_parser(
-            "symbols",
-            help="Symbols: enumerate, or introspect one (--name).",
-            description=_add_query_flags.__doc__ + _SEMANTICS),
-        facets=False)
+    from wavefront.kinds import TAG_KINDS
+    from wavefront.query import SUBJECTS
+    for subject, kind in SUBJECTS.items():
+        _add_query_flags(
+            query_sub.add_parser(
+                subject, help=f"{subject.capitalize()}: enumerate, or introspect "
+                              "one (--name).",
+                description=_add_query_flags.__doc__ + _SEMANTICS),
+            facets=kind in TAG_KINDS)
 
     files_q = query_sub.add_parser(
         "files",
@@ -408,8 +417,9 @@ def _add_query_command(sub) -> None:
         help="Narrow a --name to the nodes defined in these files.",
     )
     dag_q.add_argument(
-        "--kind", choices=("type", "symbol"), default=None,
-        help="Narrow a --name to its type or its symbol nodes. A name that "
+        "--kind", choices=("function", "global", "macro", "struct", "union",
+                           "enum", "function_pointer", "typedef"), default=None,
+        help="Narrow a --name to its nodes of this kind. A name that "
              "still names several nodes resolves to all of them, listed under "
              "`matches` with their kinds and files.",
     )
@@ -453,6 +463,16 @@ def _add_query_command(sub) -> None:
 
 
 def _dispatch_query(args: argparse.Namespace, target: Path) -> None:
+    if args.subject is None:
+        from wavefront.query import query_all
+        query_all(
+            target,
+            files=getattr(args, "all_files", None),
+            external_only=bool(getattr(args, "all_external_only", False)),
+            closure_only=bool(getattr(args, "all_closure_only", False)),
+            api_only=bool(getattr(args, "all_api_only", False)),
+        )
+        return
     if args.subject == "files":
         from wavefront.query import query_files
         query_files(
@@ -548,7 +568,6 @@ def _main() -> None:
         layout = Layout.discover(scope)
         schedule = build_schedule(
             layout, scope, api_headers_only=args.api_headers_only,
-            with_enums=args.with_enums, with_macros=args.with_macros,
             caps={"max_syms": args.max_syms, "max_loc": args.max_loc,
                   "max_types": args.max_types, "min_fields": args.min_fields})
         write_wave(args.output, schedule)

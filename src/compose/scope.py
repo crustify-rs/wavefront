@@ -133,15 +133,21 @@ def build_types_index(rows: list[dict]) -> dict[str, dict]:
     When two rows share the same name (e.g. forward-decl-only + full
     definition somewhere), prefer the row with a non-empty
     `def_file` so chain resolution lands on the definition site
-    rather than a forward declaration.
+    rather than a forward declaration. Between rows that both lack one,
+    prefer the tag: `typedef struct git_branch_iterator
+    git_branch_iterator;` over a struct declared only names that struct, and
+    keeping the typedef row would resolve the alias to itself.
     """
+    tag_kinds = ("struct", "union", "enum")
     by_name: dict[str, dict] = {}
     for r in rows:
         name = r["name"]
         if not name or name.startswith("("):
             continue
         cur = by_name.get(name)
-        if cur is None or (not cur["def_file"] and r["def_file"]):
+        if (cur is None or (not cur["def_file"] and r["def_file"])
+                or (not cur["def_file"] and not r["def_file"]
+                    and cur["kind"] == "typedef" and r["kind"] in tag_kinds)):
             by_name[name] = r
     return by_name
 
@@ -180,6 +186,63 @@ def resolve_typedef(
     return resolve_typedef(alias, by_name, seen)
 
 
+#: What a typedef is to the graph (`typedef_class`): it folds into the struct,
+#: union or enum, or into the function-pointer typedef, its chain ends at, or
+#: it is an entity of its own.
+FOLDS_AGGREGATE, FOLDS_CALLBACK, OWN_TYPEDEF = "aggregate", "callback", "typedef"
+
+_ANON_AGGREGATE = ("struct_anonymous", "union_anonymous", "enum_anonymous")
+
+
+def typedef_class(row: dict, by_name: dict[str, dict]) -> tuple[str, dict] | None:
+    """``(class, row)`` for a typedef row, ``None`` for any other.
+
+    ``aggregate`` with the struct, union or enum its chain ends at, which is
+    itself when it names an untagged one (`typedef struct { ... } T;`, `T` the
+    identity); ``callback`` with the function-pointer typedef its chain ends
+    at, itself when it declares one; ``typedef`` with itself for every other
+    typedef: a primitive, a pointer, through system typedefs or not
+    (`typedef int64_t git_off_t;`). A typedef folds into what it names, so
+    only the last kind is an entity of its own."""
+    if row.get("kind") != "typedef" or str(row.get("name") or "").startswith("("):
+        return None
+    uak = row.get("unaliased_kind") or ""
+    if uak in _ANON_AGGREGATE:
+        return FOLDS_AGGREGATE, row
+    if uak == "callback":
+        return FOLDS_CALLBACK, row
+    alias = row.get("aliases") or ""
+    if alias and alias in by_name:
+        end = resolve_typedef(alias, by_name)
+        if end is not None:
+            end_uak = end.get("unaliased_kind") or ""
+            if (end["kind"] in ("struct", "union", "enum")
+                    and not end["name"].startswith("(")):
+                return FOLDS_AGGREGATE, end
+            if end["kind"] == "typedef" and end_uak in _ANON_AGGREGATE:
+                return FOLDS_AGGREGATE, end
+            if end["kind"] == "typedef" and end_uak == "callback":
+                return FOLDS_CALLBACK, end
+    return OWN_TYPEDEF, row
+
+
+def typedef_home(row: dict) -> str:
+    """Where a typedef is homed: its declaring file, a typedef having no
+    definition of its own."""
+    return row.get("def_file") or canonical_decl(parse_decl_files(row.get("decl_files") or "")) or ""
+
+
+def own_typedef(row: dict, by_name: dict[str, dict]) -> bool:
+    """Whether a typedef is an entity of its own: one that folds into no
+    struct, union, enum or function pointer, homed inside the repository. A
+    system header's (`size_t`, `uint32_t`) is a primitive to Rust, no entity."""
+    cls = typedef_class(row, by_name)
+    if cls is None or cls[0] != OWN_TYPEDEF:
+        return False
+    home = typedef_home(row)
+    return bool(home) and not home.startswith("/")
+
+
 def classify_type(row: dict, by_name: dict[str, dict], closure_paths: set[str]) -> str:
     """Classify a type row.
 
@@ -202,6 +265,10 @@ def classify_type(row: dict, by_name: dict[str, dict], closure_paths: set[str]) 
             d = by_name.get(row["name"])
             if d is not None and d["def_file"] and d["kind"] == row["kind"]:
                 return classify(d["def_file"], parse_decl_files(d["decl_files"]), closure_paths)
+        return classify(row["def_file"], parse_decl_files(row["decl_files"]), closure_paths)
+    # A typedef of its own classifies by its own declaration: `git_off_t`
+    # is a closure header's whatever system typedef it ends at.
+    if own_typedef(row, by_name):
         return classify(row["def_file"], parse_decl_files(row["decl_files"]), closure_paths)
     if row["aliases"] and row["aliases"] in by_name:
         base = resolve_typedef(row["aliases"], by_name)
@@ -410,7 +477,7 @@ def build_lifecycle_index(analysis_root) -> dict[str, dict]:
     ``alloc`` constructor's out-parameter included), or the returned object
     when ``for`` is ``"return"``.
     This inverts that relation — the composer-side equivalent of
-    ``query symbols --lifetime-for`` — so the dag / consistency / schedule
+    ``query functions --lifetime-for`` — so the dag / consistency / schedule
     stages read one derived index instead of a field that could drift from the
     symbol that actually implements the role.
 

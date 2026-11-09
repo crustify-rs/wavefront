@@ -81,6 +81,13 @@ class LayoutUsesGoldenTests(unittest.TestCase):
             "origin": {("Point", "value")},
             "table": {("Str", "value")},
             "Node": {("Base", "embed"), ("Point", "embed")},
+            "enum_constant": {("Color", "constant")},
+            "enum_value": {("Color", "constant"), ("Color", "value")},
+            "enum_return": {("Mode", "constant"), ("Mode", "value")},
+            "enum_size": {("Mode", "size")},
+            "enum_index": {("Color", "index")},
+            "enum_field": {("Color", "value"), ("Pixel", "field")},
+            "Pixel": {("Color", "embed"), ("Mode", "embed")},
         }
         for user, expected in cases.items():
             with self.subTest(user):
@@ -96,6 +103,15 @@ class LayoutUsesGoldenTests(unittest.TestCase):
         for user in ("opaque_pass", "opaque_cast", "opaque_null", "opaque_compare"):
             self.assertEqual(self.uses(user), set(), user)
         self.assertNotIn("Handle", {r["type_name"] for r in self.rows})
+
+    def test_an_enum_through_a_pointer_has_no_row(self) -> None:
+        self.assertEqual(self.uses("enum_opaque"), set())
+
+    def test_an_enum_is_keyed_as_types_ql_keys_it(self) -> None:
+        # Its tag, or the typedef naming an untagged one, at its definition.
+        self.assertEqual({(r["type_name"], r["type_def_file"]) for r in self.rows
+                          if r["type_name"] in ("Color", "Mode")},
+                         {("Color", "layout.c"), ("Mode", "layout.c")})
 
 
 class OpacityTests(unittest.TestCase):
@@ -267,10 +283,10 @@ class ReleasePointTests(unittest.TestCase):
 
     def test_a_type_is_opaque_after_its_last_layout_users(self) -> None:
         schedule = _run(self.config)
-        self.assertEqual(schedule["schema_version"], 5)
+        self.assertEqual(schedule["schema_version"], 6)
         items = _items(schedule)
         wa1, wb1 = _wave(schedule, "a1"), _wave(schedule, "b1")
-        last = [_item("a1", "a.c", "symbol", "A", wa1), _item("b1", "b.c", "symbol", "B", wb1)]
+        last = [_item("a1", "a.c", "function", "A", wa1), _item("b1", "b.c", "function", "B", wb1)]
         # a1 and b1 do not depend on each other, nor do their waves: both are
         # last. But A's run ends after B's, which a2 depends on: A is the last
         # module.
@@ -287,7 +303,7 @@ class ReleasePointTests(unittest.TestCase):
         items = _items(schedule)
         wa2 = _wave(schedule, "a2")
         self.assertNotIn("referrers", items["b1"])
-        a2 = [_item("a2", "a.c", "symbol", "A", wa2)]
+        a2 = [_item("a2", "a.c", "function", "A", wa2)]
         self.assertEqual(items["b1"]["unreferenced_after"], {
             "closure": {"users": 1, "items": a2, "modules": ["A"]},
             "scheduled": {"users": 1, "items": a2, "waves": [wa2], "modules": ["A"]}})
@@ -305,17 +321,17 @@ class ReleasePointTests(unittest.TestCase):
         # of them; the schedule has T alone.
         self.assertEqual(_items(schedule)["T"]["opaque_after"], {
             "closure": {"users": 2,
-                        "items": [_item("a1", "a.c", "symbol", "A"),
-                                  _item("b1", "b.c", "symbol", "B")],
+                        "items": [_item("a1", "a.c", "function", "A"),
+                                  _item("b1", "b.c", "function", "B")],
                         "modules": ["A"]},
-            "scheduled": {"users": 0, "items": [_item("T", "h.c", "type", "H", wt)],
+            "scheduled": {"users": 0, "items": [_item("T", "h.c", "struct", "H", wt)],
                           "waves": [wt], "modules": ["H"]}})
 
     def test_without_modules_the_waves_still_answer(self) -> None:
         schedule = _run(_config(files=FILES))
         t = _items(schedule)["T"]["opaque_after"]
         w = _wave(schedule, "a1")
-        last = [_item("a1", "a.c", "symbol", None, w), _item("b1", "b.c", "symbol", None, w)]
+        last = [_item("a1", "a.c", "function", None, w), _item("b1", "b.c", "function", None, w)]
         self.assertEqual(t, {
             "closure": {"users": 2, "items": last, "modules": None},
             "scheduled": {"users": 2, "items": last, "waves": [w], "modules": None}})
@@ -329,7 +345,7 @@ class ReleasePointTests(unittest.TestCase):
             schedule = _run(self.config)
         items = _items(schedule)
         wa1, wb1 = _wave(schedule, "a1"), _wave(schedule, "b1")
-        last = [_item("a1", "a.c", "symbol", "A", wa1), _item("b1", "b.c", "symbol", "B", wb1)]
+        last = [_item("a1", "a.c", "function", "A", wa1), _item("b1", "b.c", "function", "B", wb1)]
         self.assertEqual(items["T"]["memory_unmanaged_after"], {
             "closure": {"users": 2, "items": last, "modules": ["A"]},
             "scheduled": {"users": 2, "items": last, "waves": sorted([wa1, wb1]),
@@ -375,6 +391,52 @@ class ReleasePointTests(unittest.TestCase):
         self.assertEqual([i["name"] for i in x["closure"]["items"]], ["a2"])
         self.assertEqual([i["name"] for i in x["scheduled"]["items"]], ["a2"])
         self.assertEqual(x["closure"]["modules"], ["A"])
+
+
+
+# E, an enum, and M, a macro, in h.c: a1 names an enumerator of E, and b1
+# holds one; b1 expands M, and so does S, a struct sizing an array by it.
+E, M, S = ("E", "h.c", "type"), ("M", "h.c", "symbol"), ("S", "a.c", "type")
+ENUM_GRAPH = {"layers": [
+    [{**_rec("E", "h.c", kind="type"), "subkind": "enum"},
+     {**_rec("M", "h.c"), "subkind": "macro_object"}],
+    [_rec("a1", "a.c", types=[("E", "h.c")]),
+     _rec("b1", "b.c", types=[("E", "h.c")], syms=[("M", "h.c")]),
+     _rec("S", "a.c", kind="type", syms=[("M", "h.c")])]]}
+ENUM_INVENTORY = _inventory(functions=[("a1", "a.c"), ("b1", "b.c")],
+                            types=[("E", "h.c"), ("S", "a.c")])
+
+
+class EnumAndMacroReleaseTests(unittest.TestCase):
+    config = _modules(_config(files=FILES), ("A", "a.c"), ("B", "b.c"), ("H", "h.c"))
+
+    def run_schedule(self) -> dict:
+        uses = {E: {A1: {"constant"}, B1: {"value"}}}
+        with patch("wavefront.opacity.load_layout_uses", return_value=uses):
+            return _schedule(ENUM_GRAPH, ENUM_INVENTORY, config=self.config)
+
+    def test_an_enum_is_opaque_after_its_last_layout_users(self) -> None:
+        schedule = self.run_schedule()
+        items = _items(schedule)
+        wa1, wb1 = _wave(schedule, "a1"), _wave(schedule, "b1")
+        last = [_item("a1", "a.c", "function", "A", wa1), _item("b1", "b.c", "function", "B", wb1)]
+        self.assertEqual(items["E"]["opaque_after"]["scheduled"],
+                         {"users": 2, "items": last, "waves": sorted({wa1, wb1}),
+                          "modules": ["A", "B"]})
+        self.assertEqual(items["E"]["opaque_after"]["closure"]["users"], 2)
+        self.assertIsNone(items["E"]["memory_unmanaged_after"])
+        self.assertIsNone(items["E"]["unreferenced_after"])
+
+    def test_a_macro_is_unreferenced_after_its_last_expanders(self) -> None:
+        schedule = self.run_schedule()
+        items = _items(schedule)
+        wb1, ws = _wave(schedule, "b1"), _wave(schedule, "S")
+        last = [_item("S", "a.c", "struct", "A", ws), _item("b1", "b.c", "function", "B", wb1)]
+        got = items["M"]["unreferenced_after"]["scheduled"]
+        self.assertEqual(got["users"], 2)
+        self.assertEqual(sorted(got["items"], key=lambda i: i["name"]),
+                         sorted(last, key=lambda i: i["name"]))
+        self.assertIsNone(items["M"]["opaque_after"])
 
 
 if __name__ == "__main__":

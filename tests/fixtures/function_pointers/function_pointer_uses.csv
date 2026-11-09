@@ -1,0 +1,8 @@
+"user_name","user_def_file","user_kind","signature","def_file","use_kind","use_file","use_line"
+"run","fp.c","function","int (*)(ctx *, void *)","fp.c","local","fp.c",35
+"run","fp.c","function","int (*)(ctx *, void *)","fp.c","cast","fp.c",35
+"pick","fp.c","function","void (*)(ctx *)","fp.c","return","fp.c",30
+"each","fp.c","function","int (*)(ctx *, void *)","fp.c","param","fp.c",27
+"ops","fp.c","type","void (*)(ctx *)","fp.c","field","fp.c",22
+"ops","fp.c","type","int (*)(ctx *, const char *)","fp.c","field","fp.c",21
+"on_exit_hook","fp.c","global","void (*)(void)","fp.c","global","fp.c",33

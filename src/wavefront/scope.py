@@ -107,7 +107,7 @@ def try_build(layout: Layout, target: Path) -> dict | None:
     classification available" rather than an error.
 
     Call it only on the branch that needs scope. Composing costs ~1.5s, and the
-    common oracle query (`query syms --name X` with no scope filter) has no
+    common oracle query (`query functions --name X` with no scope filter) has no
     business paying it.
     """
     try:

@@ -25,3 +25,14 @@
 "value_memcpy","layout.c","function","Str","layout.c","size","layout.c",36
 "value_param","layout.c","function","Point","layout.c","value","layout.c",32
 "value_return","layout.c","function","Point","layout.c","value","layout.c",33
+"Pixel","layout.c","type","Color","layout.c","embed","layout.c",57
+"Pixel","layout.c","type","Mode","layout.c","embed","layout.c",57
+"enum_constant","layout.c","function","Color","layout.c","constant","layout.c",59
+"enum_value","layout.c","function","Color","layout.c","constant","layout.c",60
+"enum_value","layout.c","function","Color","layout.c","value","layout.c",60
+"enum_return","layout.c","function","Mode","layout.c","constant","layout.c",61
+"enum_return","layout.c","function","Mode","layout.c","value","layout.c",61
+"enum_size","layout.c","function","Mode","layout.c","size","layout.c",62
+"enum_index","layout.c","function","Color","layout.c","index","layout.c",63
+"enum_field","layout.c","function","Color","layout.c","value","layout.c",65
+"enum_field","layout.c","function","Pixel","layout.c","field","layout.c",65

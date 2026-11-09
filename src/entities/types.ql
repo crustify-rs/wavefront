@@ -44,6 +44,10 @@
  *                 reached. For non-typedef rows: empty. Consumers
  *                 walk this column transitively against this same
  *                 manifest to find the final underlying user type.
+ *   base_type   : for typedef rows — the type it names, as C writes it
+ *                 (`int64_t`, `unsigned char`, `void *`, `struct ctx *`);
+ *                 a function pointer is `..(*)(..)`. For non-typedef
+ *                 rows: empty.
  *   unaliased_kind : carries kind information ONLY when `aliases`
  *                 is empty AND the row is a typedef — that is, the
  *                 cases where `aliases` is itself insufficient for
@@ -192,6 +196,12 @@ string unaliasedKindOf(TypedefType td) {
   )
 }
 
+string baseTypeColumnOf(UserType t) {
+  if t instanceof TypedefType
+  then result = t.(TypedefType).getBaseType().toString()
+  else result = ""
+}
+
 string unaliasedKindColumnOf(UserType t) {
   if t instanceof TypedefType
   then result = unaliasedKindOf(t)
@@ -210,4 +220,5 @@ select t.getName() as name,
        defFileOf(t) as def_file,
        declFilesOf(t) as decl_files,
        aliasesColumnOf(t) as aliases,
-       unaliasedKindColumnOf(t) as unaliased_kind
+       unaliasedKindColumnOf(t) as unaliased_kind,
+       baseTypeColumnOf(t) as base_type

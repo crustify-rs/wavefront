@@ -14,7 +14,7 @@ user may fill for the entity, with `null` where nothing is recorded, in
 exactly the shape `--update` accepts:
 
 ```sh
-wavefront REPO_ROOT --config PATH query symbols --name widget_new --update findings.json
+wavefront REPO_ROOT --config PATH query functions --name widget_new --update findings.json
 ```
 
 A user can therefore copy a record's `findings`, fill it in, and submit it.

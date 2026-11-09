@@ -50,7 +50,7 @@
         "excluded": [
           {
             "name": "widget_debug_dump",
-            "kind": "symbol"
+            "kind": "function"
           }
         ]
       }

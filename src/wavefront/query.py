@@ -16,10 +16,16 @@ from pathlib import Path
 from wavefront import findings as _findings
 
 
+#: Each `query` subject, a kind's plural, and the kind it lists.
+SUBJECTS = {"functions": "function", "globals": "global", "macros": "macro",
+            "structs": "struct", "unions": "union", "enums": "enum",
+            "function_pointers": "function_pointer", "typedefs": "typedef"}
+
+
 def query(
     target: Path,
     *,
-    subject: str,                       # "types" | "symbols"
+    subject: str,                       # a kind's plural: "functions", "structs", ...
     names: list[str] | None = None,
     files: list[str] | None = None,
     external_only: bool = False,
@@ -44,8 +50,8 @@ def query(
     depth: int = 1,
     array: bool = False,
 ) -> None:
-    """Oracle over composed type/symbol records (dag-free; graph walks live in
-    ``query dag``).
+    """Oracle over composed records of one kind, the ``subject`` its plural
+    (dag-free; graph walks live in ``query dag``).
 
       * no ``--name``    → **enumerate** filtered entries.
       * ``--name T``     → **introspect** one whole record;
@@ -54,34 +60,37 @@ def query(
                            found via ``crates locate --name``, not here.)
       * ``--name A B …`` → several records at once (no facet).
     """
-    kind = "type" if subject == "types" else "symbol"
+    from wavefront import kinds as c_kinds
+    only = SUBJECTS[subject]
+    kind = c_kinds.namespace(only)
     # --lifetime-for: REVERSE lifecycle lookup, parameterized by a TYPE (no
-    # --name). Symbols-only; scans each symbol's entry-level `lifetime` block,
-    # resolved to the arg it names in `for`.
+    # --name). Functions only; scans each function's entry-level `lifetime`
+    # block, resolved to the arg it names in `for`.
     if lifetime_for is not None:
-        if subject != "symbols":
-            raise SystemExit("query: --lifetime-for applies to symbols only.")
+        if only != "function":
+            raise SystemExit("query: --lifetime-for applies to functions only.")
         _lifetime_for(target, lifetime_for, array_only=array)
         return
     if taking is not None:
-        if subject != "symbols":
-            raise SystemExit("query: --taking applies to symbols only.")
+        if only != "function":
+            raise SystemExit("query: --taking applies to functions only.")
         _taking(target, taking, calling, depth, array)
         return
     if returning is not None:
-        if subject != "symbols":
-            raise SystemExit("query: --returning applies to symbols only.")
+        if only != "function":
+            raise SystemExit("query: --returning applies to functions only.")
         _taking(target, returning, calling, depth, array, by_return=True)
         return
     name_list = list(names or [])
     # --callees / --callers: the raw use-graph closure around a symbol. Needs a
     # --name (there is no closure without a seed) and is symbols-only.
     if callees or callers:
-        if subject != "symbols":
-            raise SystemExit("query: --callees/--callers apply to symbols only.")
+        if kind != "symbol":
+            raise SystemExit("query: --callees/--callers apply to functions, "
+                             "globals, macros and typedefs only.")
         if not name_list:
             raise SystemExit(
-                "query symbols: --callees/--callers need at least one --name — "
+                f"query {subject}: --callees/--callers need at least one --name — "
                 "they walk out from a seed. Use --file to pick one of several "
                 "same-named statics.")
         _call_closure(target, name_list, files,
@@ -90,29 +99,30 @@ def query(
     if unresolved and not raw_sites:
         raise SystemExit("query: --unresolved applies to --raw-sites.")
     if raw_sites:
-        if kind != "type":
-            raise SystemExit("query symbols: --raw-sites applies to types only.")
+        if only not in ("struct", "union"):
+            raise SystemExit(f"query {subject}: --raw-sites applies to structs "
+                             "and unions only.")
         if unresolved == bool(name_list):
             raise SystemExit(
-                "query types: --raw-sites needs exactly one --name, or --unresolved "
-                "and no --name.")
+                f"query {subject}: --raw-sites needs exactly one --name, or "
+                "--unresolved and no --name.")
         if len(name_list) > 1:
-            raise SystemExit("query types: --raw-sites needs exactly one --name.")
+            raise SystemExit(f"query {subject}: --raw-sites needs exactly one --name.")
         _raw_sites(target, name_list[0] if name_list else None, files,
                    closure_only=closure_only)
         return
     type_facets = fields or lifecycle_ops or users or field_touchers or layout_users
     if type_facets and kind != "type":
         raise SystemExit(
-            "query symbols: --fields/--lifecycle-ops/--users/--field-touchers/"
-            "--layout-users apply to types only.")
+            f"query {subject}: --fields/--lifecycle-ops/--users/--field-touchers/"
+            "--layout-users apply to structs, unions and enums only.")
     if external_only and layout_users:
         raise SystemExit(
-            "query types: --external-only does not apply to --layout-users: a "
+            f"query {subject}: --external-only does not apply to --layout-users: a "
             "layout user is code the closure may translate. Use --closure-only.")
     if external_only and (fields or field_touchers):
         raise SystemExit(
-            "query types: --external-only does not apply to --fields / "
+            f"query {subject}: --external-only does not apply to --fields / "
             "--field-touchers. The narrowing asks which of a type's fields "
             "THIS CAMPAIGN's closure code reaches, which is --closure-only for either "
             "kind of type. The external side is empty for a closure type, and for "
@@ -123,14 +133,14 @@ def query(
         raise SystemExit(
             f"query {subject}: facets / --update need exactly one --name.")
     if name_list:
-        _introspect(target, kind=kind, names=name_list, files=files,
+        _introspect(target, kind=kind, only=only, names=name_list, files=files,
                     api_only=api_only,
                     fields=fields, lifecycle_ops=lifecycle_ops, users=users,
                     field_touchers=field_touchers, layout_users=layout_users,
                     update=update,
                     external_only=external_only, closure_only=closure_only)
     else:
-        _enumerate(target, kind=kind, files=files,
+        _enumerate(target, kind=kind, only=only, files=files,
                    external_only=external_only, closure_only=closure_only,
                    api_only=api_only,
                    out_of_tree=out_of_tree, in_tree=in_tree)
@@ -391,7 +401,7 @@ def _taking(target: Path, spec: str, calling: str | None,
 
 def _call_closure(target: Path, names: list[str], files, *,
                   direction: str, depth: int) -> None:
-    """``query symbols --callees|--callers --name F [--depth N]`` — the raw
+    """``query functions --callees|--callers --name F [--depth N]`` — the raw
     use-graph closure around one or more symbols.
 
     NOT the same answer as ``query dag --name F --depth N``, and the difference
@@ -431,7 +441,7 @@ def _call_closure(target: Path, names: list[str], files, *,
         seeds.add(key)
     if not seeds:
         raise SystemExit(
-            f"query symbols --{direction}: no symbol named "
+            f"query --{direction}: no function, global, macro or typedef named "
             f"{', '.join(sorted(want_names))!r}"
             + (f" defined in {', '.join(sorted(want_files))}" if want_files else "")
             + ".")
@@ -556,11 +566,46 @@ def _lifetime_for(target: Path, type_name: str, array_only: bool = False) -> Non
 def _enumerate(
     target: Path, *, kind: str, files, external_only, closure_only,
     api_only=False,
-    out_of_tree: bool = False, in_tree: bool = False,
+    out_of_tree: bool = False, in_tree: bool = False, only: str | None = None,
 ) -> None:
-    """List the (filtered) type/symbol entries straight from the manifest — one
-    ``name<TAB>defined_in<TAB>declared_in`` line each (the placement provenance),
-    or whole records with ``--with-details``.
+    """List the (filtered) entries of one kind straight from the manifest, one
+    ``name<TAB>kind<TAB>defined_in<TAB>declared_in`` line each (the placement
+    provenance). ``kind`` is the namespace the records live in, ``only`` the
+    kind kept of it."""
+    for row in _enumerate_rows(target, kind=kind, files=files,
+                               external_only=external_only,
+                               closure_only=closure_only, api_only=api_only,
+                               out_of_tree=out_of_tree, in_tree=in_tree,
+                               only=only):
+        print("\t".join(row))
+
+
+def query_all(target: Path, *, files=None, external_only=False,
+              closure_only=False, api_only=False, out_of_tree=False,
+              in_tree=False) -> None:
+    """Every entry of every kind, grouped by kind in the order of
+    :data:`wavefront.kinds.KINDS`, as :func:`_enumerate` lists one."""
+    from wavefront import kinds as c_kinds
+
+    rows = [row for ns in ("type", "symbol")
+            for row in _enumerate_rows(target, kind=ns, files=files,
+                                       external_only=external_only,
+                                       closure_only=closure_only,
+                                       api_only=api_only,
+                                       out_of_tree=out_of_tree, in_tree=in_tree)]
+    order = {k: i for i, k in enumerate(c_kinds.KINDS)}
+    rows.sort(key=lambda r: (order.get(r[1], len(order)), r[0], r[2]))
+    for row in rows:
+        print("\t".join(row))
+
+
+def _enumerate_rows(
+    target: Path, *, kind: str, files, external_only, closure_only,
+    api_only=False,
+    out_of_tree: bool = False, in_tree: bool = False, only: str | None = None,
+) -> list[tuple[str, str, str, str]]:
+    """The rows :func:`_enumerate` prints, ``(name, kind, defined_in,
+    declared_in)``.
 
     ``out_of_tree`` / ``in_tree`` cut the ORIGIN axis, which is independent of
     scope: whether the entity's home is outside this repository. Wrap scope
@@ -602,11 +647,15 @@ def _enumerate(
     api_keys = (scope.scope_membership(sj, scope.API, kinds=sub)
                 if api_only and sj is not None else set())
 
+    from wavefront import kinds as c_kinds
+
     rows: list[dict] = []
     if True:
         for e in _entries(layout, target, kind):
             tag = e.get(tagkey)
             if not tag:
+                continue
+            if only is not None and c_kinds.of(e.get("kind"), kind) != only:
                 continue
             sk = str(e.get("kind") or "symbol")
             d = e.get("defined_in") or ""
@@ -646,13 +695,12 @@ def _enumerate(
 
     rows.sort(key=lambda e: (e.get(tagkey) or "", e.get("defined_in") or ""))
 
-    # One TSV line per (name, kind, defined_in, declared_in) — the
-    # provenance recorded by crates.json, plus the `kind` it buckets by
-    # (function_* → functions, macro_* → macros, global_* → globals; a type's
-    # struct/enum/callback/string/array all → types). `defined_in` is
-    # empty for a TU-less entity; `declared_in` is comma-joined. Deduped by
-    # (name, defined_in) since a file-local static can repeat a bare name across
-    # TUs. Use `--with-details` for the whole record.
+    # One row per (name, kind, defined_in, declared_in): the provenance
+    # recorded by crates.json, plus its kind (`wavefront.kinds`).
+    # `defined_in` is empty for a TU-less entity; `declared_in` is
+    # comma-joined. Deduped by (name, defined_in) since a file-local static can
+    # repeat a bare name across TUs. `--name` gives the whole record.
+    out: list[tuple[str, str, str, str]] = []
     seen: set = set()
     for e in rows:
         tag = e.get(tagkey)
@@ -663,14 +711,16 @@ def _enumerate(
         decls = e.get("declared_in")
         if isinstance(decls, str):
             decls = [decls]
-        k = e.get("kind") or ("symbol" if kind == "symbol" else "struct")
-        print(f"{tag}\t{k}\t{d}\t{','.join(decls or [])}")
+        k = c_kinds.of(e.get("kind"), kind) or str(e.get("kind") or kind)
+        out.append((tag, k, d, ",".join(decls or [])))
+    return out
 
 
 def _introspect(
     target: Path, *, kind: str, names, files, fields, lifecycle_ops,
     external_only, closure_only, api_only=False, users=False,
     field_touchers=False, layout_users=False, update=None,
+    only: str | None = None,
 ) -> None:
     """One named entity's record (summary / whole), or — for a single type —
     its windowable ``--fields`` / ``--lifecycle-ops`` / ``--users`` /
@@ -682,7 +732,7 @@ def _introspect(
     if (fields or lifecycle_ops or users or field_touchers or layout_users
             or update is not None):
         layout, node, by_key = _resolve(target, kind=kind, name=names[0],
-                                        files=files,
+                                        files=files, only=only,
                                         with_ops=bool(lifecycle_ops or users))
         if update is not None:
             if kind == "type":
@@ -773,7 +823,8 @@ def _introspect(
 
     # record(s): always the whole record.
     return _records(target, kind, names, files,
-                    external_only=external_only, closure_only=closure_only)
+                    external_only=external_only, closure_only=closure_only,
+                    only=only)
 
 
 _TOUCHED_CACHE: dict = {}
@@ -925,8 +976,8 @@ def _field_touchers(layout, target, tag: str, defined_in: str | None, *,
 def _layout_users(layout, target, tag: str, defined_in: str | None, *,
                   closure_only: bool = False) -> None:
     """The type's layout users, from ``t2/layout_uses.csv``: every function,
-    global and aggregate that reads its members, size or alignment, steps over
-    it, or holds it by value, each with the sites of its uses by kind
+    global and aggregate that reads its members, size or alignment, names an
+    enum's enumerators, steps over it, or holds it by value, each with the sites of its uses by kind
     (``file:line``), and those that use it through an aggregate that holds it
     by value, named in ``via`` (:mod:`wavefront.opacity`). --closure-only keeps
     the closure's own users."""
@@ -938,7 +989,7 @@ def _layout_users(layout, target, tag: str, defined_in: str | None, *,
     path = layout.t2 / "layout_uses.csv"
     if not path.is_file():
         raise SystemExit(
-            f"query types: {path} is missing; run `extract-ql` to emit it.")
+            f"query --layout-users: {path} is missing; run `extract-ql` to emit it.")
     sites: dict = defaultdict(lambda: defaultdict(set))
     with path.open(newline="") as fh:
         for r in _csv.DictReader(fh):
@@ -972,7 +1023,7 @@ def _layout_users(layout, target, tag: str, defined_in: str | None, *,
 
 def _raw_sites(target: Path, name: str | None, files, *,
                closure_only: bool = False) -> None:
-    """``query types --name T --raw-sites``: every function that applies a raw
+    """``query structs --name T --raw-sites``: every function that applies a raw
     allocator or releaser to ``T``, the store's raw routines, with each site,
     the routine and how the site names ``T`` (:mod:`wavefront.opacity`).
     ``--raw-sites --unresolved``: the sites that hand a raw routine a
@@ -991,7 +1042,7 @@ def _raw_sites(target: Path, name: str | None, files, *,
     sites = opacity.load_raw_sites(layout)
     if sites is None:
         raise SystemExit(
-            "query types: the ownership store holds no raw routine (a lifecycle "
+            "query --raw-sites: the ownership store holds no raw routine (a lifecycle "
             "role on a type-erased pointer), so no raw site is known.")
     keep = None
     if closure_only:
@@ -1030,7 +1081,7 @@ def _raw_sites(target: Path, name: str | None, files, *,
 
 # A type stores NO lifecycle of its own. Which routines drop / dispose / clone
 # it is recorded once, on the acting symbol record's entry-level
-# `lifetime`), and read back by reverse lookup -- `query symbols --lifetime-for
+# `lifetime`), and read back by reverse lookup -- `query functions --lifetime-for
 # <TAG>`, or `scope.build_lifecycle_index` composer-side. So the type findings
 # surface is the field layout only.
 _FINDINGS_TOP = {"fields", "_comment_user"}
@@ -1974,7 +2025,7 @@ def _harvest_sym_agent(rec: dict, full: dict) -> None:
 
 
 def _records(target, kind, names, files, *, external_only=False,
-             closure_only=False) -> None:
+             closure_only=False, only: str | None = None) -> None:
     # record(s): always the whole record.
     from wavefront import manifests as _m
 
@@ -1983,7 +2034,7 @@ def _records(target, kind, names, files, *, external_only=False,
     found = []
     for nm in names:
         layout, nodes = _resolve(target, kind=kind, name=nm, files=files,
-                                 with_ops=False, every=True)
+                                 with_ops=False, every=True, only=only)
         found.extend((nm, layout, node) for node in nodes)
     for nm, layout, node in found:
         entry = load(layout, target, node.id, node.defined_in)
@@ -2026,7 +2077,7 @@ def _load_type_entry(layout, target, tag: str, defined_in: str | None) -> dict |
 
 
 def _resolve(target, *, kind: str, name: str, files: list[str] | None,
-             with_ops: bool = True, every: bool = False):
+             with_ops: bool = True, every: bool = False, only: str | None = None):
     """``(layout, node, by_key)`` for one type/symbol, resolved from the composed
     records (never the dag — see the note above). For a *type*, ``by_key`` is
     populated with the type's op nodes so :func:`dag.ordered_ops` can serve
@@ -2042,8 +2093,10 @@ def _resolve(target, *, kind: str, name: str, files: list[str] | None,
     from wavefront import dag as D
     from wavefront.layout import Layout
 
-    verb = "type" if kind == "type" else "sym"
-    noun = "type" if kind == "type" else "symbol"
+    from wavefront import kinds as c_kinds
+
+    verb = c_kinds.PLURAL[only] if only else ("type" if kind == "type" else "sym")
+    noun = only or ("type" if kind == "type" else "symbol")
 
     def _pick(nodes: list):
         if not nodes:
@@ -2068,6 +2121,8 @@ def _resolve(target, *, kind: str, name: str, files: list[str] | None,
         uniq: dict = {}                               # defined_in -> entry (dedup)
         for e in pool:
             if e.get(tagkey) != name:
+                continue
+            if only is not None and c_kinds.of(e.get("kind"), kind) != only:
                 continue
             if file_set and e.get("defined_in") not in file_set:
                 continue
@@ -2214,7 +2269,7 @@ def _dag_loc(by_key, by_name, names, files, layer, as_json, keep=None,
     if as_json:
         recs = []
         for n in rows:
-            r = {"id": n.id, "kind": n.node_kind, "subkind": n.subkind,
+            r = {"id": n.id, "kind": _kind_of(n),
                  "defined_in": n.defined_in, "layer": n.layer, "loc": val(n)}
             if n.node_kind == "type":
                 r["nfields"], r["nops"] = n.loc, nops(n)
@@ -2254,18 +2309,21 @@ def _scope_predicate(layout, target, external_only: bool, closure_only: bool,
     return keep
 
 
-def _group_of(n) -> str:
-    """Which output group a dag node belongs to (see :func:`query_dag`)."""
-    if n.node_kind == "type":
-        return "types"
-    sk = n.subkind or ""
-    if sk == "callback":
-        return "callbacks"
-    if sk.startswith("macro"):
-        return "macros"
-    if sk.startswith("global"):
-        return "globals"
-    return "functions"          # function_*, plus bare/external symbols
+def _kind_of(n, index=None) -> str | None:
+    """A dag node's kind (:mod:`wavefront.kinds`): its own, or for an external
+    placeholder what ``index``, the T1 tables, says; ``None`` when neither
+    does."""
+    from wavefront import kinds as c_kinds
+    return (c_kinds.of(n.subkind, n.node_kind)
+            or (index.kind(n.id, n.defined_in, n.node_kind) if index else None))
+
+
+def _group_of(n, index=None) -> str:
+    """Which output group a dag node belongs to (see :func:`query_dag`): its
+    kind's plural, or ``unknown``."""
+    from wavefront import kinds as c_kinds
+    kind = _kind_of(n, index)
+    return c_kinds.PLURAL[kind] if kind else "unknown"
 
 
 def query_dag(
@@ -2298,7 +2356,8 @@ def query_dag(
     A ``--name`` resolves to every node it names, ``--file`` and ``--kind``
     narrowing them; when one names several, the output lists them under
     ``matches``, each with its kind and defining file. Every record carries
-    its ``kind``, the node's own: ``struct``, ``function_static``, …
+    its ``kind`` (:mod:`wavefront.kinds`), an external node's as the T1
+    tables give it, ``null`` when they do not.
 
     ``api_headers_only`` selects the public-signature graph. Otherwise the
     query uses the implementation/body-deep graph."""
@@ -2307,10 +2366,13 @@ def query_dag(
     from wavefront import dag as D
     from wavefront.layout import Layout
 
+    from wavefront import kinds as c_kinds
+
     layout = Layout.discover(target)
     dag = D.build(layout, target, stage="query dag",
                   api_headers_only=api_headers_only)
     by_key, by_name = D.load_nodes(dag)
+    index = c_kinds.Index(layout.t1)
     keep = _scope_predicate(layout, target, external_only, closure_only,
                             api_only, full=not api_headers_only)
 
@@ -2328,15 +2390,13 @@ def query_dag(
         """rows: list[(node, depth|None)] -> JSON grouped by what the caller
         does with each kind.
 
-        The groups ARE the routing: `types` go to the type wrapper, `callbacks`
-        and `functions` to the symbol wrapper, and `macros` have no standalone
-        unit -- their consumers extend the owning `-sys` crate lazily. They stay
-        a group rather than being dropped so a caller can see the closure is complete;
-        every wrap/port consumer just ignores the key.
+        One group per kind, under its plural (`structs`, `functions`,
+        `typedefs`, ...), and `unknown` for an external node the tables do not
+        classify, so a caller can see the closure is complete.
 
         `layer` and `depth` are emitted unconditionally because they exist
         NOWHERE else: a composed type/symbol record carries neither, so
-        piping an id into `query types` cannot recover them. Everything else a
+        piping an id into `query structs` cannot recover them. Everything else a
         caller might want (fields, ops, ownership, casts) IS in those records,
         which is why this view stays thin -- `id` + `defined_in` is enough to
         look one up unambiguously, including a file-local static whose name
@@ -2344,9 +2404,8 @@ def query_dag(
         """
         rows.sort(key=lambda r: (r[0].layer, r[0].id) if r[1] is None
                   else (r[1], r[0].layer, r[0].id))
-        out: dict[str, list] = {k: [] for k in
-                                ("types", "callbacks", "functions",
-                                 "globals", "macros")}
+        out: dict[str, list] = {c_kinds.PLURAL[k]: [] for k in c_kinds.KINDS}
+        out["unknown"] = []
         seen: set = set()
         for n, d in rows:
             if n.key in seen:
@@ -2357,14 +2416,14 @@ def query_dag(
             # site (239 such entries here — the DEFINE_STACK_OF instances and
             # friends). What stays null is only `external` / `builtin`, which
             # has no manifest entry to fall back to.
-            rec = {"id": n.id, "kind": n.subkind, "layer": n.layer,
+            rec = {"id": n.id, "kind": _kind_of(n, index), "layer": n.layer,
                    "defined_in": n.defined_in}
             if d is not None:
                 rec["depth"] = d
-            out[_group_of(n)].append(rec)
+            out[_group_of(n, index)].append(rec)
         doc = {k: v for k, v in out.items() if v}
         if matches:
-            doc["matches"] = [{"id": k[0], "kind": by_key[k].subkind,
+            doc["matches"] = [{"id": k[0], "kind": _kind_of(by_key[k], index),
                                "defined_in": k[1]} for k in matches]
         print(json.dumps(doc, indent=2))
 

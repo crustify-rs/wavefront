@@ -33,6 +33,11 @@
  *                 sibling or emit a fixed-arity shim — so the wrap/port
  *                 stages need this off the signature, which the `signature`
  *                 column's parameter list alone does not reveal.
+ *   is_static   : "1" if the function has internal linkage (declared
+ *                 `static`), "0" otherwise. Independent of `linkage`, whose
+ *                 inline classes say nothing of it: a header's inline may be
+ *                 `static inline` or an `extern` one.
+ *   is_inline   : "1" if the function is declared `inline`, "0" otherwise.
  *
  * No `hasDefinition()` filter here — consumers need declaration-only
  * functions to identify boundary-crossing externs. The def_file ""
@@ -108,6 +113,16 @@ int isVariadicOf(Function fn) {
   if fn.isVarargs() then result = 1 else result = 0
 }
 
+/** 1 when the function has internal linkage, else 0. */
+int isStaticOf(Function fn) {
+  if fn.isStatic() then result = 1 else result = 0
+}
+
+/** 1 when the function is declared `inline`, else 0. */
+int isInlineOf(Function fn) {
+  if fn.isInline() then result = 1 else result = 0
+}
+
 from Function fn
 select fn.getName() as name,
        linkageClassOf(fn) as linkage,
@@ -115,4 +130,6 @@ select fn.getName() as name,
        declFilesOf(fn) as decl_files,
        signatureOf(fn) as signature,
        locOf(fn) as loc,
-       isVariadicOf(fn) as is_variadic
+       isVariadicOf(fn) as is_variadic,
+       isStaticOf(fn) as is_static,
+       isInlineOf(fn) as is_inline
