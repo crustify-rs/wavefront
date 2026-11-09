@@ -439,5 +439,69 @@ class EnumAndMacroReleaseTests(unittest.TestCase):
         self.assertIsNone(items["M"]["opaque_after"])
 
 
+# Inline function pointers, by site: FF a field of S, which h reads through;
+# FP a parameter of f, which g calls; FL a local of k. CB, a callback typedef,
+# is named by f, and TD, a typedef of its own, by g.
+def _fp(name, **kw):
+    return {**_rec(name, "a.c", **kw), "subkind": "function_pointer"}
+
+
+FP_GRAPH = {"layers": [
+    [_fp("FF"), _fp("FP"), _fp("FL"),
+     {**_rec("CB", "a.c"), "subkind": "callback"},
+     {**_rec("TD", "a.c"), "subkind": "typedef"}],
+    [_rec("S", "a.c", kind="type", syms=[("FF", "a.c")]),
+     _rec("f", "a.c", syms=[("FP", "a.c"), ("CB", "a.c")]),
+     _rec("k", "a.c", syms=[("FL", "a.c")])],
+    [_rec("h", "a.c", types=[("S", "a.c")]),
+     _rec("g", "a.c", syms=[("f", "a.c"), ("TD", "a.c")])]]}
+FP_INVENTORY = _inventory(
+    functions=[(n, "a.c") for n in ("f", "g", "h", "k", "FF", "FP", "FL", "CB", "TD")],
+    types=[("S", "a.c")])
+FP_SITES = {
+    ("FF", "a.c", "symbol"): {(("S", "a.c", "type"), "field")},
+    ("FP", "a.c", "symbol"): {(("f", "a.c", "symbol"), "param")},
+    ("FL", "a.c", "symbol"): {(("k", "a.c", "symbol"), "local")},
+}
+
+
+class FunctionPointerReleaseTests(unittest.TestCase):
+    def run_schedule(self) -> dict:
+        uses = {("S", "a.c", "type"): {("h", "a.c", "symbol"): {"field"}}}
+        with patch("wavefront.opacity.load_layout_uses", return_value=uses), \
+                patch("wavefront.opacity.load_function_pointer_sites",
+                      return_value=FP_SITES):
+            return _schedule(FP_GRAPH, FP_INVENTORY, config=_config(files=("a.c",)))
+
+    def users(self, name: str) -> tuple[int, list[str]]:
+        rp = _items(self.schedule)[name]["unreferenced_after"]["closure"]
+        return rp["users"], sorted(i["name"] for i in rp["items"])
+
+    def setUp(self) -> None:
+        self.schedule = self.run_schedule()
+
+    def test_a_fields_function_pointer_lasts_while_its_struct_is_laid_out(self) -> None:
+        # S, and h, which reads S's field: the last is h.
+        self.assertEqual(self.users("FF"), (2, ["h"]))
+
+    def test_a_parameters_lasts_while_its_function_is_called(self) -> None:
+        self.assertEqual(self.users("FP"), (2, ["g"]))
+
+    def test_a_locals_lasts_only_while_its_function_is_processed(self) -> None:
+        self.assertEqual(self.users("FL"), (1, ["k"]))
+
+    def test_a_named_function_pointer_or_typedef_lasts_while_named(self) -> None:
+        self.assertEqual(self.users("CB"), (1, ["f"]))
+        self.assertEqual(self.users("TD"), (1, ["g"]))
+
+    def test_an_inline_function_pointer_is_reached_through_each_site(self) -> None:
+        users = opacity.inline_users(
+            {(("S", "a.c", "type"), "field"), (("f", "a.c", "symbol"), "return"),
+             (("k", "a.c", "symbol"), "cast")},
+            {("S", "a.c", "type"): {("h", "a.c", "symbol"): ({"field"}, set())}},
+            {("f", "a.c", "symbol"): {("g", "a.c", "symbol")},
+             ("k", "a.c", "symbol"): {("x", "a.c", "symbol")}})
+        self.assertEqual({u[0] for u in users}, {"S", "h", "f", "g", "k"})
+
 if __name__ == "__main__":
     unittest.main()

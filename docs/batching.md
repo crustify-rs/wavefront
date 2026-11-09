@@ -131,11 +131,27 @@ consumer when the unit is no longer needed in its original form:
   another. Its own constructors, destructors and cloners are functions like
   any other, unreferenced after their callers: what they call does not
   matter to C, which only calls them;
-- a function, global or macro is **unreferenced** after its **referrers**:
-  the units that call it, take its address, access it or expand it, the
-  edges of the body-deep graph into it. A macro's referrers are the
-  functions whose bodies expand it, through another macro's expansion too,
-  and the types whose declarations do (`char buf[GIT_OID_MAX_SIZE]`).
+- a function, global, macro, function pointer or typedef is
+  **unreferenced** after its **referrers**: the units that call it, take its
+  address, access it, expand it or name it, the edges of the body-deep graph
+  into it. A macro's referrers are the functions whose bodies expand it,
+  through another macro's expansion too, and the types whose declarations do
+  (`char buf[GIT_OID_MAX_SIZE]`). A function pointer a typedef declares is
+  referred to by what names the typedef or an alias of it, and by the code
+  that calls through it;
+- a function pointer written inline has no name, so C needs its signature
+  for as long as anything reaches a **site** that writes it. Its users are
+  each site and what reaches the site from outside:
+
+  | site | reached by |
+  |---|---|
+  | a struct's field | the struct's layout users: `s->open(...)` reads the field |
+  | a function's parameter or return | the function's referrers, which pass or receive it |
+  | a global | the global's referrers |
+  | a function's local, or a cast in it | nothing: only the function sees it |
+
+  One signature written at several sites of its file is one function
+  pointer, and has the users of every site.
 
 Users are read off the body-deep graph, the layout-use table and, for raw
 sites, `t2/arg_casts.csv`. Only the closure's units count: an external

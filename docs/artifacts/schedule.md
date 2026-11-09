@@ -155,7 +155,7 @@ record names across a module boundary that is still in the other language.
 | `used_fields` | on a type, the fields its users reach: in API mode every field of a type an `api_headers` file defines, and none of a type defined elsewhere; otherwise the fields the closure's own functions access |
 | `opaque_after` | on a struct, union or enum, the point after which none of its layout users is left ([Release points](#release-points)); `null` on any other item, and in an API schedule |
 | `memory_unmanaged_after` | on a struct or union, the point after which none of its raw sites is left, no C allocating or freeing it with a raw routine; `null` on any other item, in an API schedule, and when the ownership store holds no raw routine |
-| `unreferenced_after` | on a function, global or macro, a generator included, the point after which none of its referrers is left; `null` on any other item, and in an API schedule |
+| `unreferenced_after` | on a function, global, macro (a generator included), function pointer or typedef, the point after which none of its referrers is left, and on a function pointer written inline none of what reaches the sites that write it; `null` on any other item, and in an API schedule |
 
 Each list holds references, each
 `{"name": "...", "defined_in": "...", "kind": "...", "scope": "..."}`, so a

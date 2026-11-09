@@ -185,8 +185,8 @@ changing the order. Each unit carries its module, its `defined_in` and
 struct, union or enum also carries the point after which none of its layout
 users is left to process, `opaque_after`, and a struct or union the point
 after which no C allocates or frees it with a raw routine,
-`memory_unmanaged_after`; a function, global or macro the point after which
-none of its referrers is, `unreferenced_after`
+`memory_unmanaged_after`; a function, global, macro, function pointer or
+typedef the point after which none of its referrers is, `unreferenced_after`
 ([Release points](docs/batching.md#release-points)).
 
 | Flag | Default | Effect |

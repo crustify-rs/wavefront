@@ -1,13 +1,22 @@
 """When each unit's last user is processed: the layout users of a struct,
-union or enum, and the referrers of a function, global or macro, and the
-point of a schedule after which none of them is left to process.
+union or enum, and the referrers of a function, global, macro, function
+pointer or typedef, and the point of a schedule after which none of them is
+left to process.
 
 A type is *opaque* after its layout users: once every unit that reads its
 members, size or alignment, names an enum's enumerators, or holds it by value,
 has been processed, what comes after holds it only through pointers. A
-function, global or macro is *unreferenced* after its referrers: once every
-unit that calls it, takes its address, reads it or expands it has been
-processed. Both are objective-neutral facts of the order; what a consumer
+function, global, macro, function pointer or typedef is *unreferenced* after
+its referrers: once every unit that calls it, takes its address, reads it,
+expands it or names it has been processed.
+
+A function pointer written inline has no name to refer to it by: C needs its
+signature for as long as anything reaches a site that writes it. A field's
+reaches it through the struct, so its users are the struct's layout users; a
+parameter's or a return's, through the function, so they are the function's
+referrers, and a global's the global's; a local's or a cast's, nothing but
+the function. Each site is a user too, and so are all of them when one
+signature is written at several (:func:`inline_users`). Both are objective-neutral facts of the order; what a consumer
 does at that point is its own.
 
 The users are units of the closure, scheduled or not: an entity that is no
@@ -108,6 +117,42 @@ def referrers(edges: dict[NodeKey, set[NodeKey]], is_target, is_referrer
             if d != u and is_target(d):
                 out[d].add(u)
     return dict(out)
+
+
+#: How each kind of site of an inline function pointer is reached from outside.
+SITE_REACH = {"field": "layout", "param": "referrers", "return": "referrers",
+              "global": "referrers", "local": "self", "cast": "self"}
+
+
+def load_function_pointer_sites(t2: Path) -> dict[NodeKey, set[tuple[NodeKey, str]]]:
+    """``{function pointer key: {(site key, use kind)}}`` from
+    ``t2/function_pointer_uses.csv``: every site that writes an inline
+    function pointer, keyed as the graph keys both."""
+    path = t2 / "function_pointer_uses.csv"
+    out: dict[NodeKey, set[tuple[NodeKey, str]]] = defaultdict(set)
+    if not path.is_file():
+        return {}
+    for r in load_csv(path):
+        fp = (r["signature"], r["def_file"], "symbol")
+        ns = "type" if r["user_kind"] == "type" else "symbol"
+        out[fp].add(((r["user_name"], r.get("user_def_file") or "", ns), r["use_kind"]))
+    return dict(out)
+
+
+def inline_users(sites, layout_users: dict, refs: dict) -> set[NodeKey]:
+    """The users of an inline function pointer written at ``sites``: each
+    site, and what reaches it from outside (:data:`SITE_REACH`), a field's
+    struct through its layout users, a parameter's, return's or global's
+    owner through its referrers."""
+    out: set[NodeKey] = set()
+    for site, use in sites:
+        out.add(site)
+        reach = SITE_REACH.get(use, "self")
+        if reach == "layout":
+            out |= set(layout_users.get(site, {}))
+        elif reach == "referrers":
+            out |= set(refs.get(site, ()))
+    return out
 
 
 class Order:

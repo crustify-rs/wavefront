@@ -197,8 +197,9 @@ def _release_points(layout, target: Path, *, docs: dict[NodeKey, dict],
     (:mod:`wavefront.opacity`): a struct's, union's or enum's
     ``opaque_after``, after its layout users, a struct's or union's
     ``memory_unmanaged_after``, after the units that apply a raw allocator or
-    releaser to it, and a function's, global's or macro's
-    ``unreferenced_after``,
+    releaser to it, and a function's, global's, macro's, function pointer's or
+    typedef's ``unreferenced_after``, an inline function pointer's after what
+    reaches the sites that write it,
     after its referrers, read off the body-deep graph and the layout-use
     table; they are the closure's units. The users themselves are not
     recorded: ``query structs --layout-users`` and ``query functions --callers``
@@ -271,9 +272,12 @@ def _release_points(layout, target: Path, *, docs: dict[NodeKey, dict],
     def is_symbol(k: NodeKey) -> bool:
         n = by_key.get(k)
         return (k[2] == "symbol" and n is not None
-                and n.subkind.startswith(("function", "global", "macro")))
+                and c_kind(n) in ("function", "global", "macro",
+                                  "function_pointer", "typedef"))
 
     refs = opacity.referrers(edges, is_symbol, lambda k: k in units)
+    # An inline function pointer is released after what reaches its sites.
+    fp_sites = opacity.load_function_pointer_sites(layout.t2)
 
     # Raw sites: none known without the store's raw routines, and then every
     # struct's `memory_unmanaged_after` stays null.
@@ -312,6 +316,10 @@ def _release_points(layout, target: Path, *, docs: dict[NodeKey, dict],
             if sites is not None and d["kind"] != "enum":
                 d["memory_unmanaged_after"] = release(
                     key, sorted(managed.get(key, ()), key=_sort_key))
+        elif key in fp_sites:
+            found = opacity.inline_users(fp_sites[key], layout_users, refs) - {key}
+            users = sorted((u for u in found if u in units), key=_sort_key)
+            d["unreferenced_after"] = release(key, users)
         elif is_symbol(key):
             users = sorted((u for u in refs.get(key, ()) if u in units), key=_sort_key)
             d["unreferenced_after"] = release(key, users)
