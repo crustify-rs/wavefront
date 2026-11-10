@@ -70,7 +70,10 @@ from pathlib import Path
 #:      is a symbol entry of its own (`kind: typedef`), a function pointer
 #:      written inline one too (`kind: function_pointer`), and a callback's
 #:      aliases fold into its entry, under `typedef`.
-_VERSION = 25
+#:  26 — a macro a published header defines is a symbol record whether or
+#:      not the code expands it, and the API section leaves include guards
+#:      out.
+_VERSION = 26
 
 
 def fingerprint(layout, target) -> dict:

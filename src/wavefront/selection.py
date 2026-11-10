@@ -5,7 +5,9 @@ declares; a file entry is a path, a directory with a trailing slash, or
 ``{"path": ..., "items": {"included": [...], "excluded": [...]}}`` whose items,
 each ``{"name": ..., "kind": ...}``, narrow what it selects of its file. An
 item's kind is what the entity is in C (:mod:`wavefront.kinds`): ``function``,
-``global``, ``macro``, ``struct``, ``union``, ``enum`` or ``typedef``. A config without ``schedule_seeds`` seeds every unit. The selection never
+``global``, ``macro``, ``struct``, ``union``, ``enum``, ``function_pointer`` or
+``typedef``. A config without ``schedule_seeds`` seeds every unit. The
+selection never
 changes the order: it is computed over every unit of the closure, and a
 schedule keeps its seeds, and every unit they depend on, in it.
 """

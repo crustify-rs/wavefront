@@ -375,7 +375,8 @@ def _api_entities(t1_dir: Path, api_files: set[str]) -> dict[str, list[dict]]:
                              ("globals.csv", "globals"),
                              ("macros.csv", "macros")):
         for r in _scope.load_csv(t1_dir / csv_name):
-            if _published(r):
+            # A header's include guard is defined there, yet publishes nothing.
+            if _published(r) and r.get("include_guard") != "1":
                 out[bucket].append(_ent(r))
     type_rows = _scope.load_csv(t1_dir / "types.csv")
     by_name = _scope.build_types_index(type_rows)

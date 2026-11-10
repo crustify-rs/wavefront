@@ -19,6 +19,10 @@
  *               emptiness (a zero-arg `F()` reads correctly this way)
  *   body      : the replacement-list text, verbatim from the source
  *   def_file  : repository-relative path of the `#define` site's file
+ *   include_guard : "1" when the macro is its header's include guard, the
+ *               macro an `#ifndef` (or `#if !defined`) wrapping the whole
+ *               header tests, defined in that header; "0" otherwise. A guard
+ *               publishes nothing, so the API leaves it out
  *
  * No invocation-related filtering here — this query enumerates
  * macros that EXIST. Whether a macro is REACHED from port-scope code
@@ -26,6 +30,7 @@
  * output at composition time.
  */
 import cpp
+import semmle.code.cpp.headers.MultipleInclusion
 
 /**
  * Repository-relative path, falling back to absolute for files outside the
@@ -38,8 +43,16 @@ string pathOf(File f) {
   else result = f.getAbsolutePath()
 }
 
+/** 1 when `m` is the include guard of the header defining it, else 0. */
+int includeGuardOf(Macro m) {
+  if exists(HeaderFile hf | hf = m.getFile() and hasIncludeGuard(hf, _, _, m.getName()))
+  then result = 1
+  else result = 0
+}
+
 from Macro m
 select m.getName() as name,
        m.getHead() as head,
        m.getBody() as body,
-       pathOf(m.getLocation().getFile()) as def_file
+       pathOf(m.getLocation().getFile()) as def_file,
+       includeGuardOf(m) as include_guard

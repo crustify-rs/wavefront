@@ -119,7 +119,8 @@ or defined there outright (an inline function, a macro, a struct with its
 layout). It is not a section. Publication and location are independent, so
 an entity is in the view and in whichever section holds it: a function an
 `api_headers` file declares but that some other library defines is api and
-external at once, which is what a re-export is.
+external at once, which is what a re-export is. A header's include guard is
+defined there but publishes nothing, and is not in the view.
 
 ## Default mode
 
@@ -132,7 +133,10 @@ The default graph and schedule are body-deep:
   and contributes no body edges either: any C still built may include that
   header, and a `#define` cannot be re-exported from Rust, so the macro stays
   C's, read from its header. Only a macro local to a closure translation
-  unit has no other user, and is the closure's own;
+  unit has no other user, and is the closure's own. A header macro is a
+  node when the closure expands it, when it mints a type the closure
+  reaches, or when an `api_headers` file defines it: a public macro is part
+  of the API whether or not the library's own code expands it;
 - a struct defined in a closure file keeps every field edge; an external
   struct only the fields the closure's code accesses;
 - a schedule orders every node the closure owns; an external node is a

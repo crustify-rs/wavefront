@@ -10,8 +10,13 @@ reads the dependency graph of the closure ([`graph.md`](graph.md)) and its seeds
 
 The units are every node the closure owns
 ([`scoping.md`](scoping.md#closure)), its enums included, and every macro the
-closure's files define, a header's included: a header macro is not owned, since
-C still built may include it, but its Rust counterpart is still to be written.
+closure's files define and the graph holds, a header's included: a header
+macro is not owned, since C still built may include it, but its Rust
+counterpart is still to be written. The graph holds a header macro the closure
+expands, one that mints a type the closure reaches, and every one an
+`api_headers` file defines but its include guard
+([`scoping.md`](scoping.md#default-mode)); a header macro nothing expands and
+no header publishes is no unit.
 With `--api-headers-only`, they are the owned nodes the api view
 publishes, closed over the public-signature graph: a private type a public
 signature names is a unit too, as is a macro it reaches. External nodes are

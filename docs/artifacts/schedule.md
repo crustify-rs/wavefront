@@ -231,7 +231,9 @@ not weights: a consumer decides what each costs for its own work.
 A function pointer is a pointer, written inline or through a typedef. A
 property the tables do not record is `null`: a function's linkage and
 `inline` need `functions.csv` extracted with its `is_static` and `is_inline`
-columns.
+columns. Telling a public macro from its header's include guard needs
+`macros.csv` extracted with its `include_guard` column: without it, a guard
+an `api_headers` file defines is a unit too.
 
 Schema-v5 schedules, which record `with_enums` and `with_macros` because
 enums and macros were units only with those flags, give no enum an

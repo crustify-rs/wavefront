@@ -947,6 +947,12 @@ def compose(
         from .import_closure import closure_generators
         imp_keys |= closure_generators(csv_dir_t1, _sj)
 
+    # A macro a published header defines is part of the API whether or not
+    # the code expands it (`GIT_ATTR_HAS_VALUE`, an `*_INIT` initializer):
+    # the API is what the headers publish, so no reach gate applies. The
+    # section leaves include guards out.
+    api_macros = scope.load_entities(_sj, scope.API, "macros") if _sj else set()
+
     def _in_import(r: dict) -> bool:
         return (r.get("name"), r.get("def_file") or "") in imp_keys
 
@@ -1054,10 +1060,12 @@ def compose(
         # Rust translation. Hence a macro is the target's own iff it's defined
         # in a closure `.c` (etc.) file (`scope.owned_macro`), while its
         # section, `closure` for a closure header's too, is location alone.
+        # One the target does not own gets a record when the closure expands
+        # it, or when a published header defines it.
         in_target = scope_enabled and (r["name"], r["def_file"]) in tgt_macros
         if scope_enabled and not in_target and not seed_mode and not unscoped:
-            if not _in_import(r) and not reach.is_macro_port_reachable(
-                    r["name"], r["def_file"]):
+            if not _in_import(r) and (r["name"], r["def_file"] or "") not in api_macros \
+                    and not reach.is_macro_port_reachable(r["name"], r["def_file"]):
                 continue
         base = _base_macro(r)
         port_add = _port_additions_macro(r, reach)    # content: codebase-wide
