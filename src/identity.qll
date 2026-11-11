@@ -286,7 +286,10 @@ string defFileOf(UserType t) {
  *   - a lambda is part of the function that writes it: what its body calls
  *     and touches, that function calls and touches;
  *   - an overloaded function takes its parameter types as a suffix,
- *     `geo::total_area(const Scene &)`, so overloads stay distinct entities;
+ *     `geo::total_area(const Scene &)`, so overloads stay distinct entities.
+ *     Where two overloads' suffixes read alike, their types differing only
+ *     in a namespace or an enclosing class, both take the scoped spelling,
+ *     `use(left::Tag)` and `use(right::Tag)`;
  *   - a member the compiler generates is no entity: it is in no source file.
  *     Whether a class has it is a fact about the class (`cpp_classes.csv`).
  *
@@ -421,6 +424,71 @@ string typeSpelling(Type t) {
         .regexpReplaceAll(", (allocator|default_delete|char_traits|less|hash|equal_to)<([^<>]|<([^<>]|<[^<>]*>)*>)*>", "")
 }
 
+/**
+ * The user type a parameter type names, through pointers, references,
+ * qualifiers and arrays, when its scope can be written into the spelling:
+ * a plain identifier, so no instantiation, and no closure or template
+ * parameter.
+ */
+private predicate scopedLeaf(Type t, UserType u) {
+  unwrappedUserType(t, u) and
+  u.getName().regexpMatch("[A-Za-z_][A-Za-z0-9_]*") and
+  not isSyntheticType(u)
+}
+
+/** `typeSpelling` with the scope of the type `t` names: `const Reader::Options &`. */
+private string scopedLeafSpelling(Type t) {
+  if exists(UserType u | scopedLeaf(t, u))
+  then
+    exists(UserType u | scopedLeaf(t, u) |
+      result = typeSpelling(t).regexpReplaceAll("\\b" + u.getName() + "\\b", cppName(u))
+    )
+  else result = typeSpelling(t)
+}
+
+/**
+ * A parameter type spelled with what `typeSpelling` leaves out: the scope of
+ * the type it names, `const Reader::Options &` for `const Options &`, and a
+ * function pointer's signature, `int (*)(left::Tag)` for `..(*)(..)`. A
+ * function pointer inside that signature keeps `typeSpelling`'s form.
+ */
+string scopedTypeSpelling(Type t) {
+  if t.stripTopLevelSpecifiers().(FunctionPointerIshType).getBaseType() instanceof RoutineType
+  then
+    exists(FunctionPointerIshType p, RoutineType r, string mark |
+      p = t.stripTopLevelSpecifiers() and
+      r = p.getBaseType() and
+      (
+        if p instanceof FunctionPointerType
+        then mark = "*"
+        else
+          if p instanceof FunctionReferenceType
+          then mark = "&"
+          else mark = "^"
+      )
+    |
+      result =
+        scopedLeafSpelling(r.getReturnType()) + " (" + mark + ")(" +
+          concat(int i |
+            exists(r.getParameterType(i))
+          |
+            scopedLeafSpelling(r.getParameterType(i)), ", " order by i
+          ) + ")"
+    )
+  else result = scopedLeafSpelling(t)
+}
+
+/** `overloadSuffix` with `scopedTypeSpelling` for each parameter type. */
+string scopedOverloadSuffix(Function f) {
+  result =
+    "(" +
+      concat(int i |
+        exists(f.getParameter(i))
+      |
+        scopedTypeSpelling(f.getParameter(i).getType()), ", " order by i
+      ) + ")" + any(string c | if f instanceof ConstMemberFunction then c = " const" else c = "")
+}
+
 /** `f` shares its qualified name with another C++ entity function of another signature. */
 predicate isOverloaded(Function f) {
   isCppFile(f.getFile()) and
@@ -428,15 +496,40 @@ predicate isOverloaded(Function f) {
     g != f and
     isEntityFunction(g) and
     baseFunctionName(g) = baseFunctionName(f) and
-    overloadSuffix(g) != overloadSuffix(f)
+    (
+      overloadSuffix(g) != overloadSuffix(f) or
+      scopedOverloadSuffix(g) != scopedOverloadSuffix(f)
+    )
   )
 }
 
-/** The name a function's entity is keyed by, `canonicalFunction` applied. */
+/**
+ * `f` has an overload whose suffix reads the same as its own, their
+ * parameter types differing only in what `typeSpelling` leaves out:
+ * `use(left::Tag)` and `use(right::Tag)` are both `use(Tag)`.
+ */
+predicate hasLookalikeOverload(Function f) {
+  exists(Function g |
+    g != f and
+    isEntityFunction(g) and
+    baseFunctionName(g) = baseFunctionName(f) and
+    overloadSuffix(g) = overloadSuffix(f) and
+    scopedOverloadSuffix(g) != scopedOverloadSuffix(f)
+  )
+}
+
+/**
+ * The name a function's entity is keyed by, `canonicalFunction` applied. An
+ * overload takes its suffix as `overloadSuffix` spells it, and the scoped
+ * spelling only where that one would name two overloads alike.
+ */
 string functionName(Function f) {
   exists(Function c | c = canonicalFunction(f) |
     if isOverloaded(c)
-    then result = baseFunctionName(c) + overloadSuffix(c)
+    then
+      if hasLookalikeOverload(c)
+      then result = baseFunctionName(c) + scopedOverloadSuffix(c)
+      else result = baseFunctionName(c) + overloadSuffix(c)
     else result = baseFunctionName(c)
   )
 }

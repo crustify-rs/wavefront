@@ -25,6 +25,7 @@
 "kv::Options","src/db.h","comparator","const Comparator *","false","1","false"
 "kv::Options","src/db.h","create_if_missing","bool","true","0","false"
 "kv::Options","src/db.h","write_buffer_size","size_t","true","0","false"
+"kv::Reader::Options","src/misc.cc","buffer_size","int","true","0","false"
 "kv::SkipList","src/skiplist.h","arena_","Arena *const","false","1","false"
 "kv::SkipList","src/skiplist.h","compare_","const Comparator","true","0","false"
 "kv::SkipList","src/skiplist.h","head_","Node *const","false","1","false"
@@ -39,3 +40,5 @@
 "kv::Snapshot","src/db.h","seq_","unsigned long","true","0","false"
 "kv::Status","include/kv/status.h","code_","Code","false","0","false"
 "kv::Status","include/kv/status.h","state_","unique_ptr<basic_string<char, char_traits<char>, allocator<char>>, default_delete<basic_string<char, char_traits<char>, allocator<char>>>>","false","0","false"
+"kv::Writer::Options","src/misc.cc","level","int","true","0","false"
+"kv::Writer::Options","src/misc.cc","sync","bool","true","0","false"

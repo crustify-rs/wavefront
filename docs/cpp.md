@@ -28,6 +28,7 @@ still join on name and file:
 | an explicit or partial specialization | with its arguments | `geo::Pool<bool>` |
 | an instantiation, and its members | as its template, and the template's members | `Pool<Circle>::put` is `geo::Pool::put` |
 | an overloaded function | with its parameter types | `geo::total_area(const Scene &)` |
+| overloads whose parameter types read alike | with those types' scope, and a function pointer's signature | `use(left::Tag)` and `use(right::Tag)`, not `use(Tag)` twice |
 | a lambda | as part of the function that writes it | |
 | a member the compiler generates | as no entity: it is in no source | |
 

@@ -75,4 +75,23 @@ char* Arena::AllocateNewBlock(std::size_t block_bytes) {
   return r;
 }
 
+// Overloads that read alike without their parameter types' scope: two
+// `Options` nested in different classes, and two visitors that differ only in
+// the signature of the function they take.
+struct Reader { struct Options { int buffer_size; }; };
+struct Writer { struct Options { bool sync; int level; }; };
+int Configure(const Reader::Options& options) { return options.buffer_size; }
+int Configure(const Writer::Options& options) {
+  return options.sync ? options.level + 1 : options.level;
+}
+int Visit(int (*visitor)(const Reader::Options&)) { Reader::Options options{4096}; return visitor(options); }
+int Visit(int (*visitor)(const Writer::Options&)) { Writer::Options options{true, 2}; return visitor(options); }
+int ConfigureAll() {
+  Reader::Options reader{4096};
+  Writer::Options writer{true, 2};
+  return Configure(reader) + Configure(writer) +
+         Visit(static_cast<int (*)(const Reader::Options&)>(Configure)) +
+         Visit(static_cast<int (*)(const Writer::Options&)>(Configure));
+}
+
 }  // namespace kv

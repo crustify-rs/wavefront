@@ -160,6 +160,19 @@ class CppFixtureTests(unittest.TestCase):
         self.assertNotIn("member", items["kv::NewEmptyIterator"][1])
         self.assertNotIn("member", items["kv::CountKeys(const DB &)"][1])
 
+    def test_overloads_alike_without_scope_stay_distinct(self) -> None:
+        # Both `Configure` take a `const Options &` and both `Visit` a function
+        # pointer: only the scope of what they name tells each pair apart.
+        for unit in ("kv::Configure(const kv::Reader::Options &)",
+                     "kv::Configure(const kv::Writer::Options &)",
+                     "kv::Visit(int (*)(const kv::Reader::Options &))",
+                     "kv::Visit(int (*)(const kv::Writer::Options &))"):
+            self._before(unit, "kv::ConfigureAll")
+        self._before("kv::Reader::Options", "kv::Configure(const kv::Reader::Options &)")
+        self._before("kv::Writer::Options", "kv::Configure(const kv::Writer::Options &)")
+        # An overload that no other reads like keeps the unscoped spelling.
+        self.assertIn("kv::CountKeys(const DB &)", self._items())
+
     def test_override_after_overridden(self) -> None:
         self._before("kv::Iterator::Next", "kv::EmptyIterator::Next")
         self._before("kv::Comparator::Compare", "kv::BytewiseComparatorImpl::Compare")
