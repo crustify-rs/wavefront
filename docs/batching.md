@@ -145,8 +145,10 @@ consumer when the unit is no longer needed in its original form:
   referred to by what names the typedef or an alias of it, and by the code
   that calls through it;
 - a function pointer written inline has no name, so C needs its signature
-  for as long as anything reaches a **site** that writes it. Its users are
-  each site and what reaches the site from outside:
+  for as long as anything reaches a **site** that writes it
+  (`t2/function_pointer_uses.csv`, a row per site, naming the signature, the
+  file it is homed in and the entity that writes it). Its users are each site
+  and what reaches the site from outside:
 
   | site | reached by |
   |---|---|
