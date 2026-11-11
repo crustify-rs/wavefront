@@ -249,8 +249,8 @@ def _merge_meta(m: dict, decls: list[str], kind: str, uak: str) -> None:
     m["decls"].update(decls)
     if not m["kind"]:
         m["kind"] = kind
-    elif kind in ("struct", "union", "enum") and \
-            m["kind"] not in ("struct", "union", "enum"):
+    elif kind in scope.AGGREGATE_KINDS and \
+            m["kind"] not in scope.AGGREGATE_KINDS:
         m["kind"] = kind
     if not m["uak"]:
         m["uak"] = uak
@@ -333,11 +333,11 @@ _AGGREGATE_UAK = frozenset({
 
 # Translation-unit suffixes. A type DEFINED in one of these has no linkage past
 # that TU, so it can never be an importable wrap item for another file.
-_C_TU_SUFFIXES = (".c", ".cc", ".cpp", ".cxx", ".cu")
+_C_TU_SUFFIXES = scope.SOURCE_SUFFIXES
 
 
 def _is_aggregate(meta: dict) -> bool:
-    return meta.get("kind") in ("struct", "union", "enum") \
+    return meta.get("kind") in scope.AGGREGATE_KINDS \
         or meta.get("uak") in _AGGREGATE_UAK
 
 
@@ -456,7 +456,7 @@ def compose_import(
         if tu is None:
             canon = scope.canonical_decl(decls)
             return [canon] if canon else decls
-        return [d for d in decls if d.endswith((".h", ".hpp", ".hh"))] or decls
+        return [d for d in decls if d.endswith(scope.HEADER_SUFFIXES)] or decls
 
     def add_sym(name: str, df: str, decls: list[str], tu: str | None) -> None:
         if not name or scope.classify(df, decls, target_paths) != scope.IMPORTED:

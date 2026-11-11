@@ -189,6 +189,9 @@ See [`examples/schedule.json`](examples/schedule.json) for the output.
 
 ## Documentation
 
+The [C++ geometry example](examples/cpp_geometry/) runs extraction, queries,
+and scheduling on a class with overloaded methods and an implicit destructor call.
+
 | Document | Contents |
 |---|---|
 | [`docs/graph.md`](docs/graph.md) | The dependency graph: nodes, edges, type erasure, cycles, polymorphism, and limitations. |

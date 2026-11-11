@@ -1,0 +1,6 @@
+"enclosing_name","access_file","struct_name","struct_def_file","field_name","access_kind","access_line"
+"hide(Hidden)","overloads.cpp","Hidden","overloads.cpp","value","read",39
+"point(left::Tag * const *)","overloads.cpp","left::Tag","overloads.cpp","value","read",16
+"point(const left::Tag * *)","overloads.cpp","left::Tag","overloads.cpp","value","read",17
+"use(left::Tag)","overloads.cpp","left::Tag","overloads.cpp","value","read",12
+"use(right::Tag)","overloads.cpp","right::Tag","overloads.cpp","value","read",13

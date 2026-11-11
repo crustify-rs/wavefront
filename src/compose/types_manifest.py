@@ -201,11 +201,11 @@ def _canonical_tag(type_str: str, by_name: dict[str, dict]) -> str | None:
         return None
     if row["kind"] == "typedef":
         terminal = scope.resolve_typedef(candidate, by_name)
-        if terminal is not None and terminal["kind"] in {"struct", "union", "enum"}:
+        if terminal is not None and terminal["kind"] in scope.AGGREGATE_KINDS:
             tag = terminal.get("name", "")
             return tag if tag and not tag.startswith("(") else None
         return None
-    if row["kind"] in {"struct", "union", "enum"}:
+    if row["kind"] in scope.AGGREGATE_KINDS:
         return candidate
     return None
 
@@ -394,7 +394,7 @@ def _typedef_aliases_by_terminal(
         if not r["aliases"] or r["aliases"] not in by_name:
             continue
         terminal = scope.resolve_typedef(r["aliases"], by_name)
-        if terminal is None or terminal["kind"] not in {"struct", "union", "enum"}:
+        if terminal is None or terminal["kind"] not in scope.AGGREGATE_KINDS:
             continue
         if terminal["name"].startswith("("):
             continue
@@ -408,7 +408,7 @@ def _aliases_pointing_at(target_tag: str, by_name: dict[str, dict]) -> list[str]
         if row["kind"] != "typedef":
             continue
         terminal = scope.resolve_typedef(name, by_name)
-        if terminal is not None and terminal["kind"] in {"struct", "union", "enum"} \
+        if terminal is not None and terminal["kind"] in scope.AGGREGATE_KINDS \
                 and terminal["name"] == target_tag:
             out.append(name)
     return out
@@ -607,7 +607,7 @@ def compose(
         return scope_enabled and (r["name"], r["def_file"]) in tgt_types
 
     for r in types_rows:
-        if r["kind"] not in {"struct", "union", "enum"}:
+        if r["kind"] not in scope.AGGREGATE_KINDS:
             continue
         if r["name"].startswith("(") or not r["name"]:
             continue

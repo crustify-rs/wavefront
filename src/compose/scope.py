@@ -32,6 +32,12 @@ import csv
 import json
 from pathlib import Path
 
+AGGREGATE_KINDS = frozenset({"struct", "class", "union", "enum"})
+
+# File suffixes, matching the CodeQL side (`entities/functions.ql`).
+SOURCE_SUFFIXES = (".c", ".cc", ".cpp", ".cxx", ".cu")
+HEADER_SUFFIXES = (".h", ".hh", ".hpp", ".hxx")
+
 
 # ---------------------------------------------------------------- core rule
 
@@ -58,7 +64,7 @@ def classify(def_file: str, decl_files: list[str], target_paths: set[str]) -> st
     return TARGETED if all(d in target_paths for d in decl_files) else IMPORTED
 
 
-_C_TU_SUFFIXES = (".c", ".cc", ".cpp", ".cxx", ".cu")
+_C_TU_SUFFIXES = SOURCE_SUFFIXES
 
 
 def entry_scope(
@@ -113,7 +119,7 @@ def canonical_decl(decls: list[str]) -> str | None:
 
     def rank(d: str) -> tuple:
         external = d.startswith("/")            # absolute → out-of-repo
-        header = d.endswith((".h", ".hpp", ".hh"))
+        header = d.endswith(HEADER_SUFFIXES)
         generated = d.startswith("build/")
         return (external, not header, generated, d)
 

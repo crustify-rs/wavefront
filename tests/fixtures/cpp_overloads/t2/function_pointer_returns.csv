@@ -1,0 +1,3 @@
+"function_name","function_def_file","pointee_type","is_const","depth"
+"lambda [] type at line 31, col. 19::operator int (*)(int)() const","overloads.cpp","(routine)","false",1
+"lambda [] type at line 30, col. 18::operator int (*)(int)() const","overloads.cpp","(routine)","false",1

@@ -35,7 +35,7 @@ string functionDefFileOf(Function fn) {
 
 from Function fn, int pos, Parameter p
 where p = fn.getParameter(pos)
-select fn.getName() as function_name,
+select functionNameOf(fn) as function_name,
        functionDefFileOf(fn) as function_def_file,
        pos as position,
        p.getName() as param_name,

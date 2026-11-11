@@ -27,7 +27,7 @@ import identity
 
 string enclosingNameOf(FieldAccess fa) {
   if exists(fa.getEnclosingFunction())
-  then result = fa.getEnclosingFunction().getName()
+  then result = functionNameOf(fa.getEnclosingFunction())
   else result = ""
 }
 
@@ -78,11 +78,8 @@ Type rootNamedDeclaringType(FieldAccess fa) {
   else result = fa.getTarget().getDeclaringType()
 }
 
-string structDefFileOf(Type t) {
-  if exists(t.(Struct).getDefinition())
-  then result = pathOf(t.(Struct).getDefinition().getFile())
-  else if exists(t.(Union).getDefinition())
-  then result = pathOf(t.(Union).getDefinition().getFile())
+string rootDefFileOf(Type t) {
+  if t instanceof UserType then result = defFileOf(t.(UserType))
   else result = ""
 }
 
@@ -96,7 +93,7 @@ select enclosingNameOf(fa) as enclosing_name,
        pathOf(fa.getFile()) as access_file,
        canonicalTypeName(f.getDeclaringType()) as struct_name,
        canonicalNameOfType(rootT) as root_struct_name,
-       structDefFileOf(rootT) as root_struct_def_file,
+       rootDefFileOf(rootT) as root_struct_def_file,
        f.getName() as field_name,
        rootFieldPath(fa) as field_path,
        accessKindOf(fa) as access_kind,

@@ -598,7 +598,7 @@ TypeKey = tuple[str, str]
 
 #: Translation-unit suffixes. A type DEFINED in one has no linkage past that
 #: TU, so it can never be the entity a foreign reference resolves to.
-_C_TU_SUFFIXES = (".c", ".cc", ".cpp", ".cxx", ".cu")
+_C_TU_SUFFIXES = _scope.SOURCE_SUFFIXES
 
 #: Underlying kinds that are a LAYOUT — the only typedefs that mint a node.
 _AGGREGATE_UAK = frozenset({
@@ -706,8 +706,8 @@ def _fold_type_row(m: dict, decls, kind: str, uak: str) -> None:
     """Fold one T1 row into an entity: decls union, aggregate kind beats
     ``typedef``, aggregate unaliased-kind beats a scalar one."""
     m["decls"].update(decls)
-    if not m["kind"] or (kind in ("struct", "union", "enum")
-                         and m["kind"] not in ("struct", "union", "enum")):
+    if not m["kind"] or (kind in _scope.AGGREGATE_KINDS
+                         and m["kind"] not in _scope.AGGREGATE_KINDS):
         m["kind"] = kind or m["kind"]
     if not m["uak"]:
         m["uak"] = uak

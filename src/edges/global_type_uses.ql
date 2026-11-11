@@ -37,19 +37,9 @@
  * scoped only.
  */
 import cpp
+import identity
 
-/**
- * Repository-relative path, falling back to absolute for files outside the
- * source root (system/external headers) — keeps system entities' identity
- * consistent with the T1 entity CSVs.
- */
-string pathOf(File f) {
-  if exists(f.getRelativePath())
-  then result = f.getRelativePath()
-  else result = f.getAbsolutePath()
-}
-
-string defFileOf(GlobalVariable g) {
+string definitionFileOf(GlobalVariable g) {
   if exists(g.getDefinition())
   then result = pathOf(g.getDefinition().getFile())
   else result = ""
@@ -59,14 +49,6 @@ string typeDefFileOf(UserType t) {
   if exists(t.getDefinition())
   then result = pathOf(t.getDefinition().getFile())
   else result = ""
-}
-
-string typeKindOf(UserType t) {
-  if t instanceof Struct then result = "struct"
-  else if t instanceof Union then result = "union"
-  else if t instanceof Enum then result = "enum"
-  else if t instanceof TypedefType then result = "typedef"
-  else result = "other"
 }
 
 predicate reachableUserType(Type outer, UserType t) {
@@ -94,7 +76,7 @@ where
   not t.getName().prefix(1) = "(" and
   typeKindOf(t) != "other"
 select g.getName() as global_name,
-       defFileOf(g) as global_def_file,
-       t.getName() as type_name,
+       definitionFileOf(g) as global_def_file,
+       declaredTypeName(t) as type_name,
        typeKindOf(t) as type_kind,
        typeDefFileOf(t) as type_def_file

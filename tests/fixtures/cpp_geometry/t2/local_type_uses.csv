@@ -1,0 +1,3 @@
+"function_name","function_def_file","type_name","type_kind","type_def_file","use_kind","use_line"
+"geometry::calculate_area(geometry::Point, geometry::Point, double)","geometry.cpp","geometry::Rectangle","class","geometry.hpp","local_var",18
+"geometry::calculate_area(geometry::Point, geometry::Point, double)","geometry.cpp","geometry::Rectangle","class","geometry.hpp","cast",19

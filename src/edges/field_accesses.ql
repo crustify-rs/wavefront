@@ -59,7 +59,7 @@ import identity
 
 string enclosingNameOf(FieldAccess fa) {
   if exists(fa.getEnclosingFunction())
-  then result = fa.getEnclosingFunction().getName()
+  then result = functionNameOf(fa.getEnclosingFunction())
   else result = ""
 }
 
@@ -71,14 +71,6 @@ string accessKindOf(FieldAccess fa) {
   else result = "read"
 }
 
-string structDefFileOf(Field f) {
-  if exists(f.getDeclaringType().(Struct).getDefinition())
-  then result = pathOf(f.getDeclaringType().(Struct).getDefinition().getFile())
-  else if exists(f.getDeclaringType().(Union).getDefinition())
-  then result = pathOf(f.getDeclaringType().(Union).getDefinition().getFile())
-  else result = ""
-}
-
 from FieldAccess fa, Field f
 where f = fa.getTarget()
   // An access to a C11 unnamed member itself names no field (its members
@@ -87,7 +79,7 @@ where f = fa.getTarget()
 select enclosingNameOf(fa) as enclosing_name,
        pathOf(fa.getFile()) as access_file,
        canonicalTypeName(f.getDeclaringType()) as struct_name,
-       structDefFileOf(f) as struct_def_file,
+       defFileOf(f.getDeclaringType()) as struct_def_file,
        f.getName() as field_name,
        accessKindOf(fa) as access_kind,
        fa.getLocation().getStartLine() as access_line

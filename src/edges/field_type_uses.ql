@@ -52,14 +52,6 @@
 import cpp
 import identity
 
-string typeKindOf(UserType t) {
-  if t instanceof Struct then result = "struct"
-  else if t instanceof Union then result = "union"
-  else if t instanceof Enum then result = "enum"
-  else if t instanceof TypedefType then result = "typedef"
-  else result = "other"
-}
-
 /**
  * Unwrap pointers, arrays, and qualifiers from `outer` and bind `t`
  * to every `UserType` reached along the way. Mirrors

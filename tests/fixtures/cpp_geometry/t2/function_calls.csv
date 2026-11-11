@@ -1,0 +1,5 @@
+"caller_name","caller_file","callee_name","callee_def_file","call_line"
+"geometry::calculate_area(geometry::Point, geometry::Point, double)","geometry.cpp","geometry::Rectangle::area(double) const","geometry.cpp",19
+"geometry::calculate_area(geometry::Point, geometry::Point, double)","geometry.cpp","geometry::Rectangle::Rectangle(geometry::Point, geometry::Point)","geometry.cpp",18
+"geometry::calculate_area(geometry::Point, geometry::Point, double)","geometry.cpp","geometry::Rectangle::~Rectangle()","geometry.cpp",20
+"geometry::Rectangle::area(double) const","geometry.cpp","geometry::Rectangle::area() const","geometry.cpp",14

@@ -1,14 +1,14 @@
 /**
  * Enumerate every user-defined type in the database.
  *
- * One row per `struct`, `union`, `enum`, and `typedef` tag with its
+ * One row per `struct`, `class`, `union`, `enum`, and `typedef` tag with its
  * full-body definition location (if any), forward-declaration
  * locations, and — for typedefs — the immediate underlying
  * user-type name. Primitive / builtin types are not emitted — only
  * `UserType` and its subclasses (which excludes `int`, `char *`,
  * `size_t`, etc.).
  *
- * Tag identity: emit the C tag as written in source. A typedef and
+ * Tag identity: emit the declared type's qualified name. A typedef and
  * its underlying struct produce TWO rows — `typedef struct ssl_session_st
  * SSL_SESSION;` produces one row for `ssl_session_st` (kind=struct)
  * and one for `SSL_SESSION` (kind=typedef, aliases=ssl_session_st).
@@ -109,14 +109,6 @@ string declFilesOf(UserType t) {
   )
 }
 
-string kindOf(UserType t) {
-  if t instanceof Struct then result = "struct"
-  else if t instanceof Union then result = "union"
-  else if t instanceof Enum then result = "enum"
-  else if t instanceof TypedefType then result = "typedef"
-  else result = "other"
-}
-
 /**
  * For typedef `td`, return the C tag of its immediate underlying
  * user-type (post-derived-unwrap). Empty when no underlying UserType
@@ -130,7 +122,7 @@ string aliasOf(TypedefType td) {
   exists(UserType b |
     unwrappedUserType(td.getBaseType(), b) and
     not b.getName().prefix(1) = "(" and
-    result = b.getName()
+    result = declaredTypeName(b)
   )
   or
   not exists(UserType b |
@@ -207,11 +199,10 @@ from UserType t
 where
   // Skip anonymous tags — no stable identifier for consumers.
   t.getName() != "" and
-  // Keep struct / union / enum / typedef; skip class-template etc.
-  // (which don't exist in C anyway but cpp-all hosts them).
-  kindOf(t) != "other"
-select t.getName() as name,
-       kindOf(t) as kind,
+  // Keep the type kinds understood by the composer.
+  typeKindOf(t) != "other"
+select declaredTypeName(t) as name,
+       typeKindOf(t) as kind,
        defFileOf(t) as def_file,
        declFilesOf(t) as decl_files,
        aliasesColumnOf(t) as aliases,

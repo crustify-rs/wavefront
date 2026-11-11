@@ -39,19 +39,9 @@
  * the job of edges/function_addresses.ql, not this query.
  */
 import cpp
+import identity
 
-/**
- * Repository-relative path, falling back to absolute for files outside the
- * source root (system/external headers) — keeps system entities' identity
- * consistent with the T1 entity CSVs.
- */
-string pathOf(File f) {
-  if exists(f.getRelativePath())
-  then result = f.getRelativePath()
-  else result = f.getAbsolutePath()
-}
-
-string defFileOf(Function fn) {
+string definitionFileOf(Function fn) {
   if exists(fn.getDefinition())
   then result = pathOf(fn.getDefinition().getFile())
   else result = ""
@@ -61,8 +51,8 @@ from Call c, Function callee, Function caller
 where
   callee = c.getTarget() and
   caller = c.getEnclosingFunction()
-select caller.getName() as caller_name,
+select functionNameOf(caller) as caller_name,
        pathOf(c.getFile()) as caller_file,
-       callee.getName() as callee_name,
-       defFileOf(callee) as callee_def_file,
+       functionNameOf(callee) as callee_name,
+       definitionFileOf(callee) as callee_def_file,
        c.getLocation().getStartLine() as call_line

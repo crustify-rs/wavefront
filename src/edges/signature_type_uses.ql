@@ -34,7 +34,7 @@
  *   type_def_file       : repository-relative path of the type's
  *                         definition site, or "" if no full-body
  *                         definition is in the DB
- *   position            : "return" | "param_<i>"
+ *   position            : "return" | "param_<i>" | "declaring_type"
  *
  * No `hasDefinition()` filter on the function — declaration-only
  * externs still carry signature types worth recording (a wrap-side
@@ -42,25 +42,7 @@
  * pull in user-defined types).
  */
 import cpp
-
-/**
- * Repository-relative path, falling back to absolute for files outside the
- * source root (system/external headers) — keeps system entities' identity
- * consistent with the T1 entity CSVs.
- */
-string pathOf(File f) {
-  if exists(f.getRelativePath())
-  then result = f.getRelativePath()
-  else result = f.getAbsolutePath()
-}
-
-string kindOf(UserType t) {
-  if t instanceof Struct then result = "struct"
-  else if t instanceof Union then result = "union"
-  else if t instanceof Enum then result = "enum"
-  else if t instanceof TypedefType then result = "typedef"
-  else result = "other"
-}
+import identity
 
 string typeDefFileOf(UserType t) {
   if exists(t.getDefinition())
@@ -109,16 +91,19 @@ where
       reachableUserType(p.getType(), t) and
       pos = "param_" + i.toString()
     )
+    or
+    // A C++ member belongs to its class even without an explicit receiver.
+    (t = fn.getDeclaringType() and pos = "declaring_type")
   ) and
   // Skip anonymous tags (synthetic placeholder names like
   // `(unnamed enum)`) and the "other" UserType bucket. No `__`
   // prefix filter — compiler builtins are kept consistently with
   // entities/types.ql.
   t.getName() != "" and
-  kindOf(t) != "other"
-select fn.getName() as function_name,
+  typeKindOf(t) != "other"
+select functionNameOf(fn) as function_name,
        fnDefFileOf(fn) as function_def_file,
-       t.getName() as type_name,
-       kindOf(t) as type_kind,
+       declaredTypeName(t) as type_name,
+       typeKindOf(t) as type_kind,
        typeDefFileOf(t) as type_def_file,
        pos as position

@@ -13,8 +13,15 @@ field key.
 
 ## name
 
-The C identifier exactly as written at the definition site. Composer-filled;
-users never edit it.
+The identifier used by queries, dependencies, and schedules. Functions with
+C linkage use the source identifier. C++ functions use a qualified name with
+qualified parameter types and member qualifiers, for example
+`geometry::Rectangle::area(double) const`,
+`geometry::calculate_area(geometry::Point, geometry::Point, double)`, or
+`apply(int (*)(left::Tag))`, so `use(left::Tag)` and `use(right::Tag)` stay
+distinct. A lambda's call operator is keyed under its closure type, and an
+anonymous namespace is left out of the name. Composer-filled.
+For an existing C++ database, rerun `extract-ql` to generate the qualified keys.
 
 ## kind
 
@@ -122,3 +129,13 @@ signature types (parameters/return) with body-touched types from
 `t2/field_accesses.csv`; signature types come first (signature order), body-only
 types follow (first-encounter order); a signature type whose body touches no
 field carries `fields:[]` (opaque use).
+
+## declaring_type
+
+For C++ member functions, the owning type as `{name, defined_in}`. The member
+also has a graph dependency on this type.
+
+## member_kind
+
+For C++ member functions, `constructor`, `destructor`, or `method` from CodeQL.
+The separate `lifetime` finding records a verified ownership contract.

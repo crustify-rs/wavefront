@@ -26,10 +26,7 @@
  * Consumer: `types_manifest.py` — fills `callsites` on callback entries.
  */
 import cpp
-
-string pathOf(File f) {
-  if exists(f.getRelativePath()) then result = f.getRelativePath() else result = f.getAbsolutePath()
-}
+import identity
 
 RoutineType routineOf(Type t) {
   t instanceof RoutineType and result = t
@@ -62,7 +59,7 @@ from ExprCall call, TypedefType cb, Function enc
 where
   cb = cbType(call.getExpr().getType()) and
   enc = call.getEnclosingFunction()
-select cb.getName() as callback_name,
+select declaredTypeName(cb) as callback_name,
        tdDefFileOf(cb) as callback_def_file,
-       enc.getName() as callsite_name,
+       functionNameOf(enc) as callsite_name,
        fnDefFileOf(enc) as callsite_def_file

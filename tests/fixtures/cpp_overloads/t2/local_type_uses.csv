@@ -1,0 +1,12 @@
+"function_name","function_def_file","type_name","type_kind","type_def_file","use_kind","use_line"
+"lambdas()","overloads.cpp","lambda [] type at line 31, col. 19","class","","local_var",31
+"lambdas()","overloads.cpp","lambda [] type at line 31, col. 19","class","","cast",32
+"lambdas()","overloads.cpp","lambda [] type at line 30, col. 18","class","","local_var",30
+"lambdas()","overloads.cpp","lambda [] type at line 30, col. 18","class","","cast",32
+"pointers()","overloads.cpp","left::Tag","struct","overloads.cpp","local_var",24
+"pointers()","overloads.cpp","left::Tag","struct","overloads.cpp","local_var",25
+"pointers()","overloads.cpp","left::Tag","struct","overloads.cpp","local_var",26
+"pointers()","overloads.cpp","left::Tag","struct","overloads.cpp","cast",26
+"pointers()","overloads.cpp","left::Tag","struct","overloads.cpp","cast",27
+"callbacks()","overloads.cpp","left::Tag","struct","overloads.cpp","cast",20
+"callbacks()","overloads.cpp","right::Tag","struct","overloads.cpp","cast",21

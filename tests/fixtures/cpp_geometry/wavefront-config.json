@@ -1,0 +1,5 @@
+{
+  "state_dir": ".wavefront",
+  "impl_files": ["geometry.cpp"],
+  "api_headers": ["geometry.hpp"]
+}

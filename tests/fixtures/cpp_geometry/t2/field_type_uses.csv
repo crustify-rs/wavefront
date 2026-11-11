@@ -1,0 +1,3 @@
+"struct_name","struct_def_file","field_name","type_name","type_kind","type_def_file"
+"geometry::Rectangle","geometry.hpp","upper_","geometry::Point","struct","geometry.hpp"
+"geometry::Rectangle","geometry.hpp","lower_","geometry::Point","struct","geometry.hpp"

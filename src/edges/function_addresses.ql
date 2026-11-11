@@ -29,19 +29,9 @@
  *   access_line         : 1-indexed line number of the access site
  */
 import cpp
+import identity
 
-/**
- * Repository-relative path, falling back to absolute for files outside the
- * source root (system/external headers) — keeps system entities' identity
- * consistent with the T1 entity CSVs.
- */
-string pathOf(File f) {
-  if exists(f.getRelativePath())
-  then result = f.getRelativePath()
-  else result = f.getAbsolutePath()
-}
-
-string defFileOf(Function fn) {
+string definitionFileOf(Function fn) {
   if exists(fn.getDefinition())
   then result = pathOf(fn.getDefinition().getFile())
   else result = ""
@@ -58,7 +48,7 @@ string defFileOf(Function fn) {
  * with no forward edges, and the port had to rediscover them by hand.
  */
 string enclosingNameOf(Expr e) {
-  exists(e.getEnclosingFunction()) and result = e.getEnclosingFunction().getName()
+  exists(e.getEnclosingFunction()) and result = functionNameOf(e.getEnclosingFunction())
   or
   not exists(e.getEnclosingFunction()) and
   exists(Variable v | v.getInitializer().getExpr().getAChild*() = e | result = v.getName())
@@ -79,6 +69,6 @@ where target = fa.getTarget()
 // entity level.
 select enclosingNameOf(fa) as enclosing_name,
        pathOf(fa.getFile()) as access_file,
-       target.getName() as target_name,
-       defFileOf(target) as target_def_file,
+       functionNameOf(target) as target_name,
+       definitionFileOf(target) as target_def_file,
        fa.getLocation().getStartLine() as access_line

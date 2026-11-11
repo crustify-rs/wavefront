@@ -1,0 +1,5 @@
+"enclosing_name","access_file","struct_name","root_struct_name","root_struct_def_file","field_name","field_path","access_kind","access_line"
+"geometry::Rectangle::area() const","geometry.cpp","geometry::Point","geometry::Point","geometry.hpp","y","y","read",10
+"geometry::Rectangle::area() const","geometry.cpp","geometry::Point","geometry::Point","geometry.hpp","x","x","read",10
+"geometry::Rectangle::area() const","geometry.cpp","geometry::Rectangle","geometry::Rectangle","geometry.hpp","upper_","upper_","read",10
+"geometry::Rectangle::area() const","geometry.cpp","geometry::Rectangle","geometry::Rectangle","geometry.hpp","lower_","lower_","read",10

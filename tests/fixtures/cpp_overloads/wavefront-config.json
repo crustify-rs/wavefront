@@ -1,0 +1,5 @@
+{
+  "state_dir": ".wavefront",
+  "impl_files": ["overloads.cpp"],
+  "api_headers": []
+}

@@ -1,0 +1,4 @@
+"name","kind","def_file","decl_files","aliases","unaliased_kind"
+"std::__va_list","struct","","","",""
+"geometry::Point","struct","geometry.hpp","geometry.hpp","",""
+"geometry::Rectangle","class","geometry.hpp","geometry.hpp","",""

@@ -1,0 +1,7 @@
+"name","kind","def_file","decl_files","aliases","unaliased_kind"
+"lambda [] type at line 31, col. 19","class","","","",""
+"lambda [] type at line 30, col. 18","class","","","",""
+"Hidden","struct","overloads.cpp","overloads.cpp","",""
+"std::__va_list","struct","","","",""
+"left::Tag","struct","overloads.cpp","overloads.cpp","",""
+"right::Tag","struct","overloads.cpp","overloads.cpp","",""

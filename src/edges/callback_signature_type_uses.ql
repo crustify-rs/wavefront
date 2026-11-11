@@ -26,20 +26,7 @@
  *                         return-before-params, low-index-first)
  */
 import cpp
-
-string pathOf(File f) {
-  if exists(f.getRelativePath())
-  then result = f.getRelativePath()
-  else result = f.getAbsolutePath()
-}
-
-string kindOf(UserType t) {
-  if t instanceof Struct then result = "struct"
-  else if t instanceof Union then result = "union"
-  else if t instanceof Enum then result = "enum"
-  else if t instanceof TypedefType then result = "typedef"
-  else result = "other"
-}
+import identity
 
 string typeDefFileOf(UserType t) {
   if exists(t.getDefinition())
@@ -95,12 +82,12 @@ where
     )
   ) and
   t.getName() != "" and
-  kindOf(t) != "other" and
+  typeKindOf(t) != "other" and
   // never a self-edge onto the callback typedef itself
   t != td
-select td.getName() as callback_name,
+select declaredTypeName(td) as callback_name,
        tdDefFileOf(td) as callback_def_file,
-       t.getName() as type_name,
-       kindOf(t) as type_kind,
+       declaredTypeName(t) as type_name,
+       typeKindOf(t) as type_kind,
        typeDefFileOf(t) as type_def_file,
        pos as position

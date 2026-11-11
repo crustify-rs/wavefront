@@ -83,8 +83,7 @@ import pointers
  * `unsigned long`, `char *`, `void *`).
  */
 predicate containsAggregateType(Type t) {
-  t instanceof Struct
-  or t instanceof Union
+  t instanceof Class
   or t instanceof Enum
   or containsAggregateType(t.(DerivedType).getBaseType())
   or containsAggregateType(t.(TypedefType).getBaseType())

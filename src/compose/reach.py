@@ -118,7 +118,7 @@ class Reach:
             return None
         terminal = scope.resolve_typedef(type_name, self._by_name)
         if (terminal is not None
-                and terminal["kind"] in {"struct", "union", "enum"}
+                and terminal["kind"] in scope.AGGREGATE_KINDS
                 and not terminal["name"].startswith("(")):
             return (terminal["name"], terminal["def_file"] or "")
         return None

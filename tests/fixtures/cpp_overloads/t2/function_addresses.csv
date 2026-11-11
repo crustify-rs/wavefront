@@ -1,0 +1,5 @@
+"enclosing_name","access_file","target_name","target_def_file","access_line"
+"lambda [] type at line 31, col. 19::operator int (*)(int)() const","overloads.cpp","lambda [] type at line 31, col. 19::_FUN(int)","",31
+"lambda [] type at line 30, col. 18::operator int (*)(int)() const","overloads.cpp","lambda [] type at line 30, col. 18::_FUN(int)","",30
+"callbacks()","overloads.cpp","use(left::Tag)","overloads.cpp",20
+"callbacks()","overloads.cpp","use(right::Tag)","overloads.cpp",21

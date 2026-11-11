@@ -59,25 +59,7 @@
  * pure C codebases.
  */
 import cpp
-
-/**
- * Repository-relative path, falling back to absolute for files outside the
- * source root (system/external headers) — keeps system entities' identity
- * consistent with the T1 entity CSVs.
- */
-string pathOf(File f) {
-  if exists(f.getRelativePath())
-  then result = f.getRelativePath()
-  else result = f.getAbsolutePath()
-}
-
-string kindOf(UserType t) {
-  if t instanceof Struct then result = "struct"
-  else if t instanceof Union then result = "union"
-  else if t instanceof Enum then result = "enum"
-  else if t instanceof TypedefType then result = "typedef"
-  else result = "other"
-}
+import identity
 
 string fnDefFileOf(Function fn) {
   if exists(fn.getDefinition())
@@ -145,11 +127,11 @@ where
     )
   ) and
   t.getName() != "" and
-  kindOf(t) != "other"
-select fn.getName() as function_name,
+  typeKindOf(t) != "other"
+select functionNameOf(fn) as function_name,
        fnDefFileOf(fn) as function_def_file,
-       t.getName() as type_name,
-       kindOf(t) as type_kind,
+       declaredTypeName(t) as type_name,
+       typeKindOf(t) as type_kind,
        typeDefFileOf(t) as type_def_file,
        kind_str as use_kind,
        line_num as use_line

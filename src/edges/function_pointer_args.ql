@@ -56,17 +56,7 @@
  * read that as `ptr_args: []`.
  */
 import cpp
-
-/**
- * Repository-relative path, falling back to absolute for files outside the
- * source root (system/external headers) — keeps system entities' identity
- * consistent with the T1 entity CSVs.
- */
-string pathOf(File f) {
-  if exists(f.getRelativePath())
-  then result = f.getRelativePath()
-  else result = f.getAbsolutePath()
-}
+import identity
 
 /** Holds if a pointer level is reachable from `t` through qualifiers/typedefs. */
 predicate reachesPointer(Type t) {
@@ -180,7 +170,7 @@ string pointeeName(Type inner) {
       or
       // UserType — emit the C tag (may be `(unnamed …)` for
       // anonymous tags; consumer filters those at join time).
-      unq instanceof UserType and result = unq.(UserType).getName()
+      unq instanceof UserType and result = declaredTypeName(unq.(UserType))
       or
       // BuiltInType — `int`, `char`, `void`, …
       unq instanceof BuiltInType and result = unq.toString()
@@ -225,7 +215,7 @@ predicate sigParam(string name, string defFile, int pos, string paramName, Type 
   exists(Function fn, Parameter p |
     p = fn.getParameter(pos) and
     ptype = p.getType() and
-    name = fn.getName() and
+    name = functionNameOf(fn) and
     defFile = fnDefFileOf(fn) and
     paramName = p.getName()
   )
@@ -233,7 +223,7 @@ predicate sigParam(string name, string defFile, int pos, string paramName, Type 
   exists(TypedefType td, RoutineType rt |
     rt = routineOf(td) and
     ptype = rt.getParameterType(pos) and
-    name = td.getName() and
+    name = declaredTypeName(td) and
     defFile = tdDefFileOf(td) and
     paramName = ""
   )

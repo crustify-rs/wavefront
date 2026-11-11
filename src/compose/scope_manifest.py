@@ -12,8 +12,8 @@ Rules:
 
   1. A file is a *candidate* if `impl_files` or `api_headers` names it —
      directly, or through a trailing-slash directory entry that expands to
-     every C/C++ source or header (`.c`, `.cc`, `.cpp`, `.h`, `.hpp`)
-     beneath it.
+     every C/C++ source or header (`.c`, `.cc`, `.cpp`, `.cxx`, `.cu`,
+     `.h`, `.hh`, `.hpp`, `.hxx`) beneath it.
   2. A candidate survives iff its repo-root-relative path does not match
      any entry in `config.out_of_scope.paths` (entries ending with `/`
      match recursively; otherwise exact-file match).
@@ -44,8 +44,8 @@ try:  # package import (compose.scope_manifest) — the normal path
 except ImportError:  # script invocation fallback (python scope_manifest.py)
     import scope as _scope  # type: ignore
 
-_SOURCE_EXTS = {".c", ".cc", ".cpp"}
-_HEADER_EXTS = {".h", ".hpp"}
+_SOURCE_EXTS = set(_scope.SOURCE_SUFFIXES)
+_HEADER_EXTS = set(_scope.HEADER_SUFFIXES)
 _ALL_EXTS = _SOURCE_EXTS | _HEADER_EXTS
 
 _COMMENT = (

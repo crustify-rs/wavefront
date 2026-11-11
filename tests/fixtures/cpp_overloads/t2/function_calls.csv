@@ -1,0 +1,10 @@
+"caller_name","caller_file","callee_name","callee_def_file","call_line"
+"lambdas()","overloads.cpp","lambda [] type at line 31, col. 19::operator()(int) const","overloads.cpp",32
+"lambdas()","overloads.cpp","lambda [] type at line 30, col. 18::operator()(int) const","overloads.cpp",32
+"hidden()","overloads.cpp","hide(Hidden)","overloads.cpp",41
+"pointers()","overloads.cpp","point(left::Tag * const *)","overloads.cpp",27
+"pointers()","overloads.cpp","point(const left::Tag * *)","overloads.cpp",27
+"callbacks()","overloads.cpp","apply(int (*)(left::Tag))","overloads.cpp",20
+"callbacks()","overloads.cpp","apply(int (*)(right::Tag))","overloads.cpp",21
+"both()","overloads.cpp","use(left::Tag)","overloads.cpp",18
+"both()","overloads.cpp","use(right::Tag)","overloads.cpp",18

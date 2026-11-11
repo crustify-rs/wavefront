@@ -46,7 +46,7 @@ import identity
  * are unaffected — there the source writes `PACKET *`, so the TypedefType is
  * in the type graph and carries its own name. This one has no use site to read.
  */
-Struct strippedStruct(Type t) {
+Class strippedStruct(Type t) {
   result = t and not isAnonNamed(canonicalTypeName(result))
   or
   result = strippedStruct(t.(DerivedType).getBaseType())
@@ -54,7 +54,7 @@ Struct strippedStruct(Type t) {
   result = strippedStruct(t.(TypedefType).getBaseType())
 }
 
-from Struct src, Struct dst
+from Class src, Class dst
 where
   exists(Cast c |
     src = strippedStruct(c.getExpr().getType()) and

@@ -58,6 +58,187 @@ predicate isAnonNamed(string n) { n = "" or n.matches("(unnamed%") }
 predicate isAnonymous(UserType t) { isAnonNamed(t.getName()) }
 
 /**
+ * A qualified name without its anonymous namespaces. The defining file tells
+ * such entities apart, as it does a C `static`, and a name that starts with
+ * `(` reads as an anonymous tag to every consumer, which would drop it.
+ */
+bindingset[name]
+private string withoutAnonymousNamespaces(string name) {
+  result = name.replaceAll("(unnamed namespace)::", "")
+}
+
+/** Keep the C tag for unqualified types and the full scope of C++ types. */
+string declaredTypeName(UserType t) {
+  if not isAnonymous(t) and exists(t.getQualifiedName())
+  then result = withoutAnonymousNamespaces(t.getQualifiedName())
+  else result = t.getName()
+}
+
+/** Struct and union precede Class, their common base in the CodeQL model. */
+string typeKindOf(UserType t) {
+  if t instanceof Struct then result = "struct"
+  else if t instanceof Class then result = "class"
+  else if t instanceof Enum then result = "enum"
+  else if t instanceof TypedefType then result = "typedef"
+  else result = "other"
+}
+
+private string memberQualifiers(Function fn) {
+  exists(string constPart, string volatilePart, string refPart |
+    (if fn instanceof ConstMemberFunction then constPart = " const" else constPart = "") and
+    (if fn.(MemberFunction).getTypeOfThis().getBaseType().isVolatile()
+     then volatilePart = " volatile" else volatilePart = "") and
+    (if fn.(MemberFunction).isLValueRefQualified() then refPart = " &"
+     else if fn.(MemberFunction).isRValueRefQualified() then refPart = " &&"
+     else refPart = "") and
+    result = constPart + volatilePart + refPart
+  )
+}
+
+/**
+ * Spelling of a type inside a function key. CodeQL's own `Type.toString()`
+ * drops the scope of a named type, so `use(left::Tag)` and `use(right::Tag)`
+ * would share the key `use(Tag)`, and spells every function pointer
+ * `..(*)(..)`. A named type is spelled with its full scope; pointers,
+ * references, cv-specifiers, arrays and function pointers are rebuilt
+ * around the spelled base types. Any other type (a pointer to member, a
+ * template parameter, `decltype`) keeps CodeQL's spelling. Total and
+ * single-valued.
+ */
+string qualifiedTypeSpelling(Type t) {
+  if
+    t instanceof FunctionPointerIshType and
+    t.(FunctionPointerIshType).getBaseType() instanceof RoutineType
+  then result = routineSpelling(t.(FunctionPointerIshType).getBaseType(), routineMarkOf(t))
+  else if t instanceof PointerType
+  then result = qualifiedTypeSpelling(t.(PointerType).getBaseType()) + " *"
+  else if t instanceof RValueReferenceType
+  then result = qualifiedTypeSpelling(t.(RValueReferenceType).getBaseType()) + " &&"
+  else if t instanceof LValueReferenceType
+  then result = qualifiedTypeSpelling(t.(LValueReferenceType).getBaseType()) + " &"
+  else if t instanceof SpecifiedType
+  then
+    result = placeSpecifiers(t.(SpecifiedType),
+        qualifiedTypeSpelling(t.(SpecifiedType).getBaseType()))
+  else if t instanceof ArrayType
+  then result = qualifiedTypeSpelling(t.(ArrayType).getBaseType()) + arraySuffixOf(t.(ArrayType))
+  else result = plainTypeSpelling(t)
+}
+
+/**
+ * The spelling inside a routine's own signature. QL forbids recursion through
+ * the `concat` that joins a routine's parameter types, so a function pointer
+ * nested in another function pointer's signature keeps CodeQL's `..(*)(..)`.
+ */
+private string innerTypeSpelling(Type t) {
+  if t instanceof PointerType
+  then result = innerTypeSpelling(t.(PointerType).getBaseType()) + " *"
+  else if t instanceof RValueReferenceType
+  then result = innerTypeSpelling(t.(RValueReferenceType).getBaseType()) + " &&"
+  else if t instanceof LValueReferenceType
+  then result = innerTypeSpelling(t.(LValueReferenceType).getBaseType()) + " &"
+  else if t instanceof SpecifiedType
+  then
+    result = placeSpecifiers(t.(SpecifiedType),
+        innerTypeSpelling(t.(SpecifiedType).getBaseType()))
+  else if t instanceof ArrayType
+  then result = innerTypeSpelling(t.(ArrayType).getBaseType()) + arraySuffixOf(t.(ArrayType))
+  else result = plainTypeSpelling(t)
+}
+
+/** A named type with its scope; anything else as CodeQL spells it. */
+private string plainTypeSpelling(Type t) {
+  if t instanceof UserType then result = canonicalTypeName(t.(UserType)) else result = t.toString()
+}
+
+/**
+ * `const left::Tag *` is a pointer to const and `left::Tag * const` a const
+ * pointer: the specifiers follow a pointer or array base and precede any
+ * other base, as C++ writes them.
+ */
+bindingset[base]
+private string placeSpecifiers(SpecifiedType t, string base) {
+  exists(string specifiers |
+    specifiers = concat(Specifier s | s = t.getASpecifier() | s.getName(), " " order by s.getName())
+  |
+    if
+      t.getBaseType() instanceof PointerType or
+      t.getBaseType() instanceof ArrayType or
+      t.getBaseType() instanceof FunctionPointerIshType
+    then result = base + " " + specifiers
+    else result = specifiers + " " + base
+  )
+}
+
+private string arraySuffixOf(ArrayType t) {
+  if exists(t.getArraySize())
+  then result = "[" + t.getArraySize().toString() + "]"
+  else result = "[]"
+}
+
+/** `(*)` for a function pointer, `(&)` for a function reference, `(^)` for a block. */
+private string routineMarkOf(FunctionPointerIshType t) {
+  if t instanceof FunctionPointerType
+  then result = "(*)"
+  else if t instanceof FunctionReferenceType
+  then result = "(&)"
+  else result = "(^)"
+}
+
+/** `int (*)(left::Tag)`: the routine's return and parameter types, spelled. */
+bindingset[mark]
+private string routineSpelling(RoutineType rt, string mark) {
+  exists(string returns, string parameters |
+    (
+      if exists(rt.getReturnType())
+      then returns = innerTypeSpelling(rt.getReturnType())
+      else returns = ".."
+    ) and
+    parameters = concat(int i | exists(rt.getParameterType(i)) |
+      innerTypeSpelling(rt.getParameterType(i)), ", " order by i
+    ) and
+    result = returns + " " + mark + "(" + parameters + ")"
+  )
+}
+
+/**
+ * Top-level cv-qualifiers and typedefs never distinguish overloads:
+ * `f(const int)` is `f(int)`, and `f(LeftAlias)` is `f(left::Tag)`. The
+ * `min` keeps the key single-valued when a declaration and the definition
+ * spell one parameter differently (`T arr[3]` against `T *arr`).
+ */
+private string parameterTypeSpelling(Parameter p) {
+  result = min(string s | s = qualifiedTypeSpelling(p.getType().stripTopLevelSpecifiers()) | s)
+}
+
+/**
+ * The scope part of a function key: the qualified name, or, for a member of
+ * a class that has none (a lambda's closure type), the class's canonical
+ * name and the member's. No result for a function with neither.
+ */
+private string scopedFunctionName(Function fn) {
+  if exists(fn.getQualifiedName())
+  then result = withoutAnonymousNamespaces(fn.getQualifiedName())
+  else result = canonicalTypeName(fn.getDeclaringType()) + "::" + fn.getName()
+}
+
+/** The function key used by both entity and relationship queries. */
+string functionNameOf(Function fn) {
+  if fn.hasCLinkage() or not exists(scopedFunctionName(fn))
+  then result = fn.getName()
+  else
+    exists(string parameters, string variadic |
+      parameters = concat(int i | exists(fn.getParameter(i)) |
+        parameterTypeSpelling(fn.getParameter(i)), ", " order by i
+      ) and
+      (if fn.isVarargs()
+       then (if parameters = "" then variadic = "..." else variadic = ", ...")
+       else variadic = "") and
+      result = scopedFunctionName(fn) + "(" + parameters + variadic + ")" + memberQualifiers(fn)
+    )
+}
+
+/**
  * Strip `DerivedType` wrappers (pointer / cv-qualified / array) off `t` and
  * bind every `UserType` reached on the way down, including `t` itself.
  */
@@ -86,7 +267,7 @@ string typedefIdentityOf(UserType t) {
   result = min(TypedefType td |
       unwrappedUserType(td.getBaseType(), t) and not isAnonNamed(td.getName())
     |
-      td.getName()
+      declaredTypeName(td)
     )
 }
 
@@ -100,7 +281,7 @@ string typedefIdentityOf(UserType t) {
  */
 string canonicalTypeName(UserType t) {
   if not isAnonymous(t)
-  then result = t.getName()
+  then result = declaredTypeName(t)
   else
     if exists(typedefIdentityOf(t))
     then result = typedefIdentityOf(t)
@@ -143,12 +324,9 @@ predicate namingTypedef(UserType anon, TypedefType td) {
 
 /** Definition-site path of an aggregate, or "" when only declared. */
 string anonDefFileOf(UserType anon) {
-  if exists(anon.(Struct).getDefinition())
-  then result = pathOf(anon.(Struct).getDefinition().getFile())
-  else
-    if exists(anon.(Union).getDefinition())
-    then result = pathOf(anon.(Union).getDefinition().getFile())
-    else result = ""
+  if exists(anon.getDefinition())
+  then result = pathOf(anon.getDefinition().getFile())
+  else result = ""
 }
 
 /** Strip arrays and cv-qualifiers, but NOT pointers: a pointer to an
@@ -209,13 +387,13 @@ string memberPathPrefix(Field outer) {
  */
 predicate ownerOf(UserType t, string name, string file) {
   not isAnonymous(t) and
-  name = t.getName() and
+  name = declaredTypeName(t) and
   file = anonDefFileOf(t)
   or
   exists(TypedefType td |
     namingTypedef(t, td) and
     not isAnonNamed(td.getName()) and
-    name = td.getName() and
+    name = declaredTypeName(td) and
     file = anonDefFileOf(t)
   )
 }

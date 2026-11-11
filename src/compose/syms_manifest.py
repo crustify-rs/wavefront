@@ -174,7 +174,7 @@ def _resolve_dep_type_tag(
     if row is None or row["kind"] != "typedef":
         return type_name
     terminal = scope.resolve_typedef(type_name, by_name)
-    if terminal is not None and terminal["kind"] in {"struct", "union", "enum"}:
+    if terminal is not None and terminal["kind"] in scope.AGGREGATE_KINDS:
         tag = terminal.get("name", "")
         if tag and not tag.startswith("("):
             return tag
@@ -450,7 +450,7 @@ def _compose_ptr_ret(reach: Reach, fn_name: str, fn_def_file: str) -> dict | Non
 def _base_function(row: dict, reach: Reach) -> dict[str, Any]:
     name = row["name"]
     def_file = row["def_file"]
-    return {
+    entry = {
         "name": name,
         "kind": row["linkage"],
         "declared_in": sorted(_decls_list(row["decl_files"])),
@@ -471,6 +471,13 @@ def _base_function(row: dict, reach: Reach) -> dict[str, Any]:
         # port bin-packer's lines-of-code budget.
         "loc": int(row.get("loc") or 0),
     }
+    if row.get("member_kind") and row.get("declaring_type"):
+        entry["member_kind"] = row["member_kind"]
+        entry["declaring_type"] = {
+            "name": row["declaring_type"],
+            "defined_in": row.get("declaring_type_def_file") or None,
+        }
+    return entry
 
 
 def _port_additions_function(

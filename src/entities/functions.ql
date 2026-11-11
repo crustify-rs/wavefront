@@ -34,38 +34,29 @@
  *                 stages need this off the signature, which the `signature`
  *                 column's parameter list alone does not reveal.
  *
+ *   declaring_type / declaring_type_def_file: the C++ member's owning type.
+ *   member_kind : "constructor", "destructor", "method", or empty.
+ *
  * No `hasDefinition()` filter here — consumers need declaration-only
  * functions to identify boundary-crossing externs. The def_file ""
  * sentinel surfaces the missing-body case explicitly.
  */
 import cpp
-
-/**
- * Repository-relative path of a file, falling back to its absolute path
- * when the file lives outside the source root (system / external headers
- * like /usr/include/string.h). Out-of-root entities (libc, etc.) thus get
- * an absolute path instead of "" — the composer routes them under a
- * `system/` manifest dir so the external boundary surface is captured.
- */
-string pathOf(File f) {
-  if exists(f.getRelativePath())
-  then result = f.getRelativePath()
-  else result = f.getAbsolutePath()
-}
+import identity
 
 string linkageClassOf(Function fn) {
   if fn.isInline() and exists(fn.getDefinition()) and
-     fn.getDefinition().getFile().getExtension() = "h"
+     fn.getDefinition().getFile().getExtension() = ["h", "hh", "hpp", "hxx"]
   then result = "function_inline_header"
   else if fn.isInline() and exists(fn.getDefinition()) and
-          fn.getDefinition().getFile().getExtension() != "h"
+          not fn.getDefinition().getFile().getExtension() = ["h", "hh", "hpp", "hxx"]
   then result = "function_inline_tu"
   else if fn.isStatic()
   then result = "function_static"
   else result = "function_exported"
 }
 
-string defFileOf(Function fn) {
+string definitionFileOf(Function fn) {
   if exists(fn.getDefinition())
   then result = pathOf(fn.getDefinition().getFile())
   else result = ""
@@ -80,10 +71,32 @@ string declFilesOf(Function fn) {
 }
 
 string signatureOf(Function fn) {
-  result = fn.getType().toString() + " " + fn.getName() + "(" +
-           concat(int i | exists(fn.getParameter(i)) |
-                  fn.getParameter(i).getType().toString(), ", "
-                  order by i) + ")"
+  if functionNameOf(fn) != fn.getName()
+  then result = fn.getType().toString() + " " + functionNameOf(fn)
+  else
+    result = fn.getType().toString() + " " + fn.getName() + "(" +
+      concat(int i | exists(fn.getParameter(i)) |
+        fn.getParameter(i).getType().toString(), ", " order by i
+      ) + ")"
+}
+
+string declaringTypeOf(Function fn) {
+  if exists(fn.getDeclaringType())
+  then result = canonicalTypeName(fn.getDeclaringType())
+  else result = ""
+}
+
+string declaringTypeFileOf(Function fn) {
+  if exists(fn.getDeclaringType())
+  then result = defFileOf(fn.getDeclaringType())
+  else result = ""
+}
+
+string memberKindOf(Function fn) {
+  if fn instanceof Constructor then result = "constructor"
+  else if fn instanceof Destructor then result = "destructor"
+  else if fn instanceof MemberFunction then result = "method"
+  else result = ""
 }
 
 /**
@@ -109,10 +122,13 @@ int isVariadicOf(Function fn) {
 }
 
 from Function fn
-select fn.getName() as name,
+select functionNameOf(fn) as name,
        linkageClassOf(fn) as linkage,
-       defFileOf(fn) as def_file,
+       definitionFileOf(fn) as def_file,
        declFilesOf(fn) as decl_files,
        signatureOf(fn) as signature,
        locOf(fn) as loc,
-       isVariadicOf(fn) as is_variadic
+       isVariadicOf(fn) as is_variadic,
+       declaringTypeOf(fn) as declaring_type,
+       declaringTypeFileOf(fn) as declaring_type_def_file,
+       memberKindOf(fn) as member_kind

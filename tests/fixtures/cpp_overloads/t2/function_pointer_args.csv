@@ -1,0 +1,5 @@
+"function_name","function_def_file","position","param_name","pointee_type","is_const","depth"
+"point(left::Tag * const *)","overloads.cpp",0,"tags","left::Tag","false",2
+"point(const left::Tag * *)","overloads.cpp",0,"tags","left::Tag","true",2
+"apply(int (*)(left::Tag))","overloads.cpp",0,"callback","(routine)","false",1
+"apply(int (*)(right::Tag))","overloads.cpp",0,"callback","(routine)","false",1
