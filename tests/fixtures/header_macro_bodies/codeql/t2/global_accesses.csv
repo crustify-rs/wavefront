@@ -1,0 +1,5 @@
+"enclosing_name","access_file","global_name","global_def_file","global_linkage","access_kind","access_line"
+"mem_alloc","mem.c","mem_live","mem.c","global_extern","write",12
+"widget_drop","use.c","mem_live","mem.c","global_extern","write",33
+"widget_make","use.c","mem_live","mem.c","global_extern","write",23
+"the_set","use.c","pools","use.c","global_static","write",9

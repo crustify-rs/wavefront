@@ -1,0 +1,12 @@
+"rel","src_kind","src_name","src_def_file","src_member","src_decl","src_ctype","dst_kind","dst_name","dst_def_file","dst_member","dst_decl","dst_ctype","site_fn","site_file","line"
+"forward","ret","malloc","","ret","","void *","ret","mem_alloc","mem.c","ret","","void *","mem_alloc","mem.c",13
+"forward","param","mem_free","mem.c","0","","void *","param","free","","0","","void *","mem_free","mem.c",23
+"forward","param","mem_zero","mem.c","0","","void *","param","memset","","0","","void *","mem_zero","mem.c",18
+"forward","param","widget_free","use.c","0","widget","widget *","param","mem_free","mem.c","0","","void *","widget_free","use.c",38
+"to","ret","mem_alloc","mem.c","ret","","void *","type","widget","use.c","","widget","","widget_make","use.c",22
+"to","ret","mem_alloc","mem.c","ret","","void *","type","widget","use.c","","widget","","widget_make","use.c",23
+"from","type","widget","use.c","","widget","","param","mem_free","mem.c","0","","void *","widget_drop","use.c",33
+"from","type","widget","use.c","","widget","","param","mem_free","mem.c","0","","void *","widget_make","use.c",23
+"from","type","widget","use.c","","widget","","param","mem_trace","mem.c","0","","void *","widget_make","use.c",26
+"from","type","widget","use.c","","widget","","param","mem_zero","mem.c","0","","void *","widget_make","use.c",22
+"from","type","widget","use.c","","widget","","param","mem_zero","mem.c","0","","void *","widget_make","use.c",23

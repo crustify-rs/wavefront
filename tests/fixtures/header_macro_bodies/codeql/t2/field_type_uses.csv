@@ -1,0 +1,4 @@
+"struct_name","struct_def_file","field_name","type_name","type_kind","type_def_file","type_decl_file"
+"pool_set","mem.h","pools","pool","struct","mem.h",""
+"pool","mem.h","cap","size_t","typedef","","/usr/lib/gcc/x86_64-linux-gnu/13/include/stddef.h"
+"pool","mem.h","used","size_t","typedef","","/usr/lib/gcc/x86_64-linux-gnu/13/include/stddef.h"

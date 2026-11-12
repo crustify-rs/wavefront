@@ -1,0 +1,16 @@
+"caller_name","caller_file","callee_name","callee_def_file","call_line"
+"mem_free","mem.c","free","",23
+"mem_trace","mem.c","mem_trace","mem.c",29
+"mem_zero","mem.c","memset","",18
+"mem_alloc","mem.c","malloc","",13
+"mem_calloc","mem.c","mem_zero","mem.c",35
+"mem_calloc","mem.c","mem_alloc","mem.c",34
+"widget_free","use.c","mem_free","mem.c",38
+"widget_drop","use.c","mem_free","mem.c",33
+"widget_make","use.c","mem_free","mem.c",23
+"widget_make","use.c","mem_trace","mem.c",26
+"widget_make","use.c","mem_zero","mem.c",22
+"widget_make","use.c","mem_zero","mem.c",23
+"widget_make","use.c","mem_alloc","mem.c",22
+"widget_make","use.c","mem_alloc","mem.c",23
+"widget_make","use.c","sys_log","use.c",27

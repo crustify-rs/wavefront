@@ -1,0 +1,8 @@
+"function_name","function_def_file","position","param_name","param_type","ptr_depth","is_erased"
+"fx_hold","buf.c",0,"v","int",0,"false"
+"fx_anon","buf.c",0,"n","int",0,"false"
+"fx_check","buf.c",0,"p","void *",1,"true"
+"fx_check","buf.c",1,"q","void *",1,"true"
+"fx_kind_of","buf.c",0,"mode","int",0,"false"
+"fx_buf_grow","buf.c",0,"b","fx_buf *",1,"false"
+"fx_buf_grow","buf.c",1,"n","size_t",0,"false"

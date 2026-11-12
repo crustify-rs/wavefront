@@ -1,0 +1,6 @@
+"name","linkage","def_file","decl_files","signature","loc","is_variadic","is_static","is_inline"
+"fx_hold","function_exported","buf.c","buf.c","int fx_hold(int)",4,0,0,0
+"fx_anon","function_exported","buf.c","buf.c","int fx_anon(int)",3,0,0,0
+"fx_check","function_exported","buf.c","buf.c","int fx_check(void *, void *)",4,0,0,0
+"fx_kind_of","function_exported","buf.c","buf.c","int fx_kind_of(int)",8,0,0,0
+"fx_buf_grow","function_exported","buf.c","buf.c","int fx_buf_grow(fx_buf *, size_t)",5,0,0,0

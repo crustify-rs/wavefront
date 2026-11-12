@@ -1,0 +1,7 @@
+"function_name","function_def_file","type_name","type_kind","type_def_file","use_kind","use_line"
+"widget_drop","use.c","widget","struct","use.c","cast",33
+"widget_make","use.c","size_t","typedef","","cast",24
+"widget_make","use.c","pool","struct","mem.h","cast",24
+"widget_make","use.c","widget","struct","use.c","local_var",18
+"widget_make","use.c","widget","struct","use.c","cast",22
+"widget_make","use.c","widget","struct","use.c","cast",23

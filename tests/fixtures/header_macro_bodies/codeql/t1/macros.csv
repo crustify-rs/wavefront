@@ -1,0 +1,240 @@
+"name","head","body","def_file","include_guard"
+"","","","",0
+"__SYSCALL_WORDSIZE","__SYSCALL_WORDSIZE","64","/usr/include/x86_64-linux-gnu/bits/wordsize.h",0
+"__WORDSIZE_TIME64_COMPAT32","__WORDSIZE_TIME64_COMPAT32","1","/usr/include/x86_64-linux-gnu/bits/wordsize.h",0
+"__WORDSIZE","__WORDSIZE","64","/usr/include/x86_64-linux-gnu/bits/wordsize.h",0
+"__x86_64__","__x86_64__","1","",0
+"__TIMESIZE","__TIMESIZE","__WORDSIZE","/usr/include/x86_64-linux-gnu/bits/timesize.h",0
+"_STDC_PREDEF_H","_STDC_PREDEF_H","1","",0
+"__LDOUBLE_REDIRECTS_TO_FLOAT128_ABI","__LDOUBLE_REDIRECTS_TO_FLOAT128_ABI","0","/usr/include/x86_64-linux-gnu/bits/long-double.h",0
+"__attribute_returns_twice__","__attribute_returns_twice__","__attribute__ ((__returns_twice__))","/usr/include/x86_64-linux-gnu/sys/cdefs.h",0
+"__attr_dealloc_free","__attr_dealloc_free","__attr_dealloc (__builtin_free, 1)","/usr/include/x86_64-linux-gnu/sys/cdefs.h",0
+"__HAVE_GENERIC_SELECTION","__HAVE_GENERIC_SELECTION","1","/usr/include/x86_64-linux-gnu/sys/cdefs.h",0
+"__attribute_copy__","__attribute_copy__(arg)","__attribute__ ((__copy__ (arg)))","/usr/include/x86_64-linux-gnu/sys/cdefs.h",0
+"__attribute_nonstring__","__attribute_nonstring__","__attribute__ ((__nonstring__))","/usr/include/x86_64-linux-gnu/sys/cdefs.h",0
+"__restrict_arr","__restrict_arr","__restrict","/usr/include/x86_64-linux-gnu/sys/cdefs.h",0
+"__fortify_function","__fortify_function","__extern_always_inline __attribute_artificial__","/usr/include/x86_64-linux-gnu/sys/cdefs.h",0
+"__extern_always_inline","__extern_always_inline","extern __always_inline __attribute__ ((__gnu_inline__))","/usr/include/x86_64-linux-gnu/sys/cdefs.h",0
+"__extern_inline","__extern_inline","extern __inline __attribute__ ((__gnu_inline__))","/usr/include/x86_64-linux-gnu/sys/cdefs.h",0
+"__attribute_artificial__","__attribute_artificial__","__attribute__ ((__artificial__))","/usr/include/x86_64-linux-gnu/sys/cdefs.h",0
+"__always_inline","__always_inline","__inline __attribute__ ((__always_inline__))","/usr/include/x86_64-linux-gnu/sys/cdefs.h",0
+"__wur","__wur","","/usr/include/x86_64-linux-gnu/sys/cdefs.h",0
+"__attribute_warn_unused_result__","__attribute_warn_unused_result__","__attribute__ ((__warn_unused_result__))","/usr/include/x86_64-linux-gnu/sys/cdefs.h",0
+"__returns_nonnull","__returns_nonnull","__attribute__ ((__returns_nonnull__))","/usr/include/x86_64-linux-gnu/sys/cdefs.h",0
+"__attribute_deprecated__","__attribute_deprecated__","__attribute__ ((__deprecated__))","/usr/include/x86_64-linux-gnu/sys/cdefs.h",0
+"__attribute_noinline__","__attribute_noinline__","__attribute__ ((__noinline__))","/usr/include/x86_64-linux-gnu/sys/cdefs.h",0
+"__attribute_used__","__attribute_used__","__attribute__ ((__used__))","/usr/include/x86_64-linux-gnu/sys/cdefs.h",0
+"__attribute_maybe_unused__","__attribute_maybe_unused__","__attribute__ ((__unused__))","/usr/include/x86_64-linux-gnu/sys/cdefs.h",0
+"__attribute_const__","__attribute_const__","__attribute__ ((__const__))","/usr/include/x86_64-linux-gnu/sys/cdefs.h",0
+"__attribute_pure__","__attribute_pure__","__attribute__ ((__pure__))","/usr/include/x86_64-linux-gnu/sys/cdefs.h",0
+"__attribute_malloc__","__attribute_malloc__","__attribute__ ((__malloc__))","/usr/include/x86_64-linux-gnu/sys/cdefs.h",0
+"__REDIRECT_FORTIFY_NTH","__REDIRECT_FORTIFY_NTH","__REDIRECT_NTH","/usr/include/x86_64-linux-gnu/sys/cdefs.h",0
+"__REDIRECT_NTH","__REDIRECT_NTH(name,proto,alias)","name proto __asm__ (__ASMNAME (#alias)) __THROW","/usr/include/x86_64-linux-gnu/sys/cdefs.h",0
+"__REDIRECT_FORTIFY","__REDIRECT_FORTIFY","__REDIRECT","/usr/include/x86_64-linux-gnu/sys/cdefs.h",0
+"__REDIRECT","__REDIRECT(name,proto,alias)","name proto __asm__ (__ASMNAME (#alias))","/usr/include/x86_64-linux-gnu/sys/cdefs.h",0
+"__glibc_c99_flexarr_available","__glibc_c99_flexarr_available","1","/usr/include/x86_64-linux-gnu/sys/cdefs.h",0
+"__flexarr","__flexarr","[]","/usr/include/x86_64-linux-gnu/sys/cdefs.h",0
+"__END_DECLS","__END_DECLS","","/usr/include/x86_64-linux-gnu/sys/cdefs.h",0
+"__BEGIN_DECLS","__BEGIN_DECLS","","/usr/include/x86_64-linux-gnu/sys/cdefs.h",0
+"__ptr_t","__ptr_t","void *","/usr/include/x86_64-linux-gnu/sys/cdefs.h",0
+"__COLD","__COLD","__attribute__ ((__cold__))","/usr/include/x86_64-linux-gnu/sys/cdefs.h",0
+"__THROWNL","__THROWNL","__attribute__ ((__nothrow__))","/usr/include/x86_64-linux-gnu/sys/cdefs.h",0
+"__THROW","__THROW","__attribute__ ((__nothrow__ __LEAF))","/usr/include/x86_64-linux-gnu/sys/cdefs.h",0
+"__LEAF_ATTR","__LEAF_ATTR","__attribute__ ((__leaf__))","/usr/include/x86_64-linux-gnu/sys/cdefs.h",0
+"__LEAF","__LEAF",", __leaf__","/usr/include/x86_64-linux-gnu/sys/cdefs.h",0
+"__PMT","__PMT(args)","args","/usr/include/x86_64-linux-gnu/sys/cdefs.h",0
+"__P","__P(args)","args","/usr/include/x86_64-linux-gnu/sys/cdefs.h",0
+"_SYS_CDEFS_H","_SYS_CDEFS_H","1","/usr/include/x86_64-linux-gnu/sys/cdefs.h",1
+"_FEATURES_H","_FEATURES_H","1","/usr/include/features.h",1
+"__attribute_nonnull__","__attribute_nonnull__(params)","__attribute__ ((__nonnull__ params))","/usr/include/x86_64-linux-gnu/sys/cdefs.h",0
+"__nonnull","__nonnull(params)","__attribute_nonnull__ (params)","/usr/include/x86_64-linux-gnu/sys/cdefs.h",0
+"__GNUC__","__GNUC__","13","",0
+"__GNUC_MINOR__","__GNUC_MINOR__","3","",0
+"__STDC_VERSION__","__STDC_VERSION__","201112L","",0
+"__STRICT_ANSI__","__STRICT_ANSI__","1","",0
+"__GNUC_STDC_INLINE__","__GNUC_STDC_INLINE__","1","",0
+"__STDC__","__STDC__","1","",0
+"__stub_stty","__stub_stty","","/usr/include/x86_64-linux-gnu/gnu/stubs-64.h",0
+"__stub_sigreturn","__stub_sigreturn","","/usr/include/x86_64-linux-gnu/gnu/stubs-64.h",0
+"__stub_setlogin","__stub_setlogin","","/usr/include/x86_64-linux-gnu/gnu/stubs-64.h",0
+"__stub_revoke","__stub_revoke","","/usr/include/x86_64-linux-gnu/gnu/stubs-64.h",0
+"__stub_gtty","__stub_gtty","","/usr/include/x86_64-linux-gnu/gnu/stubs-64.h",0
+"__stub_fchflags","__stub_fchflags","","/usr/include/x86_64-linux-gnu/gnu/stubs-64.h",0
+"__stub_chflags","__stub_chflags","","/usr/include/x86_64-linux-gnu/gnu/stubs-64.h",0
+"__stub___compat_bdflush","__stub___compat_bdflush","","/usr/include/x86_64-linux-gnu/gnu/stubs-64.h",0
+"__LP64__","__LP64__","1","",0
+"__GLIBC_MINOR__","__GLIBC_MINOR__","39","/usr/include/features.h",0
+"__GLIBC__","__GLIBC__","2","/usr/include/features.h",0
+"__GNU_LIBRARY__","__GNU_LIBRARY__","6","/usr/include/features.h",0
+"__GLIBC_USE_C2X_STRTOL","__GLIBC_USE_C2X_STRTOL","0","/usr/include/features.h",0
+"__GLIBC_USE_DEPRECATED_SCANF","__GLIBC_USE_DEPRECATED_SCANF","0","/usr/include/features.h",0
+"__GLIBC_USE_DEPRECATED_GETS","__GLIBC_USE_DEPRECATED_GETS","0","/usr/include/features.h",0
+"__USE_FORTIFY_LEVEL","__USE_FORTIFY_LEVEL","0","/usr/include/features.h",0
+"__USE_ISOC95","__USE_ISOC95","1","/usr/include/features.h",0
+"__USE_ISOC99","__USE_ISOC99","1","/usr/include/features.h",0
+"__USE_ISOC11","__USE_ISOC11","1","/usr/include/features.h",0
+"__GLIBC_USE_ISOC2X","__GLIBC_USE_ISOC2X","0","/usr/include/features.h",0
+"__KERNEL_STRICT_NAMES","__KERNEL_STRICT_NAMES","","/usr/include/features.h",0
+"__NO_INLINE__","__NO_INLINE__","1","",0
+"__GLIBC_USE_IEC_60559_TYPES_EXT","__GLIBC_USE_IEC_60559_TYPES_EXT","0","/usr/include/x86_64-linux-gnu/bits/libc-header-start.h",0
+"__GLIBC_USE_IEC_60559_FUNCS_EXT_C2X","__GLIBC_USE_IEC_60559_FUNCS_EXT_C2X","0","/usr/include/x86_64-linux-gnu/bits/libc-header-start.h",0
+"__GLIBC_USE_IEC_60559_FUNCS_EXT","__GLIBC_USE_IEC_60559_FUNCS_EXT","0","/usr/include/x86_64-linux-gnu/bits/libc-header-start.h",0
+"__GLIBC_USE_IEC_60559_EXT","__GLIBC_USE_IEC_60559_EXT","0","/usr/include/x86_64-linux-gnu/bits/libc-header-start.h",0
+"__GLIBC_USE_IEC_60559_BFP_EXT_C2X","__GLIBC_USE_IEC_60559_BFP_EXT_C2X","0","/usr/include/x86_64-linux-gnu/bits/libc-header-start.h",0
+"__GLIBC_USE_IEC_60559_BFP_EXT","__GLIBC_USE_IEC_60559_BFP_EXT","0","/usr/include/x86_64-linux-gnu/bits/libc-header-start.h",0
+"__GLIBC_USE_LIB_EXT2","__GLIBC_USE_LIB_EXT2","0","/usr/include/x86_64-linux-gnu/bits/libc-header-start.h",0
+"__GLIBC_INTERNAL_STARTING_HEADER_IMPLEMENTATION","__GLIBC_INTERNAL_STARTING_HEADER_IMPLEMENTATION","","/usr/include/stdlib.h",0
+"__GLIBC_INTERNAL_STARTING_HEADER_IMPLEMENTATION","__GLIBC_INTERNAL_STARTING_HEADER_IMPLEMENTATION","","/usr/include/string.h",0
+"__need_NULL","__need_NULL","","/usr/include/stdlib.h",0
+"__need_NULL","__need_NULL","","/usr/include/string.h",0
+"NULL","NULL","((void *)0)","/usr/lib/gcc/x86_64-linux-gnu/13/include/stddef.h",0
+"__need_wchar_t","__need_wchar_t","","/usr/include/stdlib.h",0
+"_BSD_WCHAR_T_","_BSD_WCHAR_T_","","/usr/lib/gcc/x86_64-linux-gnu/13/include/stddef.h",0
+"__DEFINED_wchar_t","__DEFINED_wchar_t","","/usr/lib/gcc/x86_64-linux-gnu/13/include/stddef.h",0
+"_WCHAR_T_DECLARED","_WCHAR_T_DECLARED","","/usr/lib/gcc/x86_64-linux-gnu/13/include/stddef.h",0
+"_GCC_WCHAR_T","_GCC_WCHAR_T","","/usr/lib/gcc/x86_64-linux-gnu/13/include/stddef.h",0
+"__INT_WCHAR_T_H","__INT_WCHAR_T_H","","/usr/lib/gcc/x86_64-linux-gnu/13/include/stddef.h",0
+"___int_wchar_t_h","___int_wchar_t_h","","/usr/lib/gcc/x86_64-linux-gnu/13/include/stddef.h",0
+"_WCHAR_T_H","_WCHAR_T_H","","/usr/lib/gcc/x86_64-linux-gnu/13/include/stddef.h",0
+"_WCHAR_T_DEFINED","_WCHAR_T_DEFINED","","/usr/lib/gcc/x86_64-linux-gnu/13/include/stddef.h",0
+"_WCHAR_T_DEFINED_","_WCHAR_T_DEFINED_","","/usr/lib/gcc/x86_64-linux-gnu/13/include/stddef.h",0
+"_WCHAR_T_","_WCHAR_T_","","/usr/lib/gcc/x86_64-linux-gnu/13/include/stddef.h",0
+"__WCHAR_T","__WCHAR_T","","/usr/lib/gcc/x86_64-linux-gnu/13/include/stddef.h",0
+"_T_WCHAR","_T_WCHAR","","/usr/lib/gcc/x86_64-linux-gnu/13/include/stddef.h",0
+"_T_WCHAR_","_T_WCHAR_","","/usr/lib/gcc/x86_64-linux-gnu/13/include/stddef.h",0
+"_WCHAR_T","_WCHAR_T","","/usr/lib/gcc/x86_64-linux-gnu/13/include/stddef.h",0
+"__WCHAR_T__","__WCHAR_T__","","/usr/lib/gcc/x86_64-linux-gnu/13/include/stddef.h",0
+"__wchar_t__","__wchar_t__","","/usr/lib/gcc/x86_64-linux-gnu/13/include/stddef.h",0
+"__need_size_t","__need_size_t","","/usr/include/stdlib.h",0
+"__need_size_t","__need_size_t","","/usr/include/string.h",0
+"__size_t","__size_t","","/usr/lib/gcc/x86_64-linux-gnu/13/include/stddef.h",0
+"_SIZET_","_SIZET_","","/usr/lib/gcc/x86_64-linux-gnu/13/include/stddef.h",0
+"_GCC_SIZE_T","_GCC_SIZE_T","","/usr/lib/gcc/x86_64-linux-gnu/13/include/stddef.h",0
+"___int_size_t_h","___int_size_t_h","","/usr/lib/gcc/x86_64-linux-gnu/13/include/stddef.h",0
+"__DEFINED_size_t","__DEFINED_size_t","","/usr/lib/gcc/x86_64-linux-gnu/13/include/stddef.h",0
+"_SIZE_T_DECLARED","_SIZE_T_DECLARED","","/usr/lib/gcc/x86_64-linux-gnu/13/include/stddef.h",0
+"_BSD_SIZE_T_DEFINED_","_BSD_SIZE_T_DEFINED_","","/usr/lib/gcc/x86_64-linux-gnu/13/include/stddef.h",0
+"_SIZE_T_DEFINED","_SIZE_T_DEFINED","","/usr/lib/gcc/x86_64-linux-gnu/13/include/stddef.h",0
+"_SIZE_T_DEFINED_","_SIZE_T_DEFINED_","","/usr/lib/gcc/x86_64-linux-gnu/13/include/stddef.h",0
+"_BSD_SIZE_T_","_BSD_SIZE_T_","","/usr/lib/gcc/x86_64-linux-gnu/13/include/stddef.h",0
+"_SIZE_T_","_SIZE_T_","","/usr/lib/gcc/x86_64-linux-gnu/13/include/stddef.h",0
+"__SIZE_T","__SIZE_T","","/usr/lib/gcc/x86_64-linux-gnu/13/include/stddef.h",0
+"_T_SIZE","_T_SIZE","","/usr/lib/gcc/x86_64-linux-gnu/13/include/stddef.h",0
+"_T_SIZE_","_T_SIZE_","","/usr/lib/gcc/x86_64-linux-gnu/13/include/stddef.h",0
+"_SYS_SIZE_T_H","_SYS_SIZE_T_H","","/usr/lib/gcc/x86_64-linux-gnu/13/include/stddef.h",0
+"_SIZE_T","_SIZE_T","","/usr/lib/gcc/x86_64-linux-gnu/13/include/stddef.h",0
+"__SIZE_T__","__SIZE_T__","","/usr/lib/gcc/x86_64-linux-gnu/13/include/stddef.h",0
+"__size_t__","__size_t__","","/usr/lib/gcc/x86_64-linux-gnu/13/include/stddef.h",0
+"_PTRDIFF_T","_PTRDIFF_T","","/usr/lib/gcc/x86_64-linux-gnu/13/include/stddef.h",0
+"_T_PTRDIFF_","_T_PTRDIFF_","","/usr/lib/gcc/x86_64-linux-gnu/13/include/stddef.h",0
+"_T_PTRDIFF","_T_PTRDIFF","","/usr/lib/gcc/x86_64-linux-gnu/13/include/stddef.h",0
+"__PTRDIFF_T","__PTRDIFF_T","","/usr/lib/gcc/x86_64-linux-gnu/13/include/stddef.h",0
+"_PTRDIFF_T_","_PTRDIFF_T_","","/usr/lib/gcc/x86_64-linux-gnu/13/include/stddef.h",0
+"_BSD_PTRDIFF_T_","_BSD_PTRDIFF_T_","","/usr/lib/gcc/x86_64-linux-gnu/13/include/stddef.h",0
+"___int_ptrdiff_t_h","___int_ptrdiff_t_h","","/usr/lib/gcc/x86_64-linux-gnu/13/include/stddef.h",0
+"_GCC_PTRDIFF_T","_GCC_PTRDIFF_T","","/usr/lib/gcc/x86_64-linux-gnu/13/include/stddef.h",0
+"_PTRDIFF_T_DECLARED","_PTRDIFF_T_DECLARED","","/usr/lib/gcc/x86_64-linux-gnu/13/include/stddef.h",0
+"__DEFINED_ptrdiff_t","__DEFINED_ptrdiff_t","","/usr/lib/gcc/x86_64-linux-gnu/13/include/stddef.h",0
+"__PTRDIFF_TYPE__","__PTRDIFF_TYPE__","long int","",0
+"__SIZE_TYPE__","__SIZE_TYPE__","long unsigned int","",0
+"__WCHAR_TYPE__","__WCHAR_TYPE__","int","",0
+"_STDDEF_H","_STDDEF_H","","/usr/lib/gcc/x86_64-linux-gnu/13/include/stddef.h",0
+"_GCC_MAX_ALIGN_T","_GCC_MAX_ALIGN_T","","/usr/lib/gcc/x86_64-linux-gnu/13/include/stddef.h",0
+"__CFLOAT64X","__CFLOAT64X","_Complex _Float64x","/usr/include/x86_64-linux-gnu/bits/floatn-common.h",0
+"__CFLOAT32X","__CFLOAT32X","_Complex _Float32x","/usr/include/x86_64-linux-gnu/bits/floatn-common.h",0
+"__CFLOAT64","__CFLOAT64","_Complex _Float64","/usr/include/x86_64-linux-gnu/bits/floatn-common.h",0
+"__CFLOAT32","__CFLOAT32","_Complex _Float32","/usr/include/x86_64-linux-gnu/bits/floatn-common.h",0
+"__HAVE_FLOATN_NOT_TYPEDEF","__HAVE_FLOATN_NOT_TYPEDEF","1","/usr/include/x86_64-linux-gnu/bits/floatn-common.h",0
+"__HAVE_FLOAT128_UNLIKE_LDBL","__HAVE_FLOAT128_UNLIKE_LDBL","(__HAVE_DISTINCT_FLOAT128 && __LDBL_MANT_DIG__ != 113)","/usr/include/x86_64-linux-gnu/bits/floatn-common.h",0
+"__HAVE_DISTINCT_FLOAT128X","__HAVE_DISTINCT_FLOAT128X","__HAVE_FLOAT128X","/usr/include/x86_64-linux-gnu/bits/floatn-common.h",0
+"__HAVE_FLOAT128X","__HAVE_FLOAT128X","0","/usr/include/x86_64-linux-gnu/bits/floatn-common.h",0
+"__HAVE_DISTINCT_FLOAT64X","__HAVE_DISTINCT_FLOAT64X","0","/usr/include/x86_64-linux-gnu/bits/floatn-common.h",0
+"__HAVE_DISTINCT_FLOAT32X","__HAVE_DISTINCT_FLOAT32X","0","/usr/include/x86_64-linux-gnu/bits/floatn-common.h",0
+"__HAVE_DISTINCT_FLOAT64","__HAVE_DISTINCT_FLOAT64","0","/usr/include/x86_64-linux-gnu/bits/floatn-common.h",0
+"__HAVE_DISTINCT_FLOAT32","__HAVE_DISTINCT_FLOAT32","0","/usr/include/x86_64-linux-gnu/bits/floatn-common.h",0
+"__HAVE_DISTINCT_FLOAT16","__HAVE_DISTINCT_FLOAT16","__HAVE_FLOAT16","/usr/include/x86_64-linux-gnu/bits/floatn-common.h",0
+"__HAVE_FLOAT16","__HAVE_FLOAT16","0","/usr/include/x86_64-linux-gnu/bits/floatn-common.h",0
+"__HAVE_FLOAT32X","__HAVE_FLOAT32X","1","/usr/include/x86_64-linux-gnu/bits/floatn-common.h",0
+"__HAVE_FLOAT64","__HAVE_FLOAT64","1","/usr/include/x86_64-linux-gnu/bits/floatn-common.h",0
+"__HAVE_FLOAT32","__HAVE_FLOAT32","1","/usr/include/x86_64-linux-gnu/bits/floatn-common.h",0
+"_BITS_FLOATN_COMMON_H","_BITS_FLOATN_COMMON_H","","/usr/include/x86_64-linux-gnu/bits/floatn-common.h",1
+"__HAVE_FLOAT64X","__HAVE_FLOAT64X","1","/usr/include/x86_64-linux-gnu/bits/floatn.h",0
+"__HAVE_FLOAT64X_LONG_DOUBLE","__HAVE_FLOAT64X_LONG_DOUBLE","1","/usr/include/x86_64-linux-gnu/bits/floatn.h",0
+"__CFLOAT128","__CFLOAT128","_Complex _Float128","/usr/include/x86_64-linux-gnu/bits/floatn.h",0
+"__HAVE_DISTINCT_FLOAT128","__HAVE_DISTINCT_FLOAT128","1","/usr/include/x86_64-linux-gnu/bits/floatn.h",0
+"__HAVE_FLOAT128","__HAVE_FLOAT128","1","/usr/include/x86_64-linux-gnu/bits/floatn.h",0
+"_BITS_FLOATN_H","_BITS_FLOATN_H","","/usr/include/x86_64-linux-gnu/bits/floatn.h",1
+"_STDLIB_H","_STDLIB_H","1","/usr/include/stdlib.h",1
+"__COMPAR_FN_T","__COMPAR_FN_T","","/usr/include/stdlib.h",0
+"MB_CUR_MAX","MB_CUR_MAX","(__ctype_get_mb_cur_max ())","/usr/include/stdlib.h",0
+"EXIT_SUCCESS","EXIT_SUCCESS","0","/usr/include/stdlib.h",0
+"EXIT_FAILURE","EXIT_FAILURE","1","/usr/include/stdlib.h",0
+"RAND_MAX","RAND_MAX","2147483647","/usr/include/stdlib.h",0
+"__lldiv_t_defined","__lldiv_t_defined","1","/usr/include/stdlib.h",0
+"__ldiv_t_defined","__ldiv_t_defined","1","/usr/include/stdlib.h",0
+"_STRING_H","_STRING_H","1","/usr/include/string.h",1
+"offsetof","offsetof(TYPE,MEMBER)","__builtin_offsetof (TYPE, MEMBER)","/usr/lib/gcc/x86_64-linux-gnu/13/include/stddef.h",0
+"_ANSI_STDDEF_H","_ANSI_STDDEF_H","","/usr/lib/gcc/x86_64-linux-gnu/13/include/stddef.h",0
+"_STDDEF_H_","_STDDEF_H_","","/usr/lib/gcc/x86_64-linux-gnu/13/include/stddef.h",0
+"mem_release","mem_release","mem_free","mem.h",0
+"MEM_MAX","MEM_MAX","4096","mem.h",0
+"MEM_H","MEM_H","","mem.h",1
+"SYS_H","SYS_H","","ext/sys.h",1
+"__attr_dealloc","__attr_dealloc(dealloc,argno)","__attribute__ ((__malloc__ (dealloc, argno)))","/usr/include/x86_64-linux-gnu/sys/cdefs.h",0
+"__attr_access_none","__attr_access_none(argno)","__attribute__ ((__access__ (__none__, argno)))","/usr/include/x86_64-linux-gnu/sys/cdefs.h",0
+"__fortified_attr_access","__fortified_attr_access(a,o,s)","__attr_access ((a, o, s))","/usr/include/x86_64-linux-gnu/sys/cdefs.h",0
+"__attr_access","__attr_access(x)","__attribute__ ((__access__ x))","/usr/include/x86_64-linux-gnu/sys/cdefs.h",0
+"__glibc_macro_warning","__glibc_macro_warning(message)","__glibc_macro_warning1 (GCC warning message)","/usr/include/x86_64-linux-gnu/sys/cdefs.h",0
+"__glibc_macro_warning1","__glibc_macro_warning1(message)","_Pragma (#message)","/usr/include/x86_64-linux-gnu/sys/cdefs.h",0
+"__REDIRECT_NTH_LDBL","__REDIRECT_NTH_LDBL(name,proto,alias)","__REDIRECT_NTH (name, proto, alias)","/usr/include/x86_64-linux-gnu/sys/cdefs.h",0
+"__REDIRECT_LDBL","__REDIRECT_LDBL(name,proto,alias)","__REDIRECT (name, proto, alias)","/usr/include/x86_64-linux-gnu/sys/cdefs.h",0
+"__LDBL_REDIR_DECL","__LDBL_REDIR_DECL(name)","","/usr/include/x86_64-linux-gnu/sys/cdefs.h",0
+"__LDBL_REDIR2_DECL","__LDBL_REDIR2_DECL(name)","","/usr/include/x86_64-linux-gnu/sys/cdefs.h",0
+"__LDBL_REDIR_NTH","__LDBL_REDIR_NTH(name,proto)","name proto __THROW","/usr/include/x86_64-linux-gnu/sys/cdefs.h",0
+"__LDBL_REDIR1_NTH","__LDBL_REDIR1_NTH(name,proto,alias)","name proto __THROW","/usr/include/x86_64-linux-gnu/sys/cdefs.h",0
+"__LDBL_REDIR","__LDBL_REDIR(name,proto)","name proto","/usr/include/x86_64-linux-gnu/sys/cdefs.h",0
+"__LDBL_REDIR1","__LDBL_REDIR1(name,proto,alias)","name proto","/usr/include/x86_64-linux-gnu/sys/cdefs.h",0
+"__glibc_likely","__glibc_likely(cond)","__builtin_expect ((cond), 1)","/usr/include/x86_64-linux-gnu/sys/cdefs.h",0
+"__glibc_unlikely","__glibc_unlikely(cond)","__builtin_expect ((cond), 0)","/usr/include/x86_64-linux-gnu/sys/cdefs.h",0
+"__va_arg_pack_len","__va_arg_pack_len()","__builtin_va_arg_pack_len ()","/usr/include/x86_64-linux-gnu/sys/cdefs.h",0
+"__va_arg_pack","__va_arg_pack()","__builtin_va_arg_pack ()","/usr/include/x86_64-linux-gnu/sys/cdefs.h",0
+"__attribute_format_strfmon__","__attribute_format_strfmon__(a,b)","__attribute__ ((__format__ (__strfmon__, a, b)))","/usr/include/x86_64-linux-gnu/sys/cdefs.h",0
+"__attribute_format_arg__","__attribute_format_arg__(x)","__attribute__ ((__format_arg__ (x)))","/usr/include/x86_64-linux-gnu/sys/cdefs.h",0
+"__attribute_deprecated_msg__","__attribute_deprecated_msg__(msg)","__attribute__ ((__deprecated__ (msg)))","/usr/include/x86_64-linux-gnu/sys/cdefs.h",0
+"__attribute_alloc_align__","__attribute_alloc_align__(param)","__attribute__ ((__alloc_align__ param))","/usr/include/x86_64-linux-gnu/sys/cdefs.h",0
+"__attribute_alloc_size__","__attribute_alloc_size__(params)","__attribute__ ((__alloc_size__ params))","/usr/include/x86_64-linux-gnu/sys/cdefs.h",0
+"__ASMNAME2","__ASMNAME2(prefix,cname)","__STRING (prefix) cname","/usr/include/x86_64-linux-gnu/sys/cdefs.h",0
+"__ASMNAME","__ASMNAME(cname)","__ASMNAME2 (__USER_LABEL_PREFIX__, cname)","/usr/include/x86_64-linux-gnu/sys/cdefs.h",0
+"__REDIRECT_NTHNL","__REDIRECT_NTHNL(name,proto,alias)","name proto __asm__ (__ASMNAME (#alias)) __THROWNL","/usr/include/x86_64-linux-gnu/sys/cdefs.h",0
+"__errordecl","__errordecl(name,msg)","extern void name (void) __attribute__((__error__ (msg)))","/usr/include/x86_64-linux-gnu/sys/cdefs.h",0
+"__warnattr","__warnattr(msg)","__attribute__((__warning__ (msg)))","/usr/include/x86_64-linux-gnu/sys/cdefs.h",0
+"__glibc_objsize","__glibc_objsize(__o)","__bos (__o)","/usr/include/x86_64-linux-gnu/sys/cdefs.h",0
+"__glibc_objsize0","__glibc_objsize0(__o)","__bos0 (__o)","/usr/include/x86_64-linux-gnu/sys/cdefs.h",0
+"__bos0","__bos0(ptr)","__builtin_object_size (ptr, 0)","/usr/include/x86_64-linux-gnu/sys/cdefs.h",0
+"__bos","__bos(ptr)","__builtin_object_size (ptr, __USE_FORTIFY_LEVEL > 1)","/usr/include/x86_64-linux-gnu/sys/cdefs.h",0
+"__STRING","__STRING(x)","#x","/usr/include/x86_64-linux-gnu/sys/cdefs.h",0
+"__CONCAT","__CONCAT(x,y)","x ## y","/usr/include/x86_64-linux-gnu/sys/cdefs.h",0
+"__NTHNL","__NTHNL(fct)","__attribute__ ((__nothrow__)) fct","/usr/include/x86_64-linux-gnu/sys/cdefs.h",0
+"__NTH","__NTH(fct)","__attribute__ ((__nothrow__ __LEAF)) fct","/usr/include/x86_64-linux-gnu/sys/cdefs.h",0
+"__glibc_has_extension","__glibc_has_extension(ext)","0","/usr/include/x86_64-linux-gnu/sys/cdefs.h",0
+"__glibc_has_builtin","__glibc_has_builtin(name)","__has_builtin (name)","/usr/include/x86_64-linux-gnu/sys/cdefs.h",0
+"__glibc_has_attribute","__glibc_has_attribute(attr)","__has_attribute (attr)","/usr/include/x86_64-linux-gnu/sys/cdefs.h",0
+"__GNUC_PREREQ","__GNUC_PREREQ(maj,min)","((__GNUC__ << 16) + __GNUC_MINOR__ >= ((maj) << 16) + (min))","/usr/include/features.h",0
+"__glibc_clang_prereq","__glibc_clang_prereq(maj,min)","0","/usr/include/features.h",0
+"__GLIBC_PREREQ","__GLIBC_PREREQ(maj,min)","((__GLIBC__ << 16) + __GLIBC_MINOR__ >= ((maj) << 16) + (min))","/usr/include/features.h",0
+"__GLIBC_USE","__GLIBC_USE(F)","__GLIBC_USE_ ## F","/usr/include/features.h",0
+"__f64x","__f64x(x)","x ## f64x","/usr/include/x86_64-linux-gnu/bits/floatn-common.h",0
+"__f32x","__f32x(x)","x ## f32x","/usr/include/x86_64-linux-gnu/bits/floatn-common.h",0
+"__f64","__f64(x)","x ## f64","/usr/include/x86_64-linux-gnu/bits/floatn-common.h",0
+"__f32","__f32(x)","x ## f32","/usr/include/x86_64-linux-gnu/bits/floatn-common.h",0
+"__f128","__f128(x)","x ## f128","/usr/include/x86_64-linux-gnu/bits/floatn.h",0
+"MEM_TRACE","MEM_TRACE(p)","mem_trace(p)","mem.h",0
+"MEM_APPLY","MEM_APPLY(fn,x)","fn(x)","mem.h",0
+"MEM_POOL_SET","MEM_POOL_SET(array)",".pools = (array), .count = 1","mem.h",0
+"MEM_USED","MEM_USED(p)","((p)->used)","mem.h",0
+"MEM_POOL_RESET","MEM_POOL_RESET(p)","(((struct pool *)(p))->used = (size_t)MEM_MAX)","mem.h",0
+"MEM_RENEW","MEM_RENEW(x)","do { MEM_DROP(x); MEM_NEW(x); } while (0)","mem.h",0
+"MEM_DROP","MEM_DROP(p)","do { mem_free(p); (p) = NULL; mem_live--; } while (0)","mem.h",0
+"MEM_NEW","MEM_NEW(x)","((x) = mem_alloc(sizeof(*(x))), mem_zero((x), sizeof(*(x))))","mem.h",0
+"LOCAL_ZERO","LOCAL_ZERO(p,n)","mem_zero((p), (n))","mem.c",0
+"SYS_LOG","SYS_LOG(m)","sys_log(m)","ext/sys.h",0

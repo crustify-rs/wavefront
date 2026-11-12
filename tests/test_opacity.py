@@ -3,12 +3,13 @@ left: `edges/layout_uses.ql`, `wavefront.opacity`, and the items' fields."""
 from __future__ import annotations
 
 import csv
-import shutil
 import subprocess
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
+
+import codeql_fixtures as cf
 
 from test_schedule_parity import _schedule, _scheduled_items
 from test_selection import _config, _inventory, _modules, _rec
@@ -29,7 +30,7 @@ def _key(r: dict) -> tuple:
 
 
 class LayoutUsesQueryTests(unittest.TestCase):
-    @unittest.skipUnless(shutil.which("codeql"), "codeql not on PATH")
+    @unittest.skipUnless(cf.codeql_enabled(), cf.SKIP_REASON)
     def test_fixture_table_matches_golden(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             db, bqrs, out = (Path(td) / n for n in ("db", "q.bqrs", "q.csv"))

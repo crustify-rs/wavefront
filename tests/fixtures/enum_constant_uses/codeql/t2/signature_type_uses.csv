@@ -1,0 +1,3 @@
+"function_name","function_def_file","type_name","type_kind","type_def_file","position"
+"fx_buf_grow","buf.c","size_t","typedef","","param_1"
+"fx_buf_grow","buf.c","fx_buf","struct","buf.c","param_0"

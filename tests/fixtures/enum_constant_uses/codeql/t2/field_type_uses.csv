@@ -1,0 +1,3 @@
+"struct_name","struct_def_file","field_name","type_name","type_kind","type_def_file","type_decl_file"
+"fx_buf","buf.c","alloc","size_t","typedef","","/usr/lib/gcc/x86_64-linux-gnu/13/include/stddef.h"
+"fx_buf","buf.c","len","size_t","typedef","","/usr/lib/gcc/x86_64-linux-gnu/13/include/stddef.h"

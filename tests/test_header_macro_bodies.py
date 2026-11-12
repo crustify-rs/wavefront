@@ -6,10 +6,8 @@ nothing and depends on nothing; a macro an external header defines stays
 signature-only, as an external function does."""
 from __future__ import annotations
 
-import csv
 import json
 import os
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -17,37 +15,15 @@ import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import codeql_fixtures as cf
 from compose import deps_dag, syms_manifest
-from compose.extract_csvs import extract_t1_t2
-from wavefront.resources import data_root
 
-FIXTURE = Path(__file__).parent / "fixtures" / "header_macro_bodies"
+NAME = "header_macro_bodies"
+FIXTURE = cf.FIXTURES / NAME
 SRC = Path(__file__).resolve().parents[1] / "src"
-#: One `--command` per translation unit: CodeQL splits a command on
-#: whitespace and honours no shell quoting.
-BUILD = ("--command=gcc -std=c11 -I. -c mem.c -o /dev/null",
-         "--command=gcc -std=c11 -I. -c use.c -o /dev/null")
 
-
-def _rows(path: Path) -> list[dict]:
-    with path.open(newline="") as f:
-        return list(csv.DictReader(f))
-
-
-def _key(r: dict) -> tuple:
-    return tuple(r[k] for k in sorted(r))
-
-
-def _database(td: Path) -> Path:
-    db = td / "db"
-    subprocess.run(
-        ["codeql", "database", "create", str(db), "--language=cpp",
-         "--source-root", str(FIXTURE), *BUILD],
-        check=True, capture_output=True)
-    return db
-
-
-GOLDEN = _rows(FIXTURE / "macro_references.csv")
+#: The fixture's own macro references, of its committed tables.
+GOLDEN = cf.relative(cf.rows(cf.tables(NAME) / "t2" / "macro_references.csv"))
 
 
 def _additions(name: str, def_file: str) -> dict:
@@ -136,21 +112,14 @@ class BodyWalkTests(unittest.TestCase):
         self.assertEqual(syms[("SYS_LOG", "ext/sys.h")].dep_on_syms, set())
 
 
-@unittest.skipUnless(shutil.which("codeql") and shutil.which("gcc"),
-                     "codeql or gcc not on PATH")
 class HeaderMacroScheduleTests(unittest.TestCase):
-    """The fixture extracted and scheduled end to end."""
+    """The fixture's committed tables scheduled end to end."""
 
     @classmethod
     def setUpClass(cls) -> None:
         cls._td = tempfile.TemporaryDirectory()
         td = Path(cls._td.name)
-        db = _database(td)
-        state = td / "state"
-        ok, failed = extract_t1_t2(db, data_root(), state / "codeql")
-        assert not failed, f"{failed} queries failed"
-        cls.references = [r for r in _rows(state / "codeql" / "t2" / "macro_references.csv")
-                          if not any(str(v).startswith("/") for v in r.values())]
+        state = cf.state_dir(NAME, td)
         config = td / "wavefront-config.json"
         config.write_text(json.dumps({
             "state_dir": str(state),
@@ -173,10 +142,6 @@ class HeaderMacroScheduleTests(unittest.TestCase):
     @classmethod
     def tearDownClass(cls) -> None:
         cls._td.cleanup()
-
-    def test_the_table_matches_the_golden(self) -> None:
-        self.assertEqual(sorted(map(_key, self.references)),
-                         sorted(map(_key, GOLDEN)))
 
     def test_a_header_macro_orders_after_the_functions_it_calls(self) -> None:
         self.assertGreater(self.wave["MEM_NEW"], self.wave["mem_alloc"])
@@ -205,6 +170,15 @@ class HeaderMacroScheduleTests(unittest.TestCase):
         cut = ({d["name"] for d in macro["depends_on"]["cut"]}
                | {d["name"] for d in fn["depends_on"]["cut"]})
         self.assertTrue(cut & {"MEM_TRACE", "mem_trace"})
+
+
+@unittest.skipUnless(cf.codeql_enabled(), cf.SKIP_REASON)
+class HeaderMacroTablesTests(unittest.TestCase):
+    """The committed tables are what the queries extract from the fixture."""
+
+    def test_the_committed_tables_are_current(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            self.assertEqual(cf.differences(NAME, cf.extract(NAME, Path(td))), [])
 
 
 if __name__ == "__main__":

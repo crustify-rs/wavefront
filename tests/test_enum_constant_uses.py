@@ -6,10 +6,8 @@ before the enum. The enum lists those users in its record's `non_opaque_in`.
 """
 from __future__ import annotations
 
-import csv
 import json
 import os
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -17,32 +15,20 @@ import unittest
 from pathlib import Path
 from unittest.mock import MagicMock
 
+import codeql_fixtures as cf
 from compose import syms_manifest
-from compose.extract_csvs import extract_t1_t2
 from compose.reach import Reach
-from wavefront.resources import data_root
 
-FIXTURE = Path(__file__).parent / "fixtures" / "enum_constant_uses"
+NAME = "enum_constant_uses"
+FIXTURE = cf.FIXTURES / NAME
 SRC = Path(__file__).resolve().parents[1] / "src"
-BUILD = ("--command=gcc -std=c11 -I. -c buf.c -o /dev/null",)
-
-
-def _rows(path: Path) -> list[dict]:
-    with path.open(newline="") as f:
-        return list(csv.DictReader(f))
-
-
-def _key(r: dict) -> tuple:
-    return tuple(r[k] for k in sorted(r))
-
-
-GOLDEN = _rows(FIXTURE / "enum_constant_uses.csv")
+TABLE = cf.tables(NAME) / "t2" / "enum_constant_uses.csv"
 
 
 def _reach() -> Reach:
     """A `Reach` holding only the golden enum-constant index."""
     reach = Reach.__new__(Reach)
-    reach._build_enum_constant_indexes(FIXTURE / "enum_constant_uses.csv")
+    reach._build_enum_constant_indexes(TABLE)
     return reach
 
 
@@ -127,25 +113,14 @@ class DependsOnTests(unittest.TestCase):
             self.assertEqual(dep, {"syms": [], "types": []})
 
 
-@unittest.skipUnless(shutil.which("codeql") and shutil.which("gcc"),
-                     "codeql or gcc not on PATH")
 class EnumConstantScheduleTests(unittest.TestCase):
-    """The fixture extracted, queried and scheduled end to end."""
+    """The fixture's committed tables queried and scheduled end to end."""
 
     @classmethod
     def setUpClass(cls) -> None:
         cls._td = tempfile.TemporaryDirectory()
         td = Path(cls._td.name)
-        db = td / "db"
-        subprocess.run(
-            ["codeql", "database", "create", str(db), "--language=cpp",
-             "--source-root", str(FIXTURE), *BUILD],
-            check=True, capture_output=True)
-        state = td / "state"
-        _ok, failed = extract_t1_t2(db, data_root(), state / "codeql")
-        assert not failed, f"{failed} queries failed"
-        cls.table = [r for r in _rows(state / "codeql" / "t2" / "enum_constant_uses.csv")
-                     if not any(str(v).startswith("/") for v in r.values())]
+        state = cf.state_dir(NAME, td)
         cls.config = td / "wavefront-config.json"
         cls.config.write_text(json.dumps({
             "state_dir": str(state),
@@ -175,9 +150,6 @@ class EnumConstantScheduleTests(unittest.TestCase):
 
     def _deps(self, name: str) -> set[str]:
         return {d["name"] for d in self.items[name]["depends_on"]["scheduled"]}
-
-    def test_the_table_matches_the_golden(self) -> None:
-        self.assertEqual(sorted(map(_key, self.table)), sorted(map(_key, GOLDEN)))
 
     def test_a_function_returning_a_constant_through_int_follows_the_enum(self) -> None:
         self.assertIn("fx_error", self._deps("fx_buf_grow"))
@@ -212,6 +184,15 @@ class EnumConstantScheduleTests(unittest.TestCase):
     def test_an_untagged_enum_no_typedef_names_orders_nothing(self) -> None:
         self.assertNotIn("fx_error", self._deps("fx_anon"))
         self.assertEqual(self.items["fx_anon"]["depends_on"]["scheduled"], [])
+
+
+@unittest.skipUnless(cf.codeql_enabled(), cf.SKIP_REASON)
+class EnumConstantTablesTests(unittest.TestCase):
+    """The committed tables are what the queries extract from the fixture."""
+
+    def test_the_committed_tables_are_current(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            self.assertEqual(cf.differences(NAME, cf.extract(NAME, Path(td))), [])
 
 
 if __name__ == "__main__":

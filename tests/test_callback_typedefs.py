@@ -5,11 +5,12 @@ variant, none of them the typedef, and the typedef's field edge was lost."""
 from __future__ import annotations
 
 import csv
-import shutil
 import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+
+import codeql_fixtures as cf
 
 from wavefront.resources import data_root
 
@@ -34,7 +35,7 @@ def _key(r: dict) -> tuple:
 class CallbackTypedefQueryTests(unittest.TestCase):
     """The queries reproduce the golden tables for `impl.c` and `user.c`."""
 
-    @unittest.skipUnless(shutil.which("codeql"), "codeql not on PATH")
+    @unittest.skipUnless(cf.codeql_enabled(), cf.SKIP_REASON)
     def test_fixture_tables_match_golden(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             db = Path(td) / "db"

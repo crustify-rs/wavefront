@@ -4,11 +4,12 @@ type (`struct { int h; } ext;`) keep their `ext.h` paths."""
 from __future__ import annotations
 
 import csv
-import shutil
 import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+
+import codeql_fixtures as cf
 
 from wavefront.resources import data_root
 
@@ -38,7 +39,7 @@ def _key(r: dict) -> tuple:
 class UnnamedMemberQueryTests(unittest.TestCase):
     """The queries reproduce the golden tables for `members.c`."""
 
-    @unittest.skipUnless(shutil.which("codeql"), "codeql not on PATH")
+    @unittest.skipUnless(cf.codeql_enabled(), cf.SKIP_REASON)
     def test_fixture_tables_match_golden(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             db = Path(td) / "db"

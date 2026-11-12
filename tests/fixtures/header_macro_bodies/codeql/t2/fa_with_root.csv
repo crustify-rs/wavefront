@@ -1,0 +1,3 @@
+"enclosing_name","access_file","struct_name","root_struct_name","root_struct_def_file","field_name","field_path","access_kind","access_line"
+"widget_make","use.c","pool","pool","mem.h","used","used","write",24
+"widget_make","use.c","pool","pool","mem.h","used","used","read",25

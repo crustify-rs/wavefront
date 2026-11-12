@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import csv
-import shutil
 import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+
+import codeql_fixtures as cf
 
 from compose import slot_casts
 from wavefront.resources import data_root
@@ -35,7 +36,7 @@ def _edge(rel: str, src: tuple, dst: tuple) -> dict:
 class SlotCastQueryTests(unittest.TestCase):
     """The queries reproduce the golden tables for `slots.c`."""
 
-    @unittest.skipUnless(shutil.which("codeql"), "codeql not on PATH")
+    @unittest.skipUnless(cf.codeql_enabled(), cf.SKIP_REASON)
     def test_fixture_tables_match_golden(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             db = Path(td) / "db"

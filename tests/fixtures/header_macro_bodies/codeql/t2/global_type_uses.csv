@@ -1,0 +1,3 @@
+"global_name","global_def_file","type_name","type_kind","type_def_file"
+"pools","use.c","pool","struct","mem.h"
+"the_set","use.c","pool_set","struct","mem.h"

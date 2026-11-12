@@ -1,0 +1,10 @@
+"macro_name","macro_def_file","enclosing_name","invocation_file","invocation_line"
+"__PTRDIFF_TYPE__","","","/usr/lib/gcc/x86_64-linux-gnu/13/include/stddef.h",145
+"__SIZE_TYPE__","","","/usr/lib/gcc/x86_64-linux-gnu/13/include/stddef.h",214
+"__WCHAR_TYPE__","","","/usr/lib/gcc/x86_64-linux-gnu/13/include/stddef.h",329
+"__STDC_VERSION__","","","/usr/lib/gcc/x86_64-linux-gnu/13/include/stddef.h",418
+"__STDC_VERSION__","","","/usr/lib/gcc/x86_64-linux-gnu/13/include/stddef.h",447
+"__STDC_VERSION__","","","/usr/lib/gcc/x86_64-linux-gnu/13/include/stddef.h",455
+"FX_CHECK_TWICE","err.h","fx_check","buf.c",30
+"FX_PASS","err.h","fx_check","buf.c",31
+"FX_CHECK_ALLOC","err.h","fx_check","buf.c",30

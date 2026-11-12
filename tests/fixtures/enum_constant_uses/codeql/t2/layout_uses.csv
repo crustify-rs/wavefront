@@ -1,0 +1,10 @@
+"user_name","user_def_file","user_kind","type_name","type_def_file","use_kind","use_file","use_line"
+"fx_hold","buf.c","function","fx_error","err.h","value","buf.c",42
+"fx_hold","buf.c","function","fx_error","err.h","value","buf.c",43
+"fx_check","buf.c","function","fx_error","err.h","constant","buf.c",30
+"fx_check","buf.c","function","fx_error","err.h","constant","buf.c",31
+"fx_kind_of","buf.c","function","fx_kind","err.h","constant","buf.c",21
+"fx_buf_grow","buf.c","function","fx_error","err.h","constant","buf.c",14
+"fx_buf_grow","buf.c","function","fx_error","err.h","constant","buf.c",15
+"fx_buf_grow","buf.c","function","fx_buf","buf.c","field","buf.c",13
+"fx_codes","buf.c","global","fx_error","err.h","constant","buf.c",47

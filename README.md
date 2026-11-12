@@ -221,6 +221,28 @@ See [`examples/schedule.json`](examples/schedule.json) for the output.
 | [`docs/type-lifecycle.md`](docs/type-lifecycle.md) | Lifecycle roles, and how to find the routines that play them. |
 | [`docs/artifacts/`](docs/artifacts/) | Field reference for type and symbol records, findings, the ownership store, schedules, and T3 tables. |
 
+## Tests
+
+```sh
+PYTHONPATH=src python -m unittest discover -s tests
+```
+
+The default suite runs no CodeQL. A fixture's tests that compose, query or
+schedule it read its committed tables, `tests/fixtures/<name>/codeql/`. The
+tests that build each fixture's database and run the queries, checking the
+queries' golden tables and that the committed tables are current, are
+opt-in, and pass before a change to a query or a fixture's C lands:
+
+```sh
+WAVEFRONT_CODEQL_TESTS=1 PYTHONPATH=src python -m unittest discover -s tests
+```
+
+After such a change, re-extract the committed tables and review their diff:
+
+```sh
+PYTHONPATH=src python tests/regenerate_tables.py [FIXTURE ...]
+```
+
 ## Maintainers
 
 - Marius Momeu, marius.momeu@berkeley.edu

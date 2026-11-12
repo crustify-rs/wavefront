@@ -1,0 +1,10 @@
+"user_name","user_def_file","user_kind","type_name","type_def_file","use_kind","use_file","use_line"
+"lldiv","","function","lldiv_t","/usr/include/stdlib.h","value","/usr/include/stdlib.h",998
+"ldiv","","function","ldiv_t","/usr/include/stdlib.h","value","/usr/include/stdlib.h",994
+"div","","function","div_t","/usr/include/stdlib.h","value","/usr/include/stdlib.h",992
+"pools","use.c","global","pool","mem.h","value","use.c",8
+"widget_make","use.c","function","pool","mem.h","field","use.c",24
+"widget_make","use.c","function","pool","mem.h","field","use.c",25
+"widget_make","use.c","function","widget","use.c","size","use.c",22
+"widget_make","use.c","function","widget","use.c","size","use.c",23
+"the_set","use.c","global","pool_set","mem.h","value","use.c",9

@@ -1,0 +1,4 @@
+"name","linkage","type","def_file","decl_files"
+"pools","global_static","pool[1]","use.c","use.c"
+"mem_live","global_extern","int","mem.c","mem.c|mem.h"
+"the_set","global_extern","pool_set","use.c","use.c"

@@ -5,11 +5,12 @@ and `types.csv` had no union at all. Every query that classifies a type tests
 from __future__ import annotations
 
 import csv
-import shutil
 import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+
+import codeql_fixtures as cf
 
 from wavefront.resources import data_root
 
@@ -38,7 +39,7 @@ def _run(db: Path, query: str, out: Path) -> list[dict]:
         return list(csv.DictReader(f))
 
 
-@unittest.skipUnless(shutil.which("codeql"), "codeql not on PATH")
+@unittest.skipUnless(cf.codeql_enabled(), cf.SKIP_REASON)
 class UnionKindQueryTests(unittest.TestCase):
     tables: dict[str, list[dict]] = {}
 

@@ -7,11 +7,12 @@ none (`edges/function_pointer_uses.ql`,
 from __future__ import annotations
 
 import csv
-import shutil
 import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+
+import codeql_fixtures as cf
 
 from compose import scope
 from wavefront.resources import data_root
@@ -30,7 +31,7 @@ def _key(r: dict) -> tuple:
 
 
 class FunctionPointerQueryTests(unittest.TestCase):
-    @unittest.skipUnless(shutil.which("codeql"), "codeql not on PATH")
+    @unittest.skipUnless(cf.codeql_enabled(), cf.SKIP_REASON)
     def test_fixture_tables_match_golden(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             db = Path(td) / "db"
