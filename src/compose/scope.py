@@ -77,9 +77,11 @@ def owned_macro(def_file: str) -> bool:
     macro stays a C define (read through bindgen) for anything still in C
     that may `#include` that header. Only a TU-local macro has no external
     consumer, and is inlined when its translation unit is translated. The
-    consumers that walk or own the target's entities (the deps-DAG body walk,
-    the import closure, the symbol records, the schedule's units) apply this
-    test on top of the section, through :func:`owned_entities`.
+    consumers that own the target's entities (the import closure, the symbol
+    records, the schedule's units) apply this test on top of the section,
+    through :func:`owned_entities`. The deps-DAG body walk does not: a header
+    macro that implements logic is still rewritten over what it expands to,
+    so every macro of the section has its body edges.
     """
     return bool(def_file) and def_file.endswith(_C_TU_SUFFIXES)
 

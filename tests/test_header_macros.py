@@ -1,7 +1,8 @@
 """A macro defined in a closure header is in the `closure` section, its
 definition sitting there, yet it is not the target's own: a `#define` cannot
-be re-exported Rust->C, so only a closure `.c` file's TU-local macro is owned,
-body-walked and a unit (docs/scoping.md#closure, docs/batching.md#units).
+be re-exported Rust->C, so only a closure `.c` file's TU-local macro is owned
+(docs/scoping.md#closure). Every closure macro is body-walked and a unit all
+the same (docs/graph.md#edges, docs/batching.md#units).
 A macro a published header defines is part of the API, expanded or not; its
 include guard is not."""
 from __future__ import annotations
@@ -101,7 +102,7 @@ class HeaderMacroTests(unittest.TestCase):
         self.assertNotIn("MEM_H", names)
         self.assertNotIn("MEM_PRIV", names)
 
-    def test_the_default_graph_body_walks_only_owned_macros(self) -> None:
+    def test_the_default_graph_body_walks_every_closure_macro(self) -> None:
         inventory = self._inventory()
         seen = {}
 
@@ -115,9 +116,13 @@ class HeaderMacroTests(unittest.TestCase):
             with self.assertRaises(_Stop):
                 deps_dag.compose(([], []), scope_json=inventory,
                                  codeql_dir=Path(td))
+        # A header macro is not owned, yet walked: what its replacement list
+        # references orders it (docs/graph.md#edges). One no closure file
+        # defines is not.
         self.assertIn(("MEM_LOCAL", "src/mem.c"), seen["port_syms"])
         self.assertIn(("mem_alloc", "src/mem.c"), seen["port_syms"])
-        self.assertNotIn(("MEM_MAX", "include/mem.h"), seen["port_syms"])
+        self.assertIn(("MEM_MAX", "include/mem.h"), seen["port_syms"])
+        self.assertNotIn(("SYS_MAX", "/usr/include/sys.h"), seen["port_syms"])
 
 
 if __name__ == "__main__":

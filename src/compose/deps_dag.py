@@ -447,15 +447,15 @@ def _collect(analysis_root: Path,
 
     So edges are narrowed per node against THIS target's scope:
 
-      - **owned symbol** (``port_syms``: the closure's functions and
-        globals, and its TU-local macros) — every edge. Its body is
-        translated, so its callees and field-derived type uses are real
-        dependencies.
-      - **any other symbol** (an external one, or a closure header's
-        macro) — signature only. A binding is emitted from the
-        signature alone: callee edges are dropped outright, and type edges
-        keep only signature/opaque uses (``fields: []``).
-      - **external struct** — only fields the owned symbols actually touch
+      - **body-walked symbol** (``port_syms``: the closure's functions,
+        globals and macros, a header's macros included) — every edge. Its
+        body is translated, so its callees and field-derived type uses are
+        real dependencies.
+      - **any other symbol** (an external one) — signature only. A
+        binding is emitted from the signature alone: callee edges are
+        dropped outright, and type edges keep only signature/opaque uses
+        (``fields: []``).
+      - **external struct** — only fields the body-walked symbols touch
         (``port_fields``); the rest of the layout is never reached through
         this target and must not order its work. EXCEPT when its definition
         sits in a selected layout file — a closure file, or an
@@ -1409,16 +1409,24 @@ def compose(analysis_root, scope_json=None, codeql_dir: Path | None = None,
         from . import scope as _scope
         port_syms = set()
         if not api_headers_only:
-            # The owned entities, not the whole `closure` section: a macro a
-            # closure HEADER defines is in that section, yet a header
-            # `#define` cannot be re-exported Rust->C and stays C's, so only a
-            # closure `.c` file's TU-local macro is body-walked
-            # (`scope.owned_macro`).
-            for kind in ("functions", "globals", "macros"):
+            # The owned functions and globals, and every macro the closure
+            # defines, a header's included. A header `#define` is not owned
+            # (`scope.owned_macro`): it stays C's for any C still including
+            # its header. But a macro that implements logic is reimplemented
+            # in Rust over what it expands to all the same, so it is walked
+            # as a `.c` file's macro is: its body edges are what its
+            # replacement list references (`t2/macro_references.csv`), and a
+            # constant's are none.
+            for kind in ("functions", "globals"):
                 try:
                     port_syms |= _scope.owned_entities(scope_json, kind)
                 except Exception:
                     pass
+            try:
+                port_syms |= _scope.load_entities(scope_json, _scope.CLOSURE,
+                                                  "macros")
+            except Exception:
+                pass
         port_fields = port_touched_fields(analysis_root, port_syms)
         layout_paths = (_scope.load_api_paths(scope_json) if api_headers_only
                         else _scope.load_closure_paths(scope_json))
@@ -1446,6 +1454,10 @@ def compose(analysis_root, scope_json=None, codeql_dir: Path | None = None,
         codeql_dir = Path(analysis_root).parent / "codeql"
     for msg in t3_stale(codeql_dir) if (codeql_dir / "t2").is_dir() else ():
         print(f"warning: T3 {msg}", file=sys.stderr)
+    if (port_syms and (codeql_dir / "t2").is_dir()
+            and not (codeql_dir / "t2" / "macro_references.csv").is_file()):
+        print("warning: t2/macro_references.csv is missing, so no macro has "
+              "body edges; re-run extract-ql", file=sys.stderr)
     types, syms, talias = _collect(analysis_root, port_syms, port_fields,
                                    codeql_dir=codeql_dir,
                                    in_scope_types=in_scope_types,

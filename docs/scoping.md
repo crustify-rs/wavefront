@@ -92,8 +92,8 @@ a header as much as a `.c` file.
 
 The closure **owns** the entities that are its own to translate: all of the
 section but the macros a header defines ([Default mode](#default-mode)). The
-default graph walks their bodies, and a schedule's units are drawn from them
-([`batching.md`](batching.md#units)).
+default graph walks their bodies, and a header macro's too, and a schedule's
+units are drawn from them ([`batching.md`](batching.md#units)).
 
 ## External
 
@@ -126,17 +126,20 @@ defined there but publishes nothing, and is not in the view.
 
 The default graph and schedule are body-deep:
 
-- a function or global of the closure, or a macro a closure `.c` file
-  defines, depends on what its body calls and touches; an external function
-  contributes its signature only;
-- a macro a closure header defines is in the closure section but not owned,
-  and contributes no body edges either: any C still built may include that
-  header, and a `#define` cannot be re-exported from Rust, so the macro stays
-  C's, read from its header. Only a macro local to a closure translation
-  unit has no other user, and is the closure's own. A header macro is a
-  node when the closure expands it, when it mints a type the closure
-  reaches, or when an `api_headers` file defines it: a public macro is part
-  of the API whether or not the library's own code expands it;
+- a function or global of the closure, or a macro a closure file defines,
+  a header's included, depends on what its body calls and touches, a
+  macro's body being its replacement list
+  ([`graph.md`](graph.md#edges)); an external function contributes its
+  signature only, and an external macro nothing;
+- a macro a closure header defines is in the closure section but not owned:
+  any C still built may include that header, and a `#define` cannot be
+  re-exported from Rust, so the macro stays C's, read from its header. Only
+  a macro local to a closure translation unit has no other user, and is the
+  closure's own. A header macro still has its body edges: one that
+  implements logic is rewritten in Rust over what it expands to. A header
+  macro is a node when the closure expands it, when it mints a type the
+  closure reaches, or when an `api_headers` file defines it: a public macro
+  is part of the API whether or not the library's own code expands it;
 - a struct defined in a closure file keeps every field edge; an external
   struct only the fields the closure's code accesses;
 - a schedule orders every node the closure owns; an external node is a

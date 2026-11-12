@@ -73,7 +73,10 @@ from pathlib import Path
 #:  26 — a macro a published header defines is a symbol record whether or
 #:      not the code expands it, and the API section leaves include guards
 #:      out.
-_VERSION = 26
+#:  27 — a macro's `depends_on` is what its replacement list references
+#:      (`t2/macro_references.csv`), and the default graph body-walks every
+#:      macro the closure defines, a header's included.
+_VERSION = 27
 
 
 def fingerprint(layout, target) -> dict:

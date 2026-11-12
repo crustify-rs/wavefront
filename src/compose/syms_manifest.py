@@ -669,20 +669,60 @@ def _base_macro(row: dict) -> dict[str, Any]:
     }
 
 
-def _port_additions_macro(row: dict, reach: Reach) -> dict[str, Any]:
+def _port_additions_macro(
+    row: dict,
+    reach: Reach,
+    by_name: dict[str, dict],
+    sym_index: dict[tuple[str, str], dict[str, Any]],
+) -> dict[str, Any]:
     """Port macro additions. The macro `body` is intentionally NOT
     emitted; the agent reads the expansion from source when needed.
+
+    `depends_on` is what the replacement list references
+    (`t2/macro_references.csv`), as a function's is what its body does: the
+    functions, globals and macros it names under `syms`, with the callbacks
+    and typedefs of their own among the types it names; the other types it
+    names under `types`, with the fields it accesses in them, scalar
+    typedefs left out.
+    A macro that references nothing, a constant, depends on nothing.
     """
     name = row["name"]
     def_file = row["def_file"]
     fn_sites = reach.all_macro_call_sites(name, def_file)
     file_sites = reach.all_macro_file_sites(name, def_file)
+    refs = reach.macro_references_of(name, def_file)
+    forward = {(n, df) for kind, n, df, _f in refs
+               if kind in ("function", "global", "macro")}
+    type_names = sorted({n for kind, n, _df, _f in refs if kind == "type"})
+    callbacks = sorted({_callback_base(t, by_name) for t in type_names} - {None})
+    fields: dict[str, set[str]] = {}
+    for kind, n, _df, field in refs:
+        if kind != "type" or _is_scalar_typedef(n, by_name) \
+                or _is_callback_typedef(n, by_name):
+            continue
+        tag = _resolve_dep_type_tag(n, by_name)
+        if not tag or tag.startswith("("):
+            continue
+        fields.setdefault(tag, set())
+        if field:
+            fields[tag].add(field)
     return {
         "used_by": {
             "call": sorted(fn_sites | file_sites),
             "ref": [],
         },
-        "depends_on": {"syms": [], "types": []},
+        "depends_on": {
+            "syms": (
+                _compose_dep_syms(forward, sym_index)
+                + [{"name": cb, "defined_in": None,
+                    "declared_in": sorted(_decls_list(
+                        (by_name.get(cb) or {}).get("decl_files", "")))}
+                   for cb in callbacks]
+                + _typedef_deps(type_names, by_name)
+            ),
+            "types": [{"type": tag, "fields": sorted(fs)}
+                      for tag, fs in sorted(fields.items())],
+        },
     }
 
 
@@ -923,9 +963,10 @@ def compose(
     tgt_globals = scope.owned_entities(_sj, "globals") if _sj else set()
     # A macro is the target's own only when a closure `.c` defines it
     # (`scope.owned_macro`): a header `#define` cannot be re-exported Rust->C,
-    # so it stays C's even in a closure header, and is admitted, gated and
-    # walked as any macro the target does not own. Its `closure` section
-    # membership decides only the --closure-only / --external-only filters.
+    # so it stays C's even in a closure header, and is admitted and gated as
+    # any macro the target does not own. Its `closure` section membership
+    # decides only the --closure-only / --external-only filters; the graph
+    # body-walks it all the same (`deps_dag.compose`).
     tgt_macros = scope.owned_entities(_sj, "macros") if _sj else set()
     closure_macros = (scope.load_entities(_sj, scope.CLOSURE, "macros")
                       if _sj else set())
@@ -1068,7 +1109,7 @@ def compose(
                     and not reach.is_macro_port_reachable(r["name"], r["def_file"]):
                 continue
         base = _base_macro(r)
-        port_add = _port_additions_macro(r, reach)    # content: codebase-wide
+        port_add = _port_additions_macro(r, reach, by_name, sym_index)  # codebase-wide
         fwd = set() if in_target else None
         target_file = r["def_file"]
         candidates.append({

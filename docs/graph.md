@@ -80,7 +80,7 @@ users judge droppers or cloners.
 |---|---|---|---|
 | field | a struct | each non-scalar field type; the function pointer or typedef a field has, inline or named; the types in a function-pointer field's signature | both |
 | signature | a function, function pointer or typedef | the types of its parameters and return, function pointers and typedefs among them; a typedef, the typedef it names when that one is a node | both |
-| body | a function, global or `.c` macro the config owns | the functions, globals and macros it references; the types its body uses | default |
+| body | a function or global the config owns, or a macro a closure file defines, a header's included | the functions, globals and macros it references; the types its body uses | default |
 | generator | a type a T3 generator mints | the generator macro | both |
 | cast | see [Type erasure](#type-erasure) and [Polymorphism](#polymorphism) | | both |
 
@@ -92,9 +92,26 @@ config's own functions access, which in the API graph is none, so an
 opaque handle orders no work.
 
 An external function contributes its signature only: it is bound, not
-translated. So does a macro a closure header defines, which stays C's
-([`scoping.md`](scoping.md#default-mode)). In the API graph every function
-does.
+translated. In the API graph every function does, and no macro has a body
+edge.
+
+A macro's body is its replacement list. A macro a closure header defines is
+not owned, since C still built may include its header
+([`scoping.md`](scoping.md#default-mode)), but it is walked as a `.c` file's
+macro is: one that implements logic is rewritten over what it expands to,
+so it depends on what it references. That is read off its expansions in the
+traced build (`t2/macro_references.csv`): each name the replacement list
+writes, outside its literals and parameters, that an expansion resolves to a
+function, global, macro or type, with the fields it accesses in a type it
+names (`((struct pool *)(p))->used`). What an argument names is its
+caller's, and so is the type of a field the replacement list accesses
+through an argument (`(p)->used`), over which the macro is generic; what a
+nested macro references is that macro's. So a constant
+(`#define MAX 4096`) has no body edge, a symbol alias
+(`#define xdl_malloc git__malloc`) depends on what it names, and a macro
+that calls a function its own callee expands closes a cycle, cut as any
+other. A macro an external header defines contributes nothing, as an
+external function contributes only its signature.
 
 ### Type erasure
 
@@ -214,6 +231,9 @@ False negatives (missing edges):
 - a value carried through a local or through memory before its cast;
 - a family of types minted by one macro: unrelated in C, a family only once
   T3 names its macro a generator;
+- what a macro the traced build never expands references: no expansion
+  resolves its names. Nor does one see a name the replacement list only
+  pastes together (`a##b`);
 - anything the traced build does not compile.
 
 False positives (spurious edges):
@@ -226,7 +246,9 @@ False positives (spurious edges):
   cast pairs a slot joins, so two unrelated types sharing a tag share their
   cast edges;
 - a callee named without a file that matches several same-named symbols
-  depends on all of them.
+  depends on all of them;
+- a macro whose argument writes a name its replacement list writes too
+  depends on what the argument's name denotes.
 
 Spurious cast edges are corrected with T3 `drop` rows; field, signature and
 body edges are declarations and are never dropped. Wavefront warns when a

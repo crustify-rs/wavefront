@@ -139,8 +139,10 @@ consumer when the unit is no longer needed in its original form:
 - a function, global, macro, function pointer or typedef is
   **unreferenced** after its **referrers**: the units that call it, take its
   address, access it, expand it or name it, the edges of the body-deep graph
-  into it. A macro's referrers are the functions whose bodies expand it,
-  through another macro's expansion too, and the types whose declarations do
+  into it, a macro's replacement list among them
+  ([`graph.md`](graph.md#edges)). A macro's referrers are the functions
+  whose bodies expand it, through another macro's expansion too, the macros
+  whose replacement lists do, and the types whose declarations do
   (`char buf[GIT_OID_MAX_SIZE]`). A function pointer a typedef declares is
   referred to by what names the typedef or an alias of it, and by the code
   that calls through it;

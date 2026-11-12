@@ -88,6 +88,7 @@ class Reach:
         self._build_function_address_indexes(csv_dir_t2 / "function_addresses.csv")
         self._build_global_access_indexes(csv_dir_t2 / "global_accesses.csv")
         self._build_macro_expansion_indexes(csv_dir_t2 / "macro_expansions.csv")
+        self._build_macro_reference_indexes(csv_dir_t2 / "macro_references.csv")
         self._build_field_access_indexes(csv_dir_t2)
         self._build_signature_type_indexes(csv_dir_t2 / "signature_type_uses.csv")
         self._build_callback_sig_type_indexes(csv_dir_t2 / "callback_signature_type_uses.csv")
@@ -217,6 +218,21 @@ class Reach:
             macro = (r["macro_name"], r["macro_def_file"])
             self._me_forward[site].add(macro)
             self._me_inverse[macro].add(site)
+
+    # ------------------------------------------------------------ macro_references
+
+    def _build_macro_reference_indexes(self, path: Path) -> None:
+        # (macro_name, macro_def_file) -> set of (ref_kind, ref_name,
+        #   ref_def_file, field_name): what the macro's replacement list
+        #   references. Empty for an extraction that predates the table
+        #   (`deps_dag.compose` warns).
+        self._mr_forward: dict[tuple[str, str], set[tuple[str, str, str, str]]] = defaultdict(set)
+        if not path.exists():
+            return
+        for r in _load_csv(path):
+            self._mr_forward[(r["macro_name"], r["macro_def_file"])].add(
+                (r["ref_kind"], r["ref_name"], r["ref_def_file"],
+                 r.get("field_name") or ""))
 
     # ------------------------------------------------------------ field_accesses
 
@@ -842,6 +858,17 @@ class Reach:
         given function reads / writes / takes the address of.
         """
         return set(self._ga_forward.get((fn_name, fn_def_file), set()))
+
+    def macro_references_of(
+        self, macro_name: str, macro_def_file: str,
+    ) -> list[tuple[str, str, str, str]]:
+        """Sorted (ref_kind, ref_name, ref_def_file, field_name) rows of what
+        the given macro's replacement list references
+        (`t2/macro_references.csv`): `function`, `global` and `macro` rows
+        name a symbol, `type` rows a type, with the field accessed when
+        `field_name` is set.
+        """
+        return sorted(self._mr_forward.get((macro_name, macro_def_file), ()))
 
     def macros_expanded_by(self, enc_name: str, enc_file: str) -> set[tuple[str, str]]:
         """Set of (macro_name, macro_def_file) the given enclosing
