@@ -454,6 +454,17 @@ def _import_reachable(
         for fn_name, fn_def_file in reach.functions_using_type_in_body(tname, tdef):
             if fn_def_file not in target_paths and reach.is_function_port_reachable(fn_name, fn_def_file):
                 return True
+        # An enum whose constants the target, or what it reaches, names
+        # (`enum_constant_uses.csv`): such a user depends on it as on a local
+        # of its type, so import_closure pulls it in through depends_on.types.
+        for uname, udf, ukind in reach.users_naming_enum(tname, tdef):
+            if udf in target_paths:
+                return True
+            reachable = {"function": reach.is_function_port_reachable,
+                         "global": reach.is_global_port_reachable,
+                         "macro": reach.is_macro_port_reachable}.get(ukind)
+            if reachable is not None and reachable(uname, udf):
+                return True
     port_fields = reach.port_touched_fields()
     for tname, tdef in type_keys:
         if reach.fields_referencing_type(tname, tdef) & port_fields:
@@ -495,6 +506,26 @@ def _enum_skeleton(
         "casted_via": {"to": [], "from": []}, "fields": [],
     }
     return e
+
+
+def _enum_consumers(
+    reach: Reach, name: str, def_file: str, by_name: dict[str, dict],
+) -> tuple[dict[str, list[str]], dict[str, list[str]]]:
+    """An enum's consumer footprints, `(opaque_in, non_opaque_in)`, as
+    `_type_consumers` gives a struct's. An enum has no fields: what needs its
+    enumerators is what names one of its constants (`enum_constant_uses.csv`),
+    a function, global or macro, in `non_opaque_in` under its definition file;
+    a function that names the enum's type in its signature or body and none
+    of its constants is in `opaque_in`."""
+    non_by_file: dict[str, set[str]] = defaultdict(set)
+    for uname, udf, _ukind in reach.users_naming_enum(name, def_file):
+        non_by_file[udf].add(uname)
+    named = {(u, f) for f, us in non_by_file.items() for u in us}
+    opaque_in, _ = _type_consumers(reach, name, def_file, by_name, None)
+    opaque = {f: sorted(u for u in us if (u, f) not in named)
+              for f, us in opaque_in.items()}
+    return ({f: us for f, us in sorted(opaque.items()) if us},
+            {f: sorted(us) for f, us in sorted(non_by_file.items())})
 
 
 def _build_struct_entry(
@@ -637,6 +668,8 @@ def compose(
         # + footprints) but keeps `kind: union` so the wrapper worklist skips it.
         if r["kind"] == "enum":
             entry = _enum_skeleton(r["name"], declared_in, defined_in, typedefs_for.get(r["name"], []))
+            entry["opaque_in"], entry["non_opaque_in"] = _enum_consumers(
+                reach, r["name"], r["def_file"], by_name)
             fields, forward, touched = [], set(), None
         else:
             entry, fields, forward, touched = _build_struct_entry(
@@ -694,6 +727,8 @@ def compose(
             )
         else:  # enum_anonymous
             entry = _enum_skeleton(r["name"], declared_in, defined_in, identity)
+            entry["opaque_in"], entry["non_opaque_in"] = _enum_consumers(
+                reach, r["name"], r["def_file"], by_name)
         entry["declared_in"] = decls          # full decl list on the stored field
         candidates.append({
             "entry": entry, "in_target": in_target,

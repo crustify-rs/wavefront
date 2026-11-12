@@ -17,7 +17,7 @@ where = ["src"]
 include = ["wavefront*", "compose*"]
 
 [tool.setuptools.data-files]
-"share/wavefront" = ["README.md", "src/qlpack.yml", "src/codeql-pack.lock.yml", "src/identity.qll"]
+"share/wavefront" = ["README.md", "src/qlpack.yml", "src/codeql-pack.lock.yml", "src/identity.qll", "src/macro_bodies.qll"]
 "share/wavefront/entities" = ["src/entities/*.ql"]
 "share/wavefront/edges" = ["src/edges/*.ql"]
 "share/wavefront/scratch" = ["src/scratch/*.ql"]

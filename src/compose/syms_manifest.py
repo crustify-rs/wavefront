@@ -343,6 +343,7 @@ def _compose_dep_types(
     field_access_index: "FieldAccessIndex | None",
     *,
     sig_types: list[tuple[str, str, str, str]] | None = None,
+    user_kind: str = "function",
 ) -> list[dict[str, Any]]:
     """Build the flat `[{type, fields}]` list combining this function's
     signature type uses with the struct fields its body actually
@@ -362,8 +363,12 @@ def _compose_dep_types(
          var / cast / sizeof (`local_type_uses.csv`) without reaching into
          a field. The Rust port must still name these, so they're real
          deps; emitted with an empty fields list. Empty for callbacks.
+      4. **Enums whose constants it names** -- from
+         `enum_constant_uses.csv`, for the entity of `user_kind`: a function
+         that returns `GIT_ENOTFOUND` through `int` names no enum type, but
+         needs the enum as a local of its type would. Empty fields list.
 
-    Function-pointer typedefs are excluded from all three sources: a callback
+    Function-pointer typedefs are excluded from the first three sources: a callback
     is signature-shaped, not aggregate-shaped, so it is emitted as a
     `depends_on.syms` record by `_callback_deps` instead. Struct fields of
     function-pointer type never reach here anyway — the field parser renders
@@ -422,6 +427,24 @@ def _compose_dep_types(
         seen.add(tag)
         out.append({"type": tag, "fields": []})
 
+    out.extend(_enum_constant_dep_types(reach, name, def_file, user_kind, by_name, seen))
+    return out
+
+
+def _enum_constant_dep_types(
+    reach: Reach, name: str, def_file: str, user_kind: str,
+    by_name: dict[str, dict], seen: set[str],
+) -> list[dict[str, Any]]:
+    """The enums whose constants an entity names
+    (`t2/enum_constant_uses.csv`) and ``seen`` does not yet hold, as
+    `depends_on.types` records with no fields, sorted. ``seen`` is updated."""
+    out: list[dict[str, Any]] = []
+    for type_name, _tdf in reach.enums_named_by(name, def_file, user_kind):
+        tag = _resolve_dep_type_tag(type_name, by_name)
+        if not tag or tag.startswith("(") or tag in seen:
+            continue
+        seen.add(tag)
+        out.append({"type": tag, "fields": []})
     return out
 
 
@@ -607,9 +630,11 @@ def _port_additions_global(
         `const version_info tls_version_table[]` depends on `version_info`.
       - **its initializer** (`function_addresses.csv` / `global_accesses.csv`)
         — a file-scope dispatch table takes the address of every handler it
-        names. Recovering this is why `enclosingNameOf` in those two queries
-        falls back to the initialised VARIABLE: a file-scope access has no
-        enclosing function, so it used to be attributed to "" and dropped,
+        names; and the enums whose constants it names
+        (`enum_constant_uses.csv`). Recovering the former is why
+        `enclosingNameOf` in those two queries falls back to the initialised
+        VARIABLE: a file-scope access has no enclosing function, so it used
+        to be attributed to "" and dropped,
         leaving every table (`ext_defs` and its 129 handlers) a false leaf.
 
     Both were previously hardcoded empty even though the type index existed.
@@ -637,6 +662,7 @@ def _port_additions_global(
             continue
         seen.add(tag)
         dep_types.append({"type": tag, "fields": []})
+    dep_types += _enum_constant_dep_types(reach, name, def_file, "global", by_name, seen)
 
     global_types = [t for t, _k, _f in reach.types_in_global_type(name, def_file)]
     cb_types = [b for t in global_types if (b := _callback_base(t, by_name))]
@@ -683,7 +709,8 @@ def _port_additions_macro(
     functions, globals and macros it names under `syms`, with the callbacks
     and typedefs of their own among the types it names; the other types it
     names under `types`, with the fields it accesses in them, scalar
-    typedefs left out.
+    typedefs left out, and the enums whose constants it names
+    (`t2/enum_constant_uses.csv`).
     A macro that references nothing, a constant, depends on nothing.
     """
     name = row["name"]
@@ -706,6 +733,11 @@ def _port_additions_macro(
         fields.setdefault(tag, set())
         if field:
             fields[tag].add(field)
+    # The enums whose constants the replacement list names
+    # (`t2/enum_constant_uses.csv`), with no fields.
+    for d in _enum_constant_dep_types(reach, name, def_file, "macro", by_name,
+                                      set(fields)):
+        fields[d["type"]] = set()
     return {
         "used_by": {
             "call": sorted(fn_sites | file_sites),

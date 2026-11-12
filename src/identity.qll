@@ -275,3 +275,28 @@ string defFileOf(UserType t) {
     then result = pathOf(anonBaseOf(t).getDefinition().getFile())
     else result = ""
 }
+
+/**
+ * The identity `entities/types.ql` keys `t` by: `ownerOf` for a struct or
+ * union, and for an enum its tag, or the typedef that names an untagged one,
+ * at the enum's definition file. `ownerOf` stays an aggregate's only, since
+ * the field-keyed queries share it. Shared by `edges/layout_uses.ql` and
+ * `edges/enum_constant_uses.ql`, so an enum's layout users and the users of
+ * its constants name it alike.
+ */
+predicate typeOwnerOf(UserType t, string name, string file) {
+  t instanceof Class and ownerOf(t, name, file)
+  or
+  t instanceof Enum and
+  file = defFileOf(t) and
+  (
+    not isAnonymous(t) and name = t.getName()
+    or
+    isAnonymous(t) and
+    exists(TypedefType td |
+      unwrappedUserType(td.getBaseType(), t) and
+      not isAnonNamed(td.getName()) and
+      name = td.getName()
+    )
+  )
+}

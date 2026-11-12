@@ -94,6 +94,7 @@ class Reach:
         self._build_callback_sig_type_indexes(csv_dir_t2 / "callback_signature_type_uses.csv")
         self._build_callback_callsite_indexes(csv_dir_t2 / "callback_call_sites.csv")
         self._build_local_type_indexes(csv_dir_t2 / "local_type_uses.csv")
+        self._build_enum_constant_indexes(csv_dir_t2 / "enum_constant_uses.csv")
         self._build_field_type_use_indexes(csv_dir_t2 / "field_type_uses.csv")
         self._build_global_type_use_indexes(csv_dir_t2 / "global_type_uses.csv")
         self._build_function_ptr_arg_indexes(csv_dir_t2 / "function_pointer_args.csv")
@@ -771,6 +772,42 @@ class Reach:
         used by v1 manifests.
         """
         return list(self._ltu_forward.get((fn_name, fn_def_file), set()))
+
+    # ------------------------------------------------------------ enum_constant_uses
+
+    def _build_enum_constant_indexes(self, path: Path) -> None:
+        # Forward: (user_name, user_def_file, user_kind) -> set of
+        #   (type_name, type_def_file), the enums whose constants the user
+        #   names. Inverse: (type_name, type_def_file) -> set of
+        #   (user_name, user_def_file, user_kind). Keyed by kind as well,
+        #   since a function, a global and a macro may share a name and file.
+        # Empty for an extraction that predates the table (`deps_dag.compose`
+        # warns).
+        self._ecu_forward: dict[tuple[str, str, str], set[tuple[str, str]]] = defaultdict(set)
+        self._ecu_inverse: dict[tuple[str, str], set[tuple[str, str, str]]] = defaultdict(set)
+        if not path.exists():
+            return
+        for r in _load_csv(path):
+            user = (r["user_name"], r["user_def_file"], r["user_kind"])
+            enum = (r["type_name"], r["type_def_file"])
+            self._ecu_forward[user].add(enum)
+            self._ecu_inverse[enum].add(user)
+
+    def enums_named_by(
+        self, user_name: str, user_def_file: str, user_kind: str,
+    ) -> list[tuple[str, str]]:
+        """Sorted (type_name, type_def_file) of the enums whose constants the
+        given function, global or macro (`user_kind`) names
+        (`t2/enum_constant_uses.csv`). Naming a constant is a use of its
+        enum, as a local of the enum's type is."""
+        return sorted(self._ecu_forward.get((user_name, user_def_file or "", user_kind), ()))
+
+    def users_naming_enum(
+        self, type_name: str, type_def_file: str,
+    ) -> set[tuple[str, str, str]]:
+        """Inverse: the (user_name, user_def_file, user_kind) that name a
+        constant of the given enum."""
+        return set(self._ecu_inverse.get((type_name, type_def_file), ()))
 
     # ---------------- signature-type queries
 

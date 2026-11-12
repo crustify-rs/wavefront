@@ -1458,6 +1458,11 @@ def compose(analysis_root, scope_json=None, codeql_dir: Path | None = None,
             and not (codeql_dir / "t2" / "macro_references.csv").is_file()):
         print("warning: t2/macro_references.csv is missing, so no macro has "
               "body edges; re-run extract-ql", file=sys.stderr)
+    if ((codeql_dir / "t2").is_dir()
+            and not (codeql_dir / "t2" / "enum_constant_uses.csv").is_file()):
+        print("warning: t2/enum_constant_uses.csv is missing, so nothing "
+              "depends on the enums whose constants it names; re-run "
+              "extract-ql", file=sys.stderr)
     types, syms, talias = _collect(analysis_root, port_syms, port_fields,
                                    codeql_dir=codeql_dir,
                                    in_scope_types=in_scope_types,

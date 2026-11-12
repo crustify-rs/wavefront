@@ -110,7 +110,7 @@ Struct, union and enum views (one `--name`):
 |---|---|
 | `--fields` | Print the declared fields and their records. |
 | `--lifecycle-ops` | Print the routines that drop, dispose, clone, or construct the type. |
-| `--users` | Print every function that uses the type. |
+| `--users` | Print every function that uses the type, and for an enum every global and macro that names one of its constants. |
 | `--field-touchers` | Print each field and the functions that access it. |
 | `--layout-users` | Print every function, global and aggregate that depends on the type's layout, with the sites of each use. |
 | `--raw-sites` | Print every function that allocates or frees the type with a raw routine (a lifecycle role on a `void *`, in the ownership store), with each site. With `--unresolved` and no `--name`: the raw sites on type-erased values no table types. |

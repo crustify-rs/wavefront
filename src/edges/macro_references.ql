@@ -43,23 +43,7 @@
  */
 import cpp
 import identity
-
-/** The parameter names of a function-like macro, from its head. */
-string parameterOf(Macro m) {
-  result = m.getHead().regexpCapture("[^(]*\\((.*)\\)", 1).splitAt(",").trim()
-}
-
-/**
- * An identifier the replacement list of `m` writes, outside string and
- * character literals, other than one of its parameters.
- */
-string bodyIdentifier(Macro m) {
-  result =
-    m.getBody()
-        .regexpReplaceAll("\"(\\\\.|[^\"\\\\])*\"|'(\\\\.|[^'\\\\])*'", " ")
-        .regexpFind("[A-Za-z_][A-Za-z0-9_]*", _, _) and
-  not result = parameterOf(m)
-}
+import macro_bodies
 
 string functionDefFileOf(Function f) {
   if exists(f.getDefinition())
@@ -88,21 +72,6 @@ Type namedType(Locatable e) {
   result = e.(AlignofTypeOperator).getTypeOperand()
   or
   result = e.(DeclStmt).getADeclaration().(LocalVariable).getType()
-}
-
-/**
- * `e`, expanded from `mi`, comes from a replacement list rather than from an
- * argument: it is located where the invocation is.
- */
-predicate fromReplacementList(MacroInvocation mi, Locatable e) {
-  e = mi.getAnExpandedElement() and
-  exists(Location at, Location el | at = mi.getLocation() and el = e.getLocation() |
-    el.getFile() = at.getFile() and
-    el.getStartLine() = at.getStartLine() and
-    el.getStartColumn() = at.getStartColumn() and
-    el.getEndLine() = at.getEndLine() and
-    el.getEndColumn() = at.getEndColumn()
-  )
 }
 
 predicate reference(Macro m, string kind, string name, string defFile, string field) {

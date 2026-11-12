@@ -80,7 +80,7 @@ users judge droppers or cloners.
 |---|---|---|---|
 | field | a struct | each non-scalar field type; the function pointer or typedef a field has, inline or named; the types in a function-pointer field's signature | both |
 | signature | a function, function pointer or typedef | the types of its parameters and return, function pointers and typedefs among them; a typedef, the typedef it names when that one is a node | both |
-| body | a function or global the config owns, or a macro a closure file defines, a header's included | the functions, globals and macros it references; the types its body uses | default |
+| body | a function or global the config owns, or a macro a closure file defines, a header's included | the functions, globals and macros it references; the types its body uses; the enums whose constants it names | default |
 | generator | a type a T3 generator mints | the generator macro | both |
 | cast | see [Type erasure](#type-erasure) and [Polymorphism](#polymorphism) | | both |
 
@@ -90,6 +90,15 @@ graph; an `api_headers` file in the API graph) keeps every field edge: its
 layout is the config's own. Any other struct keeps only the fields the
 config's own functions access, which in the API graph is none, so an
 opaque handle orders no work.
+
+Naming an enum's constant is a use of the enum, whatever type the
+expression it is written in has (`t2/enum_constant_uses.csv`): a function
+that returns `GIT_ENOTFOUND` through `int`, or compares an `int` against
+`GIT_OBJECT_TREE`, names no enum type in a signature, local or cast, but
+cannot be written before the enum, and depends on it as one declaring a
+local of its type does. So does a global whose initializer names one, and a
+macro whose replacement list does, as its other references are read below;
+a function that expands that macro names the constant too.
 
 An external function contributes its signature only: it is bound, not
 translated. In the API graph every function does, and no macro has a body
@@ -234,6 +243,11 @@ False negatives (missing edges):
 - what a macro the traced build never expands references: no expansion
   resolves its names. Nor does one see a name the replacement list only
   pastes together (`a##b`);
+- an enum constant named where no function, global or macro is its user:
+  in another enum's initializer, a type's array bound or bit-field width,
+  or a file-scope `_Static_assert`. The type or enum that writes it does
+  not depend on the constant's enum. Nor does anything depend on an
+  untagged enum no typedef names (`enum { LIMIT = 8 };`), which is no node;
 - anything the traced build does not compile.
 
 False positives (spurious edges):

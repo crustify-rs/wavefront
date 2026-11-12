@@ -65,14 +65,18 @@ order the graph, and which of them are false positives, is in
 Composer-filled `{file: [symbols]}` footprint: functions that touch this type
 but only as an OPAQUE HANDLE, never accessing a field. A user reads it for
 lifecycle/forwarder op candidates. COMPLETE: every consumer
-tree-wide is listed.
+tree-wide is listed. For an enum: the functions that name its type in a
+signature, local, cast or `sizeof`, but none of its constants.
 
 ## non_opaque_in
 
 Composer-filled `{file: [symbols]}` footprint: functions that read/write a FIELD
 of this type and so need its concrete layout (incl. transitive `a->b->field`
 reachers). COMPLETE: the FULL cross-codebase footprint for every
-type.
+type. An enum has no fields: its `non_opaque_in` lists the functions, globals
+and macros that name one of its constants (`t2/enum_constant_uses.csv`),
+which need its enumerators as a field's user needs a struct's layout, each
+under its definition file.
 
 ## _analysis
 

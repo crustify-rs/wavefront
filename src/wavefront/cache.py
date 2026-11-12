@@ -76,7 +76,10 @@ from pathlib import Path
 #:  27 — a macro's `depends_on` is what its replacement list references
 #:      (`t2/macro_references.csv`), and the default graph body-walks every
 #:      macro the closure defines, a header's included.
-_VERSION = 27
+#:  28 — a function, global or macro that names an enum's constant depends on
+#:      the enum (`t2/enum_constant_uses.csv`), and an enum's record lists
+#:      its users in `opaque_in` / `non_opaque_in`.
+_VERSION = 28
 
 
 def fingerprint(layout, target) -> dict:

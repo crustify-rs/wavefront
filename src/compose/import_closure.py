@@ -208,7 +208,7 @@ def build_index(
 
     idx = _Index()
 
-    def ingest(rows, kind_of, decls_of, target_set, gate) -> None:
+    def ingest(rows, kind_of, decls_of, target_set, gate, user_kind) -> None:
         for r in rows:
             name = r.get("name")
             if not name:
@@ -228,6 +228,7 @@ def build_index(
             dep_types = sm._compose_dep_types(
                 reach, name, def_file, by_name,
                 field_access_index if in_target else None,
+                user_kind=user_kind,
             )
             idx.sym[(name, def_file)] = {
                 "kind": kind_of(r), "declared_in": decls_of(r),
@@ -251,12 +252,14 @@ def build_index(
            lambda r: scope.parse_decl_files(r.get("decl_files") or ""),
            tgt_funcs,
            lambda r: r["linkage"] not in sm._WRAP_DISALLOWED_FN_KINDS
-           and reach.is_function_port_reachable(r["name"], r["def_file"]))
+           and reach.is_function_port_reachable(r["name"], r["def_file"]),
+           "function")
     ingest(globals_, lambda r: r["linkage"],
            lambda r: scope.parse_decl_files(r.get("decl_files") or ""),
            tgt_globals,
            lambda r: r["linkage"] not in sm._WRAP_DISALLOWED_GLOBAL_KINDS
-           and reach.is_global_port_reachable(r["name"], r["def_file"]))
+           and reach.is_global_port_reachable(r["name"], r["def_file"]),
+           "global")
     # A TEMPLATE GENERATOR is admitted regardless of call-site reachability.
     # The ordinary gate asks "does port code expand this macro", which a
     # generator never satisfies: it expands once at file scope in a header to
@@ -273,7 +276,8 @@ def build_index(
            lambda r: [r["def_file"]] if r.get("def_file") else [],
            tgt_macros,
            lambda r: (r["name"] in _generators
-                      or reach.is_macro_port_reachable(r["name"], r["def_file"])))
+                      or reach.is_macro_port_reachable(r["name"], r["def_file"])),
+           "macro")
     idx.reach = reach
     return idx
 

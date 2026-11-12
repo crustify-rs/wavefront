@@ -1,0 +1,9 @@
+"user_name","user_def_file","user_kind","constant_name","type_name","type_def_file","use_file","use_line"
+"FX_CHECK_ALLOC","err.h","macro","FX_OUT_OF_MEMORY","fx_error","err.h","err.h",24
+"fx_buf_grow","buf.c","function","FX_OK","fx_error","err.h","buf.c",15
+"fx_buf_grow","buf.c","function","FX_OUT_OF_MEMORY","fx_error","err.h","buf.c",14
+"fx_check","buf.c","function","FX_NOT_FOUND","fx_error","err.h","buf.c",31
+"fx_check","buf.c","function","FX_OUT_OF_MEMORY","fx_error","err.h","buf.c",30
+"fx_codes","buf.c","global","FX_NOT_FOUND","fx_error","err.h","buf.c",47
+"fx_codes","buf.c","global","FX_OUT_OF_MEMORY","fx_error","err.h","buf.c",47
+"fx_kind_of","buf.c","function","FX_KIND_LINK","fx_kind","err.h","buf.c",21

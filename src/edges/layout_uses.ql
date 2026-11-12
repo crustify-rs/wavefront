@@ -72,29 +72,6 @@ UserType steppedAggregate(Type t) {
   )
 }
 
-/**
- * The identity `entities/types.ql` keys `t` by: `ownerOf` for a struct or
- * union, and for an enum its tag, or the typedef that names an untagged one,
- * at the enum's definition file. `ownerOf` stays an aggregate's only, since
- * the field-keyed queries share it.
- */
-predicate typeOwnerOf(UserType t, string name, string file) {
-  t instanceof Class and ownerOf(t, name, file)
-  or
-  t instanceof Enum and
-  file = defFileOf(t) and
-  (
-    not isAnonymous(t) and name = t.getName()
-    or
-    isAnonymous(t) and
-    exists(TypedefType td |
-      unwrappedUserType(td.getBaseType(), t) and
-      not isAnonNamed(td.getName()) and
-      name = td.getName()
-    )
-  )
-}
-
 string fnDefFile(Function fn) {
   if exists(fn.getDefinition())
   then result = pathOf(fn.getDefinition().getFile())

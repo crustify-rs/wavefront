@@ -121,11 +121,14 @@ chains resolved) and `fields` are the accessed field names. The composer unions
 signature types (parameters/return) with body-touched types from
 `t2/field_accesses.csv`; signature types come first (signature order), body-only
 types follow (first-encounter order); a signature type whose body touches no
-field carries `fields:[]` (opaque use).
+field carries `fields:[]` (opaque use). The enums whose constants a function or
+global names (`t2/enum_constant_uses.csv`) follow, by tag, with `fields:[]`,
+the type of the expression a constant is written in notwithstanding
+([`graph.md`](../graph.md#edges)).
 
 A macro's `depends_on` is what its replacement list references
 (`t2/macro_references.csv`, [`graph.md`](../graph.md#edges)): the functions,
 globals and macros it names under `syms`, with the function pointers and
 typedefs of their own among the types it names; under `types`, the other
-types it names, by tag, each with the fields it accesses in it. A
-constant's is empty.
+types it names, by tag, each with the fields it accesses in it, and the
+enums whose constants it names, with no fields. A constant's is empty.
